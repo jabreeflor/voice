@@ -129,8 +129,9 @@ enum ModelCatalog {
         ModelSpec(file: "ggml-large-v3-turbo.bin", label: "Large v3 Turbo — best (1.6 GB)"),
     ]
 
-    // Auto-setup default: good accuracy, reasonable download.
-    static let defaultSpec = all[2]
+    // Auto-setup default: base.en — small download, ~1s per utterance, which
+    // is what makes hold-speak-release feel instant. Never surfaced in UI.
+    static let defaultSpec = all[1]
 
     static func downloadURL(for spec: ModelSpec) -> URL {
         URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(spec.file)")!
@@ -739,28 +740,32 @@ func pasteText(_ text: String) {
 
 // MARK: - Entry point
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.setActivationPolicy(.accessory)
+@MainActor
+public enum VoiceMain {
+    public static func run() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory)
 
-// Minimal main menu so ⌘Q/⌘W/⌘M work while the Voice window is focused.
-let mainMenu = NSMenu()
-let appMenuItem = NSMenuItem()
-mainMenu.addItem(appMenuItem)
-let appMenu = NSMenu()
-appMenu.addItem(withTitle: "Quit Voice",
-                action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-mainMenu.setSubmenu(appMenu, for: appMenuItem)
-let windowMenuItem = NSMenuItem()
-mainMenu.addItem(windowMenuItem)
-let windowMenu = NSMenu(title: "Window")
-windowMenu.addItem(withTitle: "Close",
-                   action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-windowMenu.addItem(withTitle: "Minimize",
-                   action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
-mainMenu.setSubmenu(windowMenu, for: windowMenuItem)
-app.mainMenu = mainMenu
+        // Minimal main menu so ⌘Q/⌘W/⌘M work while the Voice window is focused.
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Quit Voice",
+                        action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        mainMenu.setSubmenu(appMenu, for: appMenuItem)
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close",
+                           action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "Minimize",
+                           action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
+        mainMenu.setSubmenu(windowMenu, for: windowMenuItem)
+        app.mainMenu = mainMenu
 
-app.run()
-
+        app.run()
+    }
+}

@@ -7,3 +7,4 @@ models/
 
 # macOS
 .DS_Store
+.build/

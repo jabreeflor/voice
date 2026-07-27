@@ -5,15 +5,14 @@ cd "$(dirname "$0")"
 
 APP="Voice.app"
 
+echo "Compiling…"
+swift build -c release
+
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-
-echo "Compiling…"
-swiftc -O Sources/main.swift Sources/store.swift Sources/ui.swift Sources/app.swift \
-    -o "$APP/Contents/MacOS/Voice" \
-    -framework AppKit -framework AVFoundation -framework ServiceManagement
+cp "$(swift build -c release --show-bin-path)/Voice" "$APP/Contents/MacOS/Voice"
 
 # Sign with a real identity when one exists — a stable signature means macOS
 # keeps the Accessibility/Microphone grants across rebuilds. Ad-hoc fallback.

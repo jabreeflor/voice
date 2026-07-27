@@ -907,7 +907,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
         card.content.addSubview(rows)
         pinToContent(rows, of: card)
 
-        let foot = makeLabel("Everything runs on this Mac — audio, transcription, history. Models live in ~/thevoice/models.",
+        let foot = makeLabel("Everything runs on this Mac — audio, transcription, history. Nothing leaves your computer.",
                              size: 12, color: Palette.faint)
         foot.lineBreakMode = .byWordWrapping
         foot.maximumNumberOfLines = 2

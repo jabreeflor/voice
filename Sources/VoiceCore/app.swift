@@ -5,10 +5,65 @@ import ServiceManagement
 
 // MARK: - Status model
 
-struct StatusInfo {
+struct StatusInfo: Equatable {
     let text: String
     let color: NSColor
     let needsAccessibility: Bool
+}
+
+/// Everything the status line depends on, gathered so the decision logic
+/// stays a pure function of its inputs.
+struct StatusInputs {
+    var micDenied = false
+    var tapRunning = true
+    var axTrusted = true
+    var recentlyRelaunched = false
+    var setupProgress: Double? = nil
+    var setupFailed = false
+    var engineExists = true
+    var engineReady = true
+    var engineStatusText = ""
+    var hotkeyLabel = "Right ⌥ Option"
+}
+
+func computeStatus(_ i: StatusInputs) -> StatusInfo {
+    if i.micDenied {
+        return StatusInfo(text: "Microphone access is off — enable it in System Settings, Privacy & Security",
+                          color: .systemRed, needsAccessibility: false)
+    }
+    if !i.tapRunning {
+        if i.axTrusted {
+            if i.recentlyRelaunched {
+                return StatusInfo(text: "Permission granted but blocked — toggle Voice off and on in Accessibility settings",
+                                  color: .systemOrange, needsAccessibility: true)
+            }
+            return StatusInfo(text: "Permission granted — restarting Voice to apply it",
+                              color: .systemOrange, needsAccessibility: false)
+        }
+        return StatusInfo(text: "Grant Accessibility permission to enable the talk key. Already listed? Toggle Voice off and on.",
+                          color: .systemOrange, needsAccessibility: true)
+    }
+    if let p = i.setupProgress {
+        return StatusInfo(text: "Setting up — downloading the speech engine (\(Int(p * 100))%)",
+                          color: .systemOrange, needsAccessibility: false)
+    }
+    if i.setupFailed {
+        return StatusInfo(text: "Setup failed — check your connection and relaunch Voice",
+                          color: .systemRed, needsAccessibility: false)
+    }
+    guard i.engineExists else {
+        return StatusInfo(text: "Preparing", color: .systemOrange, needsAccessibility: false)
+    }
+    if i.engineReady {
+        return StatusInfo(text: "Ready — hold \(i.hotkeyLabel) and speak",
+                          color: .systemGreen, needsAccessibility: false)
+    }
+    if i.engineStatusText == "whisper-server not installed" {
+        return StatusInfo(text: "Speech engine missing — run: brew install whisper-cpp",
+                          color: .systemRed, needsAccessibility: false)
+    }
+    return StatusInfo(text: "Starting the speech engine",
+                      color: .systemOrange, needsAccessibility: false)
 }
 
 // MARK: - App delegate
@@ -120,43 +175,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func statusInfo() -> StatusInfo {
-        if AVCaptureDevice.authorizationStatus(for: .audio) == .denied {
-            return StatusInfo(text: "Microphone access is off — enable it in System Settings, Privacy & Security",
-                              color: .systemRed, needsAccessibility: false)
-        }
-        if !hotkeys.tapRunning {
-            if AXIsProcessTrusted() {
-                if recentlyAutoRelaunched {
-                    return StatusInfo(text: "Permission granted but blocked — toggle Voice off and on in Accessibility settings",
-                                      color: .systemOrange, needsAccessibility: true)
-                }
-                return StatusInfo(text: "Permission granted — restarting Voice to apply it",
-                                  color: .systemOrange, needsAccessibility: false)
-            }
-            return StatusInfo(text: "Grant Accessibility permission to enable the talk key. Already listed? Toggle Voice off and on.",
-                              color: .systemOrange, needsAccessibility: true)
-        }
-        if let p = setupProgress {
-            return StatusInfo(text: "Setting up — downloading the speech engine (\(Int(p * 100))%)",
-                              color: .systemOrange, needsAccessibility: false)
-        }
-        if setupFailed {
-            return StatusInfo(text: "Setup failed — check your connection and relaunch Voice",
-                              color: .systemRed, needsAccessibility: false)
-        }
-        guard let engine = engine else {
-            return StatusInfo(text: "Preparing", color: .systemOrange, needsAccessibility: false)
-        }
-        if engine.ready {
-            return StatusInfo(text: "Ready — hold \(Config.hotkey.label) and speak",
-                              color: .systemGreen, needsAccessibility: false)
-        }
-        if engine.statusText == "whisper-server not installed" {
-            return StatusInfo(text: "Speech engine missing — run: brew install whisper-cpp",
-                              color: .systemRed, needsAccessibility: false)
-        }
-        return StatusInfo(text: "Starting the speech engine",
-                          color: .systemOrange, needsAccessibility: false)
+        computeStatus(StatusInputs(
+            micDenied: AVCaptureDevice.authorizationStatus(for: .audio) == .denied,
+            tapRunning: hotkeys.tapRunning,
+            axTrusted: AXIsProcessTrusted(),
+            recentlyRelaunched: recentlyAutoRelaunched,
+            setupProgress: setupProgress,
+            setupFailed: setupFailed,
+            engineExists: engine != nil,
+            engineReady: engine?.ready ?? false,
+            engineStatusText: engine?.statusText ?? "",
+            hotkeyLabel: Config.hotkey.label))
     }
 
     func refreshUI() {
