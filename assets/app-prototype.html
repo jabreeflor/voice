@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice — App & Onboarding Prototype</title>
+<style>
+  :root {
+    --bg: #F7F4EC; --paper: #FFFDF6; --ink: #21201C;
+    --soft: rgba(33,32,28,.60); --faint: rgba(33,32,28,.36);
+    --line: rgba(33,32,28,.14); --dash: rgba(33,32,28,.18);
+    --lav: #E5D4F9; --lav-deep: #C9ABEE; --pillk: #16150F;
+    --green: #2F7A4C;
+    --serif: "New York", Georgia, "Times New Roman", serif;
+    --sans: -apple-system, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #D9D4C7; font-family: var(--sans); color: var(--ink);
+         display: flex; flex-direction: column; align-items: center; padding: 40px 16px 80px; }
+
+  /* prototype chrome */
+  .proto-bar { display: flex; gap: 8px; margin-bottom: 24px; align-items: center; }
+  .proto-bar span { font-size: 13px; color: rgba(0,0,0,.5); margin-right: 6px; }
+  .proto-btn { font: 600 13px var(--sans); padding: 8px 18px; border-radius: 999px;
+    border: 1.5px solid var(--ink); background: var(--paper); color: var(--ink); cursor: pointer; }
+  .proto-btn.active { background: var(--ink); color: #fff; }
+
+  .window { width: min(1040px, 96vw); height: 690px; background: var(--bg);
+    border-radius: 16px; box-shadow: 0 30px 80px rgba(0,0,0,.35);
+    overflow: hidden; position: relative; display: none; flex-direction: column; }
+  .window.visible { display: flex; }
+  .traffic { position: absolute; top: 17px; left: 16px; display: flex; gap: 8px; z-index: 9; }
+  .traffic i { width: 12px; height: 12px; border-radius: 50%; }
+  .traffic i:nth-child(1){ background:#FF5F57 } .traffic i:nth-child(2){ background:#FEBC2E }
+  .traffic i:nth-child(3){ background:#28C840 }
+
+  .serif { font-family: var(--serif); }
+
+  /* sticker pieces — the app's own identity */
+  .sticker { background: var(--paper); border: 1.5px solid var(--ink); border-radius: 16px;
+             box-shadow: 6px 6px 0 var(--lav-deep); }
+  .sticker-lav { background: var(--lav); border: 1.5px solid var(--ink); border-radius: 16px;
+                 box-shadow: 6px 6px 0 var(--ink); }
+  .cap-btn { font: 600 13.5px var(--sans); padding: 11px 24px; border-radius: 999px;
+    cursor: pointer; background: var(--ink); color: #fff; border: 1.5px solid var(--ink);
+    transition: transform .08s; }
+  .cap-btn:active { transform: translate(1px,1px); }
+  .cap-btn.lav { background: var(--lav); color: var(--ink); box-shadow: 3px 3px 0 var(--ink); }
+  .cap-btn.lav:active { box-shadow: 1px 1px 0 var(--ink); }
+  .cap-btn[disabled] { opacity: .3; cursor: default; }
+  .cap-btn.granted { background: var(--paper); color: var(--green); border-color: var(--green);
+                     box-shadow: none; cursor: default; }
+
+  .wave { display: flex; align-items: center; gap: 4px; }
+  .wave b { width: 4px; border-radius: 2px; background: currentColor; height: 8px; }
+  .wave.animated b { animation: bounce 1.1s ease-in-out infinite; }
+  .wave b:nth-child(1){ animation-delay:0s;   height: 6px; } .wave b:nth-child(2){ animation-delay:.12s; height: 12px; }
+  .wave b:nth-child(3){ animation-delay:.24s; height: 18px; } .wave b:nth-child(4){ animation-delay:.36s; height: 24px; }
+  .wave b:nth-child(5){ animation-delay:.48s; height: 16px; } .wave b:nth-child(6){ animation-delay:.6s;  height: 20px; }
+  .wave b:nth-child(7){ animation-delay:.72s; height: 10px; }
+  @keyframes bounce { 0%,100% { transform: scaleY(.5) } 50% { transform: scaleY(1.25) } }
+
+  .microcaps { font: 700 10.5px var(--sans); letter-spacing: 1.6px; text-transform: uppercase;
+               color: var(--faint); }
+
+  /* ══ ONBOARDING ══ */
+  #onboarding { align-items: center; justify-content: center; }
+  .stepno { position: absolute; top: 20px; right: 24px; font: 600 12px var(--mono);
+            color: var(--faint); }
+  .ob-step { display: none; flex-direction: column; align-items: center; text-align: center;
+             max-width: 500px; padding: 0 24px; }
+  .ob-step.visible { display: flex; }
+  .ob-cap { background: var(--pillk); color: #fff; border-radius: 999px; padding: 24px 42px;
+            margin-bottom: 34px; border: 1.5px solid var(--ink);
+            box-shadow: 8px 8px 0 var(--lav-deep); }
+  .ob-cap .wave b { width: 5px; }
+  .ob-step h1 { font-family: var(--serif); font-size: 42px; line-height: 1.1; margin-bottom: 14px; }
+  .ob-step h1 em { font-style: italic; }
+  .ob-step > p { color: var(--soft); font-size: 15px; line-height: 1.55; margin-bottom: 30px; }
+  .perm { width: 100%; padding: 16px 18px; margin-bottom: 16px;
+          display: flex; align-items: center; gap: 14px; text-align: left; }
+  .perm .glyph { width: 42px; height: 42px; border-radius: 12px; background: var(--lav);
+                 border: 1.5px solid var(--ink); display: flex; align-items: center;
+                 justify-content: center; flex: none; }
+  .perm .glyph svg { width: 20px; height: 20px; }
+  .perm .tx b { display: block; font-size: 14px; margin-bottom: 2px; }
+  .perm .tx small { color: var(--soft); font-size: 12.5px; line-height: 1.4; display: block; }
+  .perm .cap-btn { margin-left: auto; flex: none; padding: 8px 16px; font-size: 12px; }
+  .hk-row { display: flex; gap: 12px; margin-bottom: 28px; }
+  .hk { font: 600 14px var(--sans); padding: 16px 20px; border-radius: 14px; cursor: pointer;
+        background: var(--paper); border: 1.5px solid var(--line); min-width: 128px; }
+  .hk small { display: block; font-weight: 500; color: var(--soft); margin-top: 4px; font-size: 11px; }
+  .hk.sel { border-color: var(--ink); background: var(--lav); box-shadow: 4px 4px 0 var(--ink); }
+  .try-field { width: 100%; background: var(--paper); border: 1.5px solid var(--ink);
+    border-radius: 14px; padding: 16px 18px; font-size: 15px; text-align: left;
+    min-height: 84px; margin-bottom: 24px; box-shadow: 5px 5px 0 var(--lav-deep); }
+  .try-field .ph { color: var(--faint); }
+  .holdbtn { font: 600 14px var(--sans); padding: 14px 32px; border-radius: 999px;
+    cursor: pointer; background: var(--lav); border: 1.5px solid var(--ink);
+    box-shadow: 4px 4px 0 var(--ink); user-select: none; }
+  .holdbtn.holding { background: var(--pillk); color: #fff; box-shadow: 1px 1px 0 var(--ink); }
+  .progress { position: absolute; bottom: 0; left: 0; height: 4px; background: var(--ink);
+              transition: width .25s; }
+
+  /* ══ MAIN APP ══ */
+  .topbar { height: 62px; flex: none; border-bottom: 1.5px solid var(--ink);
+    display: flex; align-items: center; padding: 0 24px 0 96px; gap: 26px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: 14px; }
+  .brand .cap { background: var(--pillk); color: #fff; border-radius: 999px;
+                padding: 7px 12px; }
+  .brand .cap .wave b { width: 3px; }
+  .brand span { font-family: var(--serif); font-weight: 700; font-size: 20px; }
+  .tab { font: 600 13.5px var(--sans); color: var(--soft); background: none; border: none;
+    cursor: pointer; padding: 21px 2px 18px; border-bottom: 3px solid transparent; }
+  .tab.active { color: var(--ink); border-bottom-color: var(--ink); }
+  .top-spacer { flex: 1; }
+  .ready { display: flex; align-items: center; gap: 8px; font: 500 12.5px var(--sans);
+           color: var(--soft); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
+  .gear { background: none; border: none; cursor: pointer; color: var(--ink);
+          padding: 6px; border-radius: 8px; }
+  .gear:hover { background: rgba(33,32,28,.06); }
+  .gear svg { width: 17px; height: 17px; display: block; }
+  .gear.active { background: var(--lav); }
+
+  .main { flex: 1; overflow-y: auto; padding: 34px 44px 44px; }
+  .view { display: none; } .view.visible { display: block; }
+  .main h1 { font-family: var(--serif); font-size: 32px; margin-bottom: 20px; }
+
+  /* dictations */
+  .statrip { display: flex; gap: 14px; margin-bottom: 28px; align-items: stretch; }
+  .statchip { padding: 14px 20px; display: flex; flex-direction: column; gap: 2px; }
+  .statchip .n { font-family: var(--serif); font-size: 24px; font-weight: 700; }
+  .statchip .l { font-size: 11.5px; color: var(--soft); }
+  .livecap { margin-left: auto; background: var(--pillk); color: #fff; border-radius: 999px;
+    border: 1.5px solid var(--ink); box-shadow: 5px 5px 0 var(--lav-deep);
+    display: flex; align-items: center; gap: 14px; padding: 0 24px; }
+  .livecap span { font: 500 12.5px var(--sans); color: rgba(255,255,255,.7); }
+  .livecap kbd { font: 600 11.5px var(--sans); background: rgba(255,255,255,.15);
+                 padding: 1px 7px; border-radius: 6px; }
+  .ledger { padding: 4px 0; margin-bottom: 26px; }
+  .lrow { display: flex; gap: 18px; padding: 13px 20px; align-items: baseline;
+          position: relative; }
+  .lrow + .lrow { border-top: 1.5px dashed var(--dash); }
+  .lrow time { flex: none; width: 66px; font: 600 11px var(--mono); color: var(--faint); }
+  .lrow p { font-size: 13.5px; line-height: 1.5; }
+  .lrow .copy { position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+    opacity: 0; font: 600 11px var(--sans); background: var(--lav); border: 1.5px solid var(--ink);
+    border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+  .lrow:hover .copy { opacity: 1; }
+
+  /* snippets */
+  .snip-head { display: flex; align-items: center; justify-content: space-between;
+               margin-bottom: 22px; }
+  .snip-head h1 { margin: 0; }
+  .snip-promo { padding: 26px 28px; margin-bottom: 26px; }
+  .snip-promo h3 { font-family: var(--serif); font-size: 24px; font-weight: 600; margin-bottom: 6px; }
+  .snip-promo h3 em { font-style: italic; }
+  .snip-promo > p { font-size: 13px; color: var(--soft); margin-bottom: 18px; max-width: 520px; }
+  .ex { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .ex .say { font: italic 600 13px var(--serif); background: var(--paper);
+             border: 1.5px solid var(--ink); padding: 6px 14px; border-radius: 999px; }
+  .ex .arrow { font: 600 13px var(--mono); color: var(--soft); }
+  .ex .out { font: 12.5px var(--sans); background: var(--pillk); color: #fff;
+             padding: 7px 14px; border-radius: 999px; max-width: 420px;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slist { padding: 4px 0; }
+  .srow { display: flex; align-items: center; gap: 14px; padding: 13px 20px; position: relative; }
+  .srow + .srow, .snew + .srow { border-top: 1.5px dashed var(--dash); }
+  .srow .t { font: italic 600 13px var(--serif); background: var(--lav);
+             border: 1.5px solid var(--ink); padding: 4px 12px; border-radius: 999px; flex: none; }
+  .srow .arrow { font: 600 13px var(--mono); color: var(--faint); flex: none; }
+  .srow .x { font-size: 13px; color: var(--soft); white-space: nowrap; overflow: hidden;
+             text-overflow: ellipsis; }
+  .srow .del { position: absolute; right: 14px; opacity: 0; border: none; background: none;
+               color: var(--faint); cursor: pointer; font: 600 13px var(--sans); }
+  .srow:hover .del { opacity: 1; }
+  .snew { display: none; gap: 10px; padding: 14px 20px; }
+  .snew.visible { display: flex; }
+  .snew input { font: 13px var(--sans); border: 1.5px solid var(--ink); border-radius: 999px;
+                padding: 8px 14px; background: var(--paper); }
+  .snew input.trig { width: 150px; font-style: italic; font-family: var(--serif); }
+  .snew input.body { flex: 1; }
+
+  /* settings */
+  .set-card { padding: 6px 22px; margin-bottom: 20px; max-width: 560px; }
+  .set-row { display: flex; align-items: center; justify-content: space-between;
+             padding: 15px 0; font-size: 13.5px; }
+  .set-row + .set-row { border-top: 1.5px dashed var(--dash); }
+  .set-row select { font: 13px var(--sans); padding: 7px 12px; border-radius: 999px;
+                    border: 1.5px solid var(--ink); background: var(--paper); }
+  .switch { width: 40px; height: 23px; border-radius: 12px; background: var(--paper);
+            border: 1.5px solid var(--ink); position: relative; cursor: pointer; }
+  .switch i { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+              border-radius: 50%; background: var(--ink); transition: left .15s; }
+  .switch.on { background: var(--lav); } .switch.on i { left: 19px; }
+
+  /* floating dictation pill */
+  #pill { position: fixed; bottom: 34px; left: 50%;
+    transform: translateX(-50%) translateY(90px);
+    background: var(--pillk); border: 1px solid rgba(255,255,255,.18); color: #fff;
+    border-radius: 999px; padding: 13px 26px; transition: transform .18s; z-index: 50;
+    box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+  #pill.show { transform: translateX(-50%) translateY(0); }
+
+  .footnote { margin-top: 22px; font-size: 12.5px; color: rgba(0,0,0,.45); text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <span>Prototype:</span>
+  <button class="proto-btn active" id="pb-ob" onclick="showProto('onboarding')">1 &middot; Onboarding</button>
+  <button class="proto-btn" id="pb-app" onclick="showProto('app')">2 &middot; Main app</button>
+</div>
+
+<!-- ════════ ONBOARDING ════════ -->
+<div class="window visible" id="onboarding">
+  <div class="traffic"><i></i><i></i><i></i></div>
+  <div class="stepno" id="stepno">01 / 05</div>
+  <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+
+  <div class="ob-step visible" data-step="1">
+    <div class="ob-cap"><div class="wave animated"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+    <h1>Say it. <em>It's typed.</em></h1>
+    <p>Voice turns speech into text in any app on your Mac. It runs entirely on this
+       computer — no accounts, no subscriptions, and nothing you say ever leaves your machine.</p>
+    <button class="cap-btn" onclick="obGo(2)">Set up Voice</button>
+  </div>
+
+  <div class="ob-step" data-step="2">
+    <h1 style="font-size:32px">Two permissions, once</h1>
+    <p>Voice only listens while you hold the hotkey — never in the background.</p>
+    <div class="perm sticker">
+      <div class="glyph">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#21201C" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/></svg>
+      </div>
+      <div class="tx"><b>Microphone</b><small>To hear you while the hotkey is held.</small></div>
+      <button class="cap-btn lav" id="mic-chip" onclick="grant(this)">Allow</button>
+    </div>
+    <div class="perm sticker">
+      <div class="glyph">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#21201C" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+      </div>
+      <div class="tx"><b>Accessibility</b><small>To catch the hotkey anywhere and type at your cursor.</small></div>
+      <button class="cap-btn lav" id="ax-chip" onclick="grant(this)">Open Settings</button>
+    </div>
+    <button class="cap-btn" id="perm-next" disabled onclick="obGo(3)" style="margin-top:12px">Continue</button>
+  </div>
+
+  <div class="ob-step" data-step="3">
+    <h1 style="font-size:32px">Pick your talk key</h1>
+    <p>Hold it down to speak. Let go and your words are typed. Tap Esc to cancel.</p>
+    <div class="hk-row">
+      <button class="hk sel" onclick="pickHk(this)">Right &#8997;<small>recommended</small></button>
+      <button class="hk" onclick="pickHk(this)">Right &#8984;<small>alternative</small></button>
+      <button class="hk" onclick="pickHk(this)">fn<small>alternative</small></button>
+    </div>
+    <button class="cap-btn" onclick="obGo(4)">Continue</button>
+  </div>
+
+  <div class="ob-step" data-step="4">
+    <h1 style="font-size:32px">Take it for a spin</h1>
+    <p>Press and hold the button below — that's your talk key — say anything, then release.</p>
+    <div class="try-field" id="try-field"><span class="ph">Your words land here…</span></div>
+    <button class="holdbtn" id="holdbtn">Hold to talk</button>
+    <button class="cap-btn" id="try-next" disabled onclick="obGo(5)" style="margin-top:26px">Continue</button>
+  </div>
+
+  <div class="ob-step" data-step="5">
+    <div class="ob-cap" style="padding:20px 34px"><span class="serif" style="font-size:26px; font-style:italic">done</span></div>
+    <h1 style="font-size:36px">That's the whole app.</h1>
+    <p>Voice waits in your menu bar. Hold <b>Right &#8997;</b> in any app to dictate,
+       and come back here for your dictation history and snippets.</p>
+    <button class="cap-btn" onclick="showProto('app')">Open Voice</button>
+  </div>
+
+  </div>
+  <div class="progress" id="progress" style="width:20%"></div>
+</div>
+
+<!-- ════════ MAIN APP ════════ -->
+<div class="window" id="app">
+  <div class="traffic"><i></i><i></i><i></i></div>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="cap"><div class="wave"><b></b><b></b><b></b><b></b></div></div>
+      <span>Voice</span>
+    </div>
+    <button class="tab active" data-view="dictations" onclick="nav(this)">Dictations</button>
+    <button class="tab" data-view="snippets" onclick="nav(this)">Snippets</button>
+    <div class="top-spacer"></div>
+    <button class="gear" data-view="settings" onclick="nav(this)" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
+    </button>
+  </div>
+
+  <div class="main">
+    <!-- dictations -->
+    <div class="view visible" id="view-dictations">
+      <h1>Dictations</h1>
+      <div class="statrip">
+        <div class="statchip sticker"><span class="n">1,412</span><span class="l">words spoken</span></div>
+        <div class="statchip sticker"><span class="n">142</span><span class="l">words per minute</span></div>
+        <div class="statchip sticker"><span class="n">1.1s</span><span class="l">average latency</span></div>
+        <div class="livecap">
+          <div class="wave animated"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+          <span>Hold <kbd>Right &#8997;</kbd> anywhere</span>
+        </div>
+      </div>
+
+      <div class="microcaps" style="margin-bottom:10px">Today</div>
+      <div class="ledger sticker">
+        <div class="lrow"><time>7:31 PM</time><p>Well, now that's pretty nice.</p><button class="copy">Copy</button></div>
+        <div class="lrow"><time>7:28 PM</time><p>Can we change the coloring from the app from the used cream color to something else that's cream colored?</p><button class="copy">Copy</button></div>
+        <div class="lrow"><time>6:58 PM</time><p>Do we have running in the pipeline? Do we have any of the tests? What tests do we have for all the repos running the pipeline?</p><button class="copy">Copy</button></div>
+        <div class="lrow"><time>6:55 PM</time><p>I know I will have to address PR number six. I'll get to that, but I'm trying to see what else I can do.</p><button class="copy">Copy</button></div>
+      </div>
+
+      <div class="microcaps" style="margin-bottom:10px">Yesterday</div>
+      <div class="ledger sticker">
+        <div class="lrow"><time>4:12 PM</time><p>Draft a follow-up about the launch timeline and send it before the end of day.</p><button class="copy">Copy</button></div>
+        <div class="lrow"><time>11:40 AM</time><p>Remind me to review the design doc after standup tomorrow.</p><button class="copy">Copy</button></div>
+      </div>
+    </div>
+
+    <!-- snippets -->
+    <div class="view" id="view-snippets">
+      <div class="snip-head">
+        <h1>Snippets</h1>
+        <button class="cap-btn" onclick="toggleNew(true)">+ New snippet</button>
+      </div>
+
+      <div class="snip-promo sticker-lav">
+        <h3>Your voice, <em>abbreviated.</em></h3>
+        <p>Save the things you re-type constantly. Say the trigger while dictating and
+           Voice swaps in the full text before it lands.</p>
+        <div class="ex"><span class="say">"my email"</span><span class="arrow">&rarr;</span><span class="out">jabreenicholas@gmail.com</span></div>
+        <div class="ex"><span class="say">"my calendar"</span><span class="arrow">&rarr;</span><span class="out">https://cal.com/jabree/30min</span></div>
+        <div class="ex"><span class="say">"standup"</span><span class="arrow">&rarr;</span><span class="out">Yesterday: &hellip; Today: &hellip; Blockers: none</span></div>
+      </div>
+
+      <div class="slist sticker" id="slist">
+        <div class="snew" id="snew">
+          <input class="trig" placeholder="trigger" id="new-trig">
+          <input class="body" placeholder="Text to insert&hellip;" id="new-body">
+          <button class="cap-btn" style="padding:8px 18px" onclick="addSnippet()">Save</button>
+        </div>
+        <div class="srow"><span class="t">"my email"</span><span class="arrow">&rarr;</span><span class="x">jabreenicholas@gmail.com</span><button class="del" onclick="delRow(this)">&#10005;</button></div>
+        <div class="srow"><span class="t">"my github"</span><span class="arrow">&rarr;</span><span class="x">https://github.com/jabreeflor</span><button class="del" onclick="delRow(this)">&#10005;</button></div>
+        <div class="srow"><span class="t">"standup"</span><span class="arrow">&rarr;</span><span class="x">Yesterday: &hellip; Today: &hellip; Blockers: none</span><button class="del" onclick="delRow(this)">&#10005;</button></div>
+      </div>
+    </div>
+
+    <!-- settings -->
+    <div class="view" id="view-settings">
+      <h1>Settings</h1>
+      <div class="set-card sticker">
+        <div class="set-row"><span>Talk key</span>
+          <select><option>Hold Right &#8997; Option</option><option>Hold Right &#8984; Command</option><option>Hold fn</option></select></div>
+        <div class="set-row"><span>Sound effects</span>
+          <button class="switch on" onclick="this.classList.toggle('on')"><i></i></button></div>
+        <div class="set-row"><span>Start at login</span>
+          <button class="switch" onclick="this.classList.toggle('on')"><i></i></button></div>
+        <div class="set-row"><span>Microphone check</span>
+          <button class="cap-btn lav" style="padding:8px 16px; font-size:12px" onclick="pillDemo()">Run 3-second test</button></div>
+      </div>
+      <p style="font-size:12px; color:var(--faint); max-width:520px">
+        Voice is open source on your machine — models live in ~/thevoice/models and
+        everything is processed locally.</p>
+    </div>
+  </div>
+</div>
+
+<div id="pill"><div class="wave animated"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+
+<p class="footnote">Interactive prototype — nothing is wired to the real engine yet.<br>
+Approve the flow and layout, and it gets implemented natively in Voice.app.</p>
+
+<script>
+  function showProto(which) {
+    document.getElementById('onboarding').classList.toggle('visible', which === 'onboarding');
+    document.getElementById('app').classList.toggle('visible', which === 'app');
+    document.getElementById('pb-ob').classList.toggle('active', which === 'onboarding');
+    document.getElementById('pb-app').classList.toggle('active', which === 'app');
+  }
+
+  function obGo(n) {
+    document.querySelectorAll('.ob-step').forEach(s =>
+      s.classList.toggle('visible', s.dataset.step == n));
+    document.getElementById('stepno').textContent = '0' + n + ' / 05';
+    document.getElementById('progress').style.width = (n * 20) + '%';
+  }
+  function grant(chip) {
+    chip.textContent = 'Granted';
+    chip.classList.remove('lav');
+    chip.classList.add('granted');
+    const both = document.getElementById('mic-chip').classList.contains('granted')
+              && document.getElementById('ax-chip').classList.contains('granted');
+    document.getElementById('perm-next').disabled = !both;
+  }
+  function pickHk(el) {
+    document.querySelectorAll('.hk').forEach(h => h.classList.remove('sel'));
+    el.classList.add('sel');
+  }
+
+  const holdbtn = document.getElementById('holdbtn');
+  const pill = document.getElementById('pill');
+  let typeTimer;
+  function startHold(e) { e.preventDefault();
+    holdbtn.classList.add('holding'); holdbtn.textContent = 'Listening…';
+    pill.classList.add('show');
+  }
+  function endHold() {
+    if (!holdbtn.classList.contains('holding')) return;
+    holdbtn.classList.remove('holding'); holdbtn.textContent = 'Hold to talk';
+    pill.classList.remove('show');
+    const f = document.getElementById('try-field');
+    f.innerHTML = ''; const txt = 'Typing at the speed of speech.'; let i = 0;
+    typeTimer = setInterval(() => {
+      f.textContent = txt.slice(0, ++i);
+      if (i >= txt.length) { clearInterval(typeTimer);
+        document.getElementById('try-next').disabled = false; }
+    }, 24);
+  }
+  holdbtn.addEventListener('mousedown', startHold);
+  holdbtn.addEventListener('touchstart', startHold);
+  window.addEventListener('mouseup', endHold);
+  window.addEventListener('touchend', endHold);
+
+  function nav(btn) {
+    document.querySelectorAll('.tab, .gear').forEach(n => n.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v =>
+      v.classList.toggle('visible', v.id === 'view-' + btn.dataset.view));
+  }
+
+  function toggleNew(show) {
+    document.getElementById('snew').classList.toggle('visible', show);
+    if (show) document.getElementById('new-trig').focus();
+  }
+  function addSnippet() {
+    const t = document.getElementById('new-trig').value.trim().replace(/^"|"$/g, '');
+    const b = document.getElementById('new-body').value.trim();
+    if (!t || !b) return;
+    const row = document.createElement('div');
+    row.className = 'srow';
+    row.innerHTML = '<span class="t"></span><span class="arrow">&rarr;</span>' +
+      '<span class="x"></span><button class="del" onclick="delRow(this)">&#10005;</button>';
+    row.querySelector('.t').textContent = '"' + t + '"';
+    row.querySelector('.x').textContent = b;
+    document.getElementById('slist').appendChild(row);
+    document.getElementById('new-trig').value = ''; document.getElementById('new-body').value = '';
+    toggleNew(false);
+  }
+  function delRow(btn) { btn.closest('.srow').remove(); }
+
+  function pillDemo() {
+    pill.classList.add('show');
+    setTimeout(() => pill.classList.remove('show'), 3000);
+  }
+</script>
+</body>
+</html>

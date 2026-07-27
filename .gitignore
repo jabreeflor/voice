@@ -1,0 +1,9 @@
+# Build output
+Voice.app/
+TheVoice.app/
+
+# Whisper models — downloaded on first run, too big for git
+models/
+
+# macOS
+.DS_Store

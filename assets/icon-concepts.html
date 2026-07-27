@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice — App Icon Concepts</title>
+<style>
+  :root {
+    --bg: #f7f4ec; --ink: #21201c; --soft: rgba(33,32,28,.62);
+    --card: #fffdf8; --line: rgba(33,32,28,.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #191813; --ink: #f3efe4; --soft: rgba(243,239,228,.6);
+            --card: #211f19; --line: rgba(243,239,228,.14); }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, system-ui, sans-serif;
+    padding: 48px 32px 80px; max-width: 1080px; margin: 0 auto;
+  }
+  h1 { font-family: "New York", Georgia, serif; font-size: 40px; margin-bottom: 6px; }
+  .sub { color: var(--soft); margin-bottom: 36px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+  .tile {
+    background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+    padding: 24px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .big { width: 144px; height: 144px; align-self: center;
+         filter: drop-shadow(0 10px 18px rgba(0,0,0,.18)); }
+  .sizes { display: flex; align-items: flex-end; gap: 14px; justify-content: center; }
+  .s64 { width: 64px; height: 64px; } .s48 { width: 48px; height: 48px; }
+  .s32 { width: 32px; height: 32px; }
+  .name { font-family: "New York", Georgia, serif; font-size: 19px; font-weight: 600; }
+  .tag  { display:inline-block; font-size: 11px; font-weight:600; letter-spacing:.4px;
+          text-transform: uppercase; color: var(--soft); }
+  .desc { color: var(--soft); font-size: 13px; }
+  .current { outline: 2px solid var(--ink); }
+  footer { margin-top: 42px; color: var(--soft); font-size: 14px; text-align:center; }
+  kbd { background: var(--card); border:1px solid var(--line); border-radius:6px; padding:1px 7px; }
+</style>
+</head>
+<body>
+
+<h1>Voice — icon concepts</h1>
+<p class="sub">Nine directions at Dock sizes. Pick one (or mix — “D but with C’s colors”) and it ships as the real .icns.</p>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="gPeach" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD9B4"/><stop offset="1" stop-color="#F6EFE0"/>
+    </linearGradient>
+    <linearGradient id="gViolet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8265F2"/><stop offset="1" stop-color="#241E56"/>
+    </linearGradient>
+    <linearGradient id="gInk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#26251d"/><stop offset="1" stop-color="#121109"/>
+    </linearGradient>
+
+    <!-- A · Current: ivory + black capsule -->
+    <symbol id="icA" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="115" fill="#F7F4EC"/>
+      <rect x="82" y="179" width="348" height="154" rx="77" fill="#16150F"/>
+      <g fill="#fff">
+        <rect x="130" y="241" width="14" height="30" rx="7"/><rect x="160" y="228" width="14" height="56" rx="7"/>
+        <rect x="190" y="217" width="14" height="78" rx="7"/><rect x="220" y="208" width="14" height="96" rx="7"/>
+        <rect x="250" y="224" width="14" height="63" rx="7"/><rect x="280" y="214" width="14" height="84" rx="7"/>
+        <rect x="310" y="233" width="14" height="46" rx="7"/><rect x="340" y="222" width="14" height="67" rx="7"/>
+        <rect x="370" y="239" width="14" height="34" rx="7"/>
+      </g>
+    </symbol>
+
+    <!-- B · Ink: dark, outlined capsule -->
+    <symbol id="icB" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="115" fill="url(#gInk)"/>
+      <rect x="86" y="183" width="340" height="146" rx="73" fill="none" stroke="#F3EFE2" stroke-width="10"/>
+      <g fill="#F3EFE2">
+        <rect x="134" y="241" width="13" height="30" rx="6.5"/><rect x="163" y="229" width="13" height="54" rx="6.5"/>
+        <rect x="192" y="219" width="13" height="74" rx="6.5"/><rect x="221" y="211" width="13" height="90" rx="6.5"/>
+        <rect x="250" y="226" width="13" height="60" rx="6.5"/><rect x="279" y="216" width="13" height="80" rx="6.5"/>
+        <rect x="308" y="234" width="13" height="44" rx="6.5"/><rect x="337" y="224" width="13" height="64" rx="6.5"/>
+        <rect x="366" y="240" width="13" height="32" rx="6.5"/>
+      </g>
+    </symbol>
+
+    <!-- C · Lavender pop -->
+    <symbol id="icC" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="115" fill="#E5D4F9"/>
+      <rect x="82" y="179" width="348" height="154" rx="77" fill="#1C1B15"/>
+      <g fill="#fff">
+        <rect x="130" y="241" width="14" height="30" rx="7"/><rect x="160" y="228" width="14" height="56" rx="7"/>
+        <rect x="190" y="217" width="14" height="78" rx="7"/><rect x="220" y="208" width="14" height="96" rx="7"/>
+        <rect x="250" y="224" width="14" height="63" rx="7"/><rect x="280" y="214" width="14" height="84" rx="7"/>
+        <rect x="310" y="233" width="14" height="46" rx="7"/><rect x="340" y="222" width="14" height="67" rx="7"/>
+        <rect x="370" y="239" width="14" height="34" rx="7"/>
+      </g>
+    </symbol>
+
+    <!-- D · Forest: deep green, bare cream bars -->
+    <symbol id="icD" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="115" fill="#27544A"/>
+      <g fill="#F3EFE2">
+        <rect x="130" y="211" width="24" height="90"  rx="12"/>
+        <rect x="182" y="181" width="24" height="150" rx="12"/>
+        <rect x="234" y="146" width="24" height="220" rx="12"/>
+        <rect x="286" y="116" width="24" height="280" rx="12"/>
+        <rect x="338" y="166" width="24" height="180" rx="12"/>
+        <rect x="390" y="136" width="24" height="240" rx="12"/>
+      </g>
+    </symbol>
+
+    <!-- E · Peach mic -->
+    <symbol id="icE" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="115" fill="url(#gPeach)"/>
+      <rect x="216" y="104" width="80" height="176" rx="40" fill="#21201C"/>
+      <path d="M156 244 a100 100 0 0 0 200 0" fill="none" stroke="#21201C" stroke-width="30" stroke-linecap="round"/>
+      <line x1="256" y1="344" x2="256" y2="398" stroke="#21201C" stroke-width="30" stroke-linecap="round"/>
+      <line x1="196" y1="398" x2="316" y2="398" stroke="#21201C" stroke-width="30" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- F · Serif monogram -->
+    <symbol id="icF" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="115" fill="#F7F4EC"/>
+      <text x="256" y="338" font-family="New York, Georgia, 'Times New Roman', serif"
+            font-size="330" font-weight="700" text-anchor="middle" fill="#21201C">V</text>
+      <g fill="#9F7BE0">
+        <rect x="196" y="396" width="10" height="26" rx="5"/><rect x="218" y="388" width="10" height="42" rx="5"/>
+        <rect x="240" y="380" width="10" height="58" rx="5"/><rect x="262" y="388" width="10" height="42" rx="5"/>
+        <rect x="284" y="394" width="10" height="30" rx="5"/><rect x="306" y="400" width="10" height="18" rx="5"/>
+      </g>
+    </symbol>
+
+    <!-- G · Speech bubble -->
+    <symbol id="icG" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="115" fill="#F7F4EC"/>
+      <rect x="96" y="132" width="320" height="204" rx="62" fill="#21201C"/>
+      <path d="M166 318 L238 318 L146 408 Z" fill="#21201C"/>
+      <g fill="#fff">
+        <rect x="162" y="216" width="14" height="40" rx="7"/><rect x="192" y="203" width="14" height="66" rx="7"/>
+        <rect x="222" y="191" width="14" height="90" rx="7"/><rect x="252" y="181" width="14" height="110" rx="7"/>
+        <rect x="282" y="199" width="14" height="74" rx="7"/><rect x="312" y="188" width="14" height="96" rx="7"/>
+        <rect x="342" y="210" width="14" height="52" rx="7"/>
+      </g>
+    </symbol>
+
+    <!-- H · Sticker: outlined capsule w/ lavender offset -->
+    <symbol id="icH" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="115" fill="#F7F4EC"/>
+      <rect x="104" y="196" width="344" height="150" rx="75" fill="#C9ABEE"/>
+      <rect x="80"  y="172" width="344" height="150" rx="75" fill="#FFFDF6" stroke="#21201C" stroke-width="13"/>
+      <g fill="#21201C">
+        <rect x="128" y="232" width="14" height="30" rx="7"/><rect x="158" y="219" width="14" height="56" rx="7"/>
+        <rect x="188" y="208" width="14" height="78" rx="7"/><rect x="218" y="199" width="14" height="96" rx="7"/>
+        <rect x="248" y="215" width="14" height="63" rx="7"/><rect x="278" y="205" width="14" height="84" rx="7"/>
+        <rect x="308" y="224" width="14" height="46" rx="7"/><rect x="338" y="213" width="14" height="67" rx="7"/>
+        <rect x="368" y="230" width="14" height="34" rx="7"/>
+      </g>
+    </symbol>
+
+    <!-- I · Violet gradient (original v1 vibe) -->
+    <symbol id="icI" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="115" fill="url(#gViolet)"/>
+      <g fill="#fff">
+        <rect x="118" y="221" width="24" height="70"  rx="12"/>
+        <rect x="170" y="191" width="24" height="130" rx="12"/>
+        <rect x="222" y="151" width="24" height="210" rx="12"/>
+        <rect x="274" y="121" width="24" height="270" rx="12"/>
+        <rect x="326" y="171" width="24" height="170" rx="12"/>
+        <rect x="378" y="206" width="24" height="100" rx="12"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="grid">
+  <div class="tile current">
+    <svg class="big"><use href="#icA"/></svg>
+    <div class="sizes"><svg class="s64"><use href="#icA"/></svg><svg class="s48"><use href="#icA"/></svg><svg class="s32"><use href="#icA"/></svg></div>
+    <div><span class="tag">A · current</span><div class="name">Ivory Capsule</div>
+    <div class="desc">What's shipping today — ivory squircle, black waveform pill.</div></div>
+  </div>
+
+  <div class="tile">
+    <svg class="big"><use href="#icB"/></svg>
+    <div class="sizes"><svg class="s64"><use href="#icB"/></svg><svg class="s48"><use href="#icB"/></svg><svg class="s32"><use href="#icB"/></svg></div>
+    <div><span class="tag">B</span><div class="name">Ink</div>
+    <div class="desc">Inverted: near-black with a cream outlined capsule. Moody, great in dark Docks.</div></div>
+  </div>
+
+  <div class="tile">
+    <svg class="big"><use href="#icC"/></svg>
+    <div class="sizes"><svg class="s64"><use href="#icC"/></svg><svg class="s48"><use href="#icC"/></svg><svg class="s32"><use href="#icC"/></svg></div>
+    <div><span class="tag">C</span><div class="name">Lavender Pop</div>
+    <div class="desc">The accent color goes full-bleed. Most eye-catching in a crowded Dock.</div></div>
+  </div>
+
+  <div class="tile">
+    <svg class="big"><use href="#icD"/></svg>
+    <div class="sizes"><svg class="s64"><use href="#icD"/></svg><svg class="s48"><use href="#icD"/></svg><svg class="s32"><use href="#icD"/></svg></div>
+    <div><span class="tag">D</span><div class="name">Forest</div>
+    <div class="desc">Deep green with bare cream bars — no capsule. Calm and organic.</div></div>
+  </div>
+
+  <div class="tile">
+    <svg class="big"><use href="#icE"/></svg>
+    <div class="sizes"><svg class="s64"><use href="#icE"/></svg><svg class="s48"><use href="#icE"/></svg><svg class="s32"><use href="#icE"/></svg></div>
+    <div><span class="tag">E</span><div class="name">Peach Mic</div>
+    <div class="desc">A literal microphone on a warm peach fade. Instantly reads as “dictation.”</div></div>
+  </div>
+
+  <div class="tile">
+    <svg class="big"><use href="#icF"/></svg>
+    <div class="sizes"><svg class="s64"><use href="#icF"/></svg><svg class="s48"><use href="#icF"/></svg><svg class="s32"><use href="#icF"/></svg></div>
+    <div><span class="tag">F</span><div class="name">Serif Monogram</div>
+    <div class="desc">Editorial “V” with a small lavender wave. Quietest, most “designer” option.</div></div>
+  </div>
+
+  <div class="tile">
+    <svg class="big"><use href="#icG"/></svg>
+    <div class="sizes"><svg class="s64"><use href="#icG"/></svg><svg class="s48"><use href="#icG"/></svg><svg class="s32"><use href="#icG"/></svg></div>
+    <div><span class="tag">G</span><div class="name">Speech Bubble</div>
+    <div class="desc">Voice becoming text — a talking bubble full of waveform.</div></div>
+  </div>
+
+  <div class="tile">
+    <svg class="big"><use href="#icH"/></svg>
+    <div class="sizes"><svg class="s64"><use href="#icH"/></svg><svg class="s48"><use href="#icH"/></svg><svg class="s32"><use href="#icH"/></svg></div>
+    <div><span class="tag">H</span><div class="name">Sticker</div>
+    <div class="desc">Neo-brutalist: bold outline, lavender drop shadow. Playful, hand-made feel.</div></div>
+  </div>
+
+  <div class="tile">
+    <svg class="big"><use href="#icI"/></svg>
+    <div class="sizes"><svg class="s64"><use href="#icI"/></svg><svg class="s48"><use href="#icI"/></svg><svg class="s32"><use href="#icI"/></svg></div>
+    <div><span class="tag">I</span><div class="name">Violet Gradient</div>
+    <div class="desc">The very first icon's vibe — saturated violet, big white bars.</div></div>
+  </div>
+</div>
+
+<footer>Tell Claude a letter — e.g. <kbd>“ship D”</kbd> or <kbd>“B but lavender bars”</kbd> — and it becomes the app icon.</footer>
+
+</body>
+</html>
