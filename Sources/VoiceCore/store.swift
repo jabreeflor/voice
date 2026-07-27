@@ -24,19 +24,24 @@ struct DictationEntry: Codable, Equatable {
 final class HistoryStore {
     private(set) var entries: [DictationEntry] = []
     private let limit = 300
-    private var fileURL: URL { Store.dir.appendingPathComponent("history.json") }
+    private let directory: URL
+    private let defaults: UserDefaults
+    private var fileURL: URL { directory.appendingPathComponent("history.json") }
 
     /// Bumped on every mutation so views know when to rebuild.
     private(set) var stamp = 0
 
-    init() {
+    init(directory: URL = Store.dir, defaults: UserDefaults = .standard) {
+        self.directory = directory
+        self.defaults = defaults
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         load()
         migrateLegacy()
     }
 
     var totalWords: Int {
-        get { UserDefaults.standard.integer(forKey: "wordsTotal") }
-        set { UserDefaults.standard.set(newValue, forKey: "wordsTotal") }
+        get { defaults.integer(forKey: "wordsTotal") }
+        set { defaults.set(newValue, forKey: "wordsTotal") }
     }
 
     var averageWPM: Int {
@@ -48,7 +53,7 @@ final class HistoryStore {
     }
 
     var averageLatency: Double {
-        let timed = entries.prefix(50).filter { $0.latency > 0 }
+        let timed = entries.filter { $0.latency > 0 }.prefix(50)
         guard !timed.isEmpty else { return 0 }
         return timed.reduce(0.0) { $0 + $1.latency } / Double(timed.count)
     }
@@ -95,7 +100,7 @@ final class HistoryStore {
 
     /// Import the plain-string history from earlier builds, once.
     private func migrateLegacy() {
-        guard let old = UserDefaults.standard.stringArray(forKey: "history"), !old.isEmpty else { return }
+        guard let old = defaults.stringArray(forKey: "history"), !old.isEmpty else { return }
         let now = Date()
         for (i, text) in old.enumerated() {
             entries.append(DictationEntry(text: text,
@@ -103,7 +108,7 @@ final class HistoryStore {
                                           duration: 0, latency: 0))
             totalWords += text.split(separator: " ").count
         }
-        UserDefaults.standard.removeObject(forKey: "history")
+        defaults.removeObject(forKey: "history")
         stamp += 1
         save()
     }
@@ -118,10 +123,15 @@ struct Snippet: Codable, Equatable {
 
 final class SnippetStore {
     private(set) var snippets: [Snippet] = []
-    private var fileURL: URL { Store.dir.appendingPathComponent("snippets.json") }
+    private let directory: URL
+    private var fileURL: URL { directory.appendingPathComponent("snippets.json") }
     private(set) var stamp = 0
 
-    init() { load() }
+    init(directory: URL = Store.dir) {
+        self.directory = directory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        load()
+    }
 
     func add(trigger: String, text: String) {
         let t = trigger.trimmingCharacters(in: CharacterSet(charactersIn: "\" ")).lowercased()
@@ -151,7 +161,11 @@ final class SnippetStore {
             if whole.compare(s.trigger, options: .caseInsensitive) == .orderedSame {
                 return s.text
             }
-            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: s.trigger) + "\\b"
+            // Lookarounds instead of \b: a \b after a symbol like "+" needs a
+            // word character to follow, so triggers such as "c++" would never
+            // match mid-sentence. (?<!\w)…(?!\w) behaves like \b for word-edged
+            // triggers and still bounds symbol-edged ones.
+            let pattern = "(?<!\\w)" + NSRegularExpression.escapedPattern(for: s.trigger) + "(?!\\w)"
             out = out.replacingOccurrences(
                 of: pattern,
                 with: NSRegularExpression.escapedTemplate(for: s.text),

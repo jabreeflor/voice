@@ -18,6 +18,7 @@ struct StatusInputs {
     var tapRunning = true
     var axTrusted = true
     var recentlyRelaunched = false
+    var onboardingVisible = false
     var setupProgress: Double? = nil
     var setupFailed = false
     var engineExists = true
@@ -36,6 +37,12 @@ func computeStatus(_ i: StatusInputs) -> StatusInfo {
             if i.recentlyRelaunched {
                 return StatusInfo(text: "Permission granted but blocked — toggle Voice off and on in Accessibility settings",
                                   color: .systemOrange, needsAccessibility: true)
+            }
+            // The auto-relaunch is suppressed while onboarding is on screen,
+            // so don't promise a restart that won't happen until it closes.
+            if i.onboardingVisible {
+                return StatusInfo(text: "Permission granted — Voice will finish applying it when setup closes",
+                                  color: .systemOrange, needsAccessibility: false)
             }
             return StatusInfo(text: "Permission granted — restarting Voice to apply it",
                               color: .systemOrange, needsAccessibility: false)
@@ -180,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tapRunning: hotkeys.tapRunning,
             axTrusted: AXIsProcessTrusted(),
             recentlyRelaunched: recentlyAutoRelaunched,
+            onboardingVisible: onboarding?.isVisible == true,
             setupProgress: setupProgress,
             setupFailed: setupFailed,
             engineExists: engine != nil,

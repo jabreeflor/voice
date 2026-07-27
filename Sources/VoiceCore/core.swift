@@ -309,8 +309,12 @@ final class WhisperEngine {
     private(set) var statusText = "starting…"
     var onStatusChange: (() -> Void)?
     let modelURL: URL?
+    let port: UInt16
 
-    init(modelURL: URL?) { self.modelURL = modelURL }
+    init(modelURL: URL?, port: UInt16 = Config.serverPort) {
+        self.modelURL = modelURL
+        self.port = port
+    }
 
     static func findBinary(_ name: String) -> String? {
         let candidates = [
@@ -335,7 +339,7 @@ final class WhisperEngine {
         p.arguments = [
             "-m", model.path,
             "--host", "127.0.0.1",
-            "--port", String(Config.serverPort),
+            "--port", String(port),
             "-t", String(max(4, ProcessInfo.processInfo.activeProcessorCount - 2)),
             "-bs", "1",   // greedy decoding — ~2x faster than beam search
             "-nf",        // no temperature fallback — kills worst-case retries
@@ -357,8 +361,8 @@ final class WhisperEngine {
     }
 
     private func pollUntilReady() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let url = URL(string: "http://127.0.0.1:\(Config.serverPort)/")!
+        DispatchQueue.global(qos: .utility).async { [weak self, port] in
+            let url = URL(string: "http://127.0.0.1:\(port)/")!
             for _ in 0..<120 {
                 guard let self = self else { return }
                 if self.process?.isRunning != true { return }
@@ -381,7 +385,13 @@ final class WhisperEngine {
                 }
                 Thread.sleep(forTimeInterval: 0.3)
             }
-            self?.setStatus("engine did not start")
+            // Give up: kill the child too, or a late-binding server would be
+            // left running untracked, squatting on the port forever.
+            if let self = self {
+                self.process?.terminate()
+                self.process = nil
+                self.setStatus("engine did not start")
+            }
         }
     }
 
@@ -408,7 +418,7 @@ final class WhisperEngine {
 
     private func transcribeViaServer(wav: Data, completion: @escaping (Result<String, Error>) -> Void) {
         let boundary = "TheVoiceBoundary7f3a9c"
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(Config.serverPort)/inference")!)
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/inference")!)
         req.httpMethod = "POST"
         req.timeoutInterval = 120
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
