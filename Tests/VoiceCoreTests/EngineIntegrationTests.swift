@@ -169,11 +169,10 @@ final class EngineIntegrationTests: XCTestCase {
 
         // Budget observed ~0.3s warm on Apple Silicon; 5s is the local bar.
         // GitHub's shared macOS VMs run whisper ~50x slower (measured 11-12s
-        // for 2.5s of audio), so under CI the budget only guards against
-        // hangs, not regressions — real latency is asserted on developer
-        // machines.
+        // for 2.5s of audio). CI uses a tighter hang/regression ceiling than
+        // the old 60s guard so large slowdowns still fail.
         let isCI = ProcessInfo.processInfo.environment["CI"] != nil
-        let budget: TimeInterval = isCI ? 60.0 : 5.0
+        let budget: TimeInterval = isCI ? 25.0 : 5.0
         var elapsed: TimeInterval = 0
         for attempt in 1...3 {
             let start = Date()

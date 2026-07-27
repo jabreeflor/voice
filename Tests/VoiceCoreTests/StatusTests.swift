@@ -15,6 +15,7 @@ final class StatusTests: XCTestCase {
         tapRunning: Bool = true,
         axTrusted: Bool = true,
         recentlyRelaunched: Bool = false,
+        onboardingVisible: Bool = false,
         setupProgress: Double? = nil,
         setupFailed: Bool = false,
         engineExists: Bool = true,
@@ -27,6 +28,7 @@ final class StatusTests: XCTestCase {
             tapRunning: tapRunning,
             axTrusted: axTrusted,
             recentlyRelaunched: recentlyRelaunched,
+            onboardingVisible: onboardingVisible,
             setupProgress: setupProgress,
             setupFailed: setupFailed,
             engineExists: engineExists,
@@ -93,6 +95,23 @@ final class StatusTests: XCTestCase {
         assertContains(s, "restarting Voice")
         XCTAssertEqual(s.color, .systemOrange)
         XCTAssertFalse(s.needsAccessibility)
+    }
+
+    func testTrustedDuringOnboardingSaysSetupWillFinishWhenItCloses() {
+        let s = computeStatus(inputs(tapRunning: false, axTrusted: true,
+                                     recentlyRelaunched: false, onboardingVisible: true))
+        XCTAssertEqual(s.text,
+                       "Permission granted — Voice will finish applying it when setup closes")
+        XCTAssertEqual(s.color, .systemOrange)
+        XCTAssertFalse(s.needsAccessibility)
+    }
+
+    func testRecentlyRelaunchedBeatsOnboardingVisible() {
+        let s = computeStatus(inputs(tapRunning: false, axTrusted: true,
+                                     recentlyRelaunched: true, onboardingVisible: true))
+        assertContains(s, "Permission granted but blocked")
+        assertContains(s, "toggle Voice off and on")
+        XCTAssertTrue(s.needsAccessibility)
     }
 
     func testNotTrustedAsksToGrantPermission() {

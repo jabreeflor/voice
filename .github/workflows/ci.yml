@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -17,6 +20,8 @@ jobs:
 
     env:
       MODEL_FILE: ggml-base.en.bin
+      # SHA-256 from https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-base.en.bin
+      MODEL_SHA256: a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
 
     steps:
       - uses: actions/checkout@v4
@@ -39,14 +44,13 @@ jobs:
           whisper-server --help 2>&1 | head -3 || true
 
       # Cached at the path Config.findModel() actually searches, so a cache hit
-      # needs no copy step. Keyed on the file name alone: the weights for a
-      # given ggml model never change upstream, so the key never needs to roll.
+      # needs no copy step. The digest in the key invalidates stale/wrong blobs.
       - name: Restore whisper model
         id: model-cache
         uses: actions/cache@v4
         with:
           path: ~/thevoice/models
-          key: whisper-model-${{ env.MODEL_FILE }}
+          key: whisper-model-${{ env.MODEL_FILE }}-${{ env.MODEL_SHA256 }}
 
       # ~142 MB. Downloaded to a temp name and moved into place so an
       # interrupted transfer can never be cached as a valid model.
@@ -60,8 +64,19 @@ jobs:
           mv "$HOME/thevoice/models/$MODEL_FILE.part" \
              "$HOME/thevoice/models/$MODEL_FILE"
 
-      - name: Verify model is in place
-        run: ls -lh "$HOME/thevoice/models"
+      - name: Verify model integrity
+        run: |
+          MODEL_PATH="$HOME/thevoice/models/$MODEL_FILE"
+          if [ ! -f "$MODEL_PATH" ]; then
+            echo "::error::Model file missing at $MODEL_PATH"
+            exit 1
+          fi
+          ACTUAL=$(shasum -a 256 "$MODEL_PATH" | awk '{print $1}')
+          if [ "$ACTUAL" != "$MODEL_SHA256" ]; then
+            echo "::error::Model SHA-256 mismatch: expected $MODEL_SHA256, got $ACTUAL"
+            exit 1
+          fi
+          ls -lh "$MODEL_PATH"
 
       - name: Build
         run: swift build --build-tests
@@ -73,7 +88,7 @@ jobs:
 
       # Integration tests XCTSkip themselves when whisper-server or the model is
       # missing. Everything above is meant to prevent that, so a skip here means
-      # the environment regressed — surface it rather than let it pass quietly.
+      # the environment regressed — fail the job rather than pass quietly.
       - name: Report skipped tests
         if: always()
         run: |
@@ -82,8 +97,9 @@ jobs:
             exit 0
           fi
           if grep -qi "skipped" test-output.log; then
-            echo "::warning::Some tests were skipped — see the list below."
+            echo "::error::Some tests were skipped on CI — see the list below."
             grep -i "skipped" test-output.log
+            exit 1
           else
             echo "No tests were skipped."
           fi

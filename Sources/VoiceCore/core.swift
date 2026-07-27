@@ -131,7 +131,12 @@ enum ModelCatalog {
 
     // Auto-setup default: base.en — small download, ~1s per utterance, which
     // is what makes hold-speak-release feel instant. Never surfaced in UI.
-    static let defaultSpec = all[1]
+    static let defaultSpec: ModelSpec = {
+        guard let spec = all.first(where: { $0.file == "ggml-base.en.bin" }) else {
+            fatalError("ModelCatalog missing ggml-base.en.bin")
+        }
+        return spec
+    }()
 
     static func downloadURL(for spec: ModelSpec) -> URL {
         URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(spec.file)")!
@@ -310,10 +315,12 @@ final class WhisperEngine {
     var onStatusChange: (() -> Void)?
     let modelURL: URL?
     let port: UInt16
+    private let maxReadinessPollAttempts: Int
 
-    init(modelURL: URL?, port: UInt16 = Config.serverPort) {
+    init(modelURL: URL?, port: UInt16 = Config.serverPort, maxReadinessPollAttempts: Int = 120) {
         self.modelURL = modelURL
         self.port = port
+        self.maxReadinessPollAttempts = maxReadinessPollAttempts
     }
 
     static func findBinary(_ name: String) -> String? {
@@ -327,6 +334,22 @@ final class WhisperEngine {
 
     private func setStatus(_ s: String) {
         DispatchQueue.main.async { self.statusText = s; self.onStatusChange?() }
+    }
+
+    private func setStatusOnMain(_ s: String) {
+        assert(Thread.isMainThread)
+        statusText = s
+        onStatusChange?()
+    }
+
+    private func terminateProcessForReadinessTimeout() {
+        assert(Thread.isMainThread)
+        guard let p = process else { return }
+        p.terminationHandler = nil
+        p.terminate()
+        process = nil
+        ready = false
+        setStatusOnMain("engine did not start")
     }
 
     func start() {
@@ -363,7 +386,7 @@ final class WhisperEngine {
     private func pollUntilReady() {
         DispatchQueue.global(qos: .utility).async { [weak self, port] in
             let url = URL(string: "http://127.0.0.1:\(port)/")!
-            for _ in 0..<120 {
+            for _ in 0..<self.maxReadinessPollAttempts {
                 guard let self = self else { return }
                 if self.process?.isRunning != true { return }
                 let sem = DispatchSemaphore(value: 0)
@@ -387,15 +410,14 @@ final class WhisperEngine {
             }
             // Give up: kill the child too, or a late-binding server would be
             // left running untracked, squatting on the port forever.
-            if let self = self {
-                self.process?.terminate()
-                self.process = nil
-                self.setStatus("engine did not start")
+            DispatchQueue.main.async { [weak self] in
+                self?.terminateProcessForReadinessTimeout()
             }
         }
     }
 
     func stop() {
+        process?.terminationHandler = nil
         process?.terminate()
         process = nil
         ready = false

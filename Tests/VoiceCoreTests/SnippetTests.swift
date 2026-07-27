@@ -139,10 +139,8 @@ final class SnippetTests: XCTestCase {
         XCTAssertEqual(store.expand("C++."), "C plus plus")
     }
 
-    /// KNOWN LIMITATION (see report): the trigger is wrapped in \b...\b, and a
-    /// trigger ending in a non-word character such as "+" can never satisfy the
-    /// trailing boundary. "c++" therefore does not expand mid-sentence. This
-    /// asserts current behavior so a future fix trips the test deliberately.
+    /// Regression: symbol-edged triggers use (?<!\w)…(?!\w) lookarounds instead
+    /// of \b, so "c++" expands mid-sentence. Reverting to \b would break this.
     func testTriggerEndingInNonWordCharacterExpandsMidSentence() {
         store.add(trigger: "c++", text: "C plus plus")
         XCTAssertEqual(store.expand("I write c++ every day"), "I write C plus plus every day")
