@@ -167,9 +167,13 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertGreaterThan(Self.foxDuration, 1.5,
                              "latency fixture should be a few seconds of speech")
 
-        // Budget is deliberately loose (observed ~0.3s warm on Apple Silicon)
-        // so a loaded CI box doesn't produce a red build.
-        let budget: TimeInterval = 5.0
+        // Budget observed ~0.3s warm on Apple Silicon; 5s is the local bar.
+        // GitHub's shared macOS VMs run whisper ~50x slower (measured 11-12s
+        // for 2.5s of audio), so under CI the budget only guards against
+        // hangs, not regressions — real latency is asserted on developer
+        // machines.
+        let isCI = ProcessInfo.processInfo.environment["CI"] != nil
+        let budget: TimeInterval = isCI ? 60.0 : 5.0
         var elapsed: TimeInterval = 0
         for attempt in 1...3 {
             let start = Date()
