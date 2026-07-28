@@ -129,8 +129,14 @@ enum ModelCatalog {
         ModelSpec(file: "ggml-large-v3-turbo.bin", label: "Large v3 Turbo — best (1.6 GB)"),
     ]
 
-    // Auto-setup default: good accuracy, reasonable download.
-    static let defaultSpec = all[2]
+    // Auto-setup default: base.en — small download, ~1s per utterance, which
+    // is what makes hold-speak-release feel instant. Never surfaced in UI.
+    static let defaultSpec: ModelSpec = {
+        guard let spec = all.first(where: { $0.file == "ggml-base.en.bin" }) else {
+            fatalError("ModelCatalog missing ggml-base.en.bin")
+        }
+        return spec
+    }()
 
     static func downloadURL(for spec: ModelSpec) -> URL {
         URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(spec.file)")!
@@ -308,8 +314,14 @@ final class WhisperEngine {
     private(set) var statusText = "starting…"
     var onStatusChange: (() -> Void)?
     let modelURL: URL?
+    let port: UInt16
+    private let maxReadinessPollAttempts: Int
 
-    init(modelURL: URL?) { self.modelURL = modelURL }
+    init(modelURL: URL?, port: UInt16 = Config.serverPort, maxReadinessPollAttempts: Int = 120) {
+        self.modelURL = modelURL
+        self.port = port
+        self.maxReadinessPollAttempts = maxReadinessPollAttempts
+    }
 
     static func findBinary(_ name: String) -> String? {
         let candidates = [
@@ -324,6 +336,22 @@ final class WhisperEngine {
         DispatchQueue.main.async { self.statusText = s; self.onStatusChange?() }
     }
 
+    private func setStatusOnMain(_ s: String) {
+        assert(Thread.isMainThread)
+        statusText = s
+        onStatusChange?()
+    }
+
+    private func terminateProcessForReadinessTimeout() {
+        assert(Thread.isMainThread)
+        guard let p = process else { return }
+        p.terminationHandler = nil
+        p.terminate()
+        process = nil
+        ready = false
+        setStatusOnMain("engine did not start")
+    }
+
     func start() {
         guard let model = modelURL else { setStatus("no model found"); return }
         guard let bin = Self.findBinary("whisper-server") else {
@@ -334,7 +362,7 @@ final class WhisperEngine {
         p.arguments = [
             "-m", model.path,
             "--host", "127.0.0.1",
-            "--port", String(Config.serverPort),
+            "--port", String(port),
             "-t", String(max(4, ProcessInfo.processInfo.activeProcessorCount - 2)),
             "-bs", "1",   // greedy decoding — ~2x faster than beam search
             "-nf",        // no temperature fallback — kills worst-case retries
@@ -356,9 +384,9 @@ final class WhisperEngine {
     }
 
     private func pollUntilReady() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let url = URL(string: "http://127.0.0.1:\(Config.serverPort)/")!
-            for _ in 0..<120 {
+        DispatchQueue.global(qos: .utility).async { [weak self, port, maxReadinessPollAttempts] in
+            let url = URL(string: "http://127.0.0.1:\(port)/")!
+            for _ in 0..<maxReadinessPollAttempts {
                 guard let self = self else { return }
                 if self.process?.isRunning != true { return }
                 let sem = DispatchSemaphore(value: 0)
@@ -380,11 +408,16 @@ final class WhisperEngine {
                 }
                 Thread.sleep(forTimeInterval: 0.3)
             }
-            self?.setStatus("engine did not start")
+            // Give up: kill the child too, or a late-binding server would be
+            // left running untracked, squatting on the port forever.
+            DispatchQueue.main.async { [weak self] in
+                self?.terminateProcessForReadinessTimeout()
+            }
         }
     }
 
     func stop() {
+        process?.terminationHandler = nil
         process?.terminate()
         process = nil
         ready = false
@@ -407,7 +440,7 @@ final class WhisperEngine {
 
     private func transcribeViaServer(wav: Data, completion: @escaping (Result<String, Error>) -> Void) {
         let boundary = "TheVoiceBoundary7f3a9c"
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(Config.serverPort)/inference")!)
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/inference")!)
         req.httpMethod = "POST"
         req.timeoutInterval = 120
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -739,28 +772,32 @@ func pasteText(_ text: String) {
 
 // MARK: - Entry point
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.setActivationPolicy(.accessory)
+@MainActor
+public enum VoiceMain {
+    public static func run() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory)
 
-// Minimal main menu so ⌘Q/⌘W/⌘M work while the Voice window is focused.
-let mainMenu = NSMenu()
-let appMenuItem = NSMenuItem()
-mainMenu.addItem(appMenuItem)
-let appMenu = NSMenu()
-appMenu.addItem(withTitle: "Quit Voice",
-                action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-mainMenu.setSubmenu(appMenu, for: appMenuItem)
-let windowMenuItem = NSMenuItem()
-mainMenu.addItem(windowMenuItem)
-let windowMenu = NSMenu(title: "Window")
-windowMenu.addItem(withTitle: "Close",
-                   action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-windowMenu.addItem(withTitle: "Minimize",
-                   action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
-mainMenu.setSubmenu(windowMenu, for: windowMenuItem)
-app.mainMenu = mainMenu
+        // Minimal main menu so ⌘Q/⌘W/⌘M work while the Voice window is focused.
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Quit Voice",
+                        action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        mainMenu.setSubmenu(appMenu, for: appMenuItem)
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close",
+                           action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "Minimize",
+                           action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
+        mainMenu.setSubmenu(windowMenu, for: windowMenuItem)
+        app.mainMenu = mainMenu
 
-app.run()
-
+        app.run()
+    }
+}

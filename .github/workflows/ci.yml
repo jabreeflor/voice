@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build & test
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    env:
+      MODEL_FILE: ggml-base.en.bin
+      # SHA-256 from https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-base.en.bin
+      MODEL_SHA256: a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      # whisper-server is what WhisperEngine spawns. The formula may already be
+      # present in a warm image, so a failed install is only fatal if the binary
+      # is still missing afterwards.
+      - name: Install whisper-cpp
+        run: |
+          brew install whisper-cpp || brew upgrade whisper-cpp || true
+          if ! command -v whisper-server >/dev/null 2>&1; then
+            echo "::error::whisper-server not on PATH after brew install"
+            exit 1
+          fi
+          whisper-server --help 2>&1 | head -3 || true
+
+      # Cached at the path Config.findModel() actually searches, so a cache hit
+      # needs no copy step. The digest in the key invalidates stale/wrong blobs.
+      - name: Restore whisper model
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/thevoice/models
+          key: whisper-model-${{ env.MODEL_FILE }}-${{ env.MODEL_SHA256 }}
+
+      # ~142 MB. Downloaded to a temp name and moved into place so an
+      # interrupted transfer can never be cached as a valid model.
+      - name: Download whisper model
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$HOME/thevoice/models"
+          curl -fL --retry 3 --retry-delay 5 \
+            -o "$HOME/thevoice/models/$MODEL_FILE.part" \
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_FILE"
+          mv "$HOME/thevoice/models/$MODEL_FILE.part" \
+             "$HOME/thevoice/models/$MODEL_FILE"
+
+      - name: Verify model integrity
+        run: |
+          MODEL_PATH="$HOME/thevoice/models/$MODEL_FILE"
+          if [ ! -f "$MODEL_PATH" ]; then
+            echo "::error::Model file missing at $MODEL_PATH"
+            exit 1
+          fi
+          ACTUAL=$(shasum -a 256 "$MODEL_PATH" | awk '{print $1}')
+          if [ "$ACTUAL" != "$MODEL_SHA256" ]; then
+            echo "::error::Model SHA-256 mismatch: expected $MODEL_SHA256, got $ACTUAL"
+            exit 1
+          fi
+          ls -lh "$MODEL_PATH"
+
+      - name: Build
+        run: swift build --build-tests
+
+      - name: Test
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee test-output.log
+
+      # Integration tests XCTSkip themselves when whisper-server or the model is
+      # missing. Everything above is meant to prevent that, so a skip here means
+      # the environment regressed — fail the job rather than pass quietly.
+      - name: Report skipped tests
+        if: always()
+        run: |
+          if [ ! -f test-output.log ]; then
+            echo "No test output — the test step did not run."
+            exit 0
+          fi
+          if grep -qi "skipped" test-output.log; then
+            echo "::error::Some tests were skipped on CI — see the list below."
+            grep -i "skipped" test-output.log
+            exit 1
+          else
+            echo "No tests were skipped."
+          fi
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: test-output.log
+          if-no-files-found: ignore
