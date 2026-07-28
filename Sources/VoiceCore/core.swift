@@ -384,9 +384,9 @@ final class WhisperEngine {
     }
 
     private func pollUntilReady() {
-        DispatchQueue.global(qos: .utility).async { [weak self, port] in
+        DispatchQueue.global(qos: .utility).async { [weak self, port, maxReadinessPollAttempts] in
             let url = URL(string: "http://127.0.0.1:\(port)/")!
-            for _ in 0..<self.maxReadinessPollAttempts {
+            for _ in 0..<maxReadinessPollAttempts {
                 guard let self = self else { return }
                 if self.process?.isRunning != true { return }
                 let sem = DispatchSemaphore(value: 0)
