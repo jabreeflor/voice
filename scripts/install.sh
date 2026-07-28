@@ -32,20 +32,20 @@ fi
 
 if ! command -v whisper-server >/dev/null 2>&1 \
    && ! [ -x /opt/homebrew/bin/whisper-server ] && ! [ -x /usr/local/bin/whisper-server ]; then
-    bold "Installing whisper-cpp (the local transcription engine)…"
+    bold "Installing whisper-cpp (the local transcription engine)..."
     brew install whisper-cpp
 fi
 
 WORKDIR=$(mktemp -d /tmp/thevoice-install.XXXXXX)
 trap 'rm -rf "$WORKDIR"' EXIT
 
-bold "Downloading TheVoice…"
+bold "Downloading TheVoice..."
 git clone --quiet --depth 1 "$REPO_URL" "$WORKDIR/voice"
 
-bold "Building (this takes about 30 seconds)…"
+bold "Building (this takes about 30 seconds)..."
 (cd "$WORKDIR/voice" && ./build.sh)
 
-bold "Installing to $DEST…"
+bold "Installing to $DEST..."
 # Quit a running copy so the bundle can be replaced cleanly.
 osascript -e 'tell application "Voice" to quit' >/dev/null 2>&1 || true
 pkill -x Voice 2>/dev/null || true
