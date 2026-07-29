@@ -103,12 +103,6 @@ enum ModifierKey: Int64, CaseIterable {
 enum HotkeyIssue: Equatable {
     case unusable(String)
     case risky(String)
-
-    var message: String {
-        switch self {
-        case .unusable(let m), .risky(let m): return m
-        }
-    }
 }
 
 /// The hold-to-talk binding: one key, plus any modifiers that must be held
@@ -183,10 +177,11 @@ struct Hotkey: Equatable {
         return name.contains(" ") ? prefix + " " + name : prefix + name
     }
 
-    /// Apple's canonical ordering: fn, then ⌃⌥⇧⌘.
+    /// Apple's canonical ordering, ⌃⌥⇧⌘. fn is absent by design: it can be
+    /// the bound key but never a required modifier, so it is spelled by
+    /// `keyName` rather than here.
     static func symbols(for flags: CGEventFlags) -> String {
         var s = ""
-        if flags.contains(.maskSecondaryFn) { s += "fn " }
         if flags.contains(.maskControl) { s += "⌃" }
         if flags.contains(.maskAlternate) { s += "⌥" }
         if flags.contains(.maskShift) { s += "⇧" }
