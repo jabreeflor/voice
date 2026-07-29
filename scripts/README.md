@@ -7,15 +7,18 @@ exercises the whole loop the way a person does, on a real logged-in Mac:
 
 1. Checks that `Voice.app` is built, `whisper-server` is installed, and a ggml
    model is present in `~/thevoice/models` or `~/.thevoice/models`.
-2. Launches `Voice.app` if it isn't already running and polls
-   `http://127.0.0.1:8178/` until the whisper engine accepts connections.
-3. Opens a scratch TextEdit document and focuses it.
-4. Synthesizes a Right-Option hold via `CGEvent` (keycode 61, `.flagsChanged`
+2. Pins the talk key to Right Option (`defaults write com.local.voice hotkey
+   "61:0"`), since step 5 can only synthesize that one.
+3. Launches `Voice.app` if it isn't already running and polls
+   `http://127.0.0.1:8178/` until the whisper engine accepts connections. A
+   running instance is restarted first if it was using a different binding.
+4. Opens a scratch TextEdit document and focuses it.
+5. Synthesizes a Right-Option hold via `CGEvent` (keycode 61, `.flagsChanged`
    with `.maskAlternate`), speaks a test phrase through `say` while the key is
    held, then releases.
-5. Reads the document back with `osascript` and greps for a keyword from the
+6. Reads the document back with `osascript` and greps for a keyword from the
    phrase. Prints **PASS** or **FAIL** and exits 0 or 1 accordingly.
-6. Closes the scratch document without saving.
+7. Closes the scratch document without saving and restores your talk key.
 
 Run it from anywhere:
 
@@ -59,8 +62,10 @@ For a deterministic run, route audio digitally with
 - Acoustic capture makes failures ambiguous: an empty document means a
   permission problem, while wrong text means the model misheard. The script
   prints which case it hit.
-- It assumes the default Right-Option hotkey. If you changed it in Voice's
-  settings, the synthesized keycode won't match.
+- It pins the talk key to Right Option for the duration of the run and puts
+  your binding back afterwards, so a custom binding is no longer a reason for
+  the script to fail. If it is killed hard enough to skip its cleanup trap,
+  reset the key yourself in Voice's settings.
 - Timings are fixed sleeps (3s warm-up, 4s for transcription). A cold model or
   a heavily loaded machine can exceed them and produce a spurious FAIL.
 - TextEdit must be able to open a new document; a Restore Windows prompt or a

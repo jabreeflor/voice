@@ -5,62 +5,296 @@ import ServiceManagement
 
 // MARK: - Config
 
-enum Hotkey: String, CaseIterable {
-    case rightOption, rightCommand, fn
-
-    var keyCode: Int64 {
-        switch self {
-        case .rightOption: return 61
-        case .rightCommand: return 54
-        case .fn: return 63
-        }
-    }
+/// A key that can be held down on its own. These arrive as `.flagsChanged`
+/// rather than `.keyDown`/`.keyUp`, and `flag` is the bit that goes high
+/// while the key is down.
+enum ModifierKey: Int64, CaseIterable {
+    case capsLock = 57
+    case leftShift = 56
+    case rightShift = 60
+    case leftControl = 59
+    case rightControl = 62
+    case leftOption = 58
+    case rightOption = 61
+    case leftCommand = 55
+    case rightCommand = 54
+    case function = 63
 
     var flag: CGEventFlags {
         switch self {
-        case .rightOption: return .maskAlternate
-        case .rightCommand: return .maskCommand
-        case .fn: return .maskSecondaryFn
+        case .capsLock: return .maskAlphaShift
+        case .leftShift, .rightShift: return .maskShift
+        case .leftControl, .rightControl: return .maskControl
+        case .leftOption, .rightOption: return .maskAlternate
+        case .leftCommand, .rightCommand: return .maskCommand
+        case .function: return .maskSecondaryFn
         }
     }
 
-    var label: String {
-        switch self {
-        case .rightOption: return "Right ⌥ Option"
-        case .rightCommand: return "Right ⌘ Command"
-        case .fn: return "fn"
+    /// `flag` can't tell the two ⌥ keys apart, which is enough to hang a
+    /// recording open: hold left ⌥, tap and release right ⌥, and
+    /// `.maskAlternate` is still set by the key that never moved. Hardware
+    /// events carry a second, side-specific bit (the `NX_DEVICE*` masks) that
+    /// does distinguish them. `nil` for the keys that have no sibling.
+    var deviceFlags: (mine: CGEventFlags, sibling: CGEventFlags)? {
+        func pair(_ l: UInt64, _ r: UInt64) -> (CGEventFlags, CGEventFlags) {
+            (CGEventFlags(rawValue: l), CGEventFlags(rawValue: r))
         }
+        switch self {
+        case .leftControl:   return pair(0x00000001, 0x00002000)
+        case .rightControl:  return pair(0x00002000, 0x00000001)
+        case .leftShift:     return pair(0x00000002, 0x00000004)
+        case .rightShift:    return pair(0x00000004, 0x00000002)
+        case .leftCommand:   return pair(0x00000008, 0x00000010)
+        case .rightCommand:  return pair(0x00000010, 0x00000008)
+        case .leftOption:    return pair(0x00000020, 0x00000040)
+        case .rightOption:   return pair(0x00000040, 0x00000020)
+        case .capsLock, .function: return nil
+        }
+    }
+
+    /// Whether this specific key is down, given the flags on an event.
+    /// Synthesized events (the e2e smoke test, anything driving the app from
+    /// a script) usually carry no device bits at all, so their absence falls
+    /// back to the shared flag rather than reporting the key as released.
+    func isHeld(in flags: CGEventFlags) -> Bool {
+        guard flags.contains(flag) else { return false }
+        guard let (mine, sibling) = deviceFlags else { return true }
+        guard flags.contains(mine) || flags.contains(sibling) else { return true }
+        return flags.contains(mine)
+    }
+
+    /// "Right ⌥" — enough to recognise at a glance.
+    var shortName: String {
+        switch self {
+        case .capsLock: return "⇪ Caps Lock"
+        case .leftShift: return "Left ⇧"
+        case .rightShift: return "Right ⇧"
+        case .leftControl: return "Left ⌃"
+        case .rightControl: return "Right ⌃"
+        case .leftOption: return "Left ⌥"
+        case .rightOption: return "Right ⌥"
+        case .leftCommand: return "Left ⌘"
+        case .rightCommand: return "Right ⌘"
+        case .function: return "fn"
+        }
+    }
+
+    /// "Right ⌥ Option" — the spelled-out form for status text and menus.
+    var longName: String {
+        switch self {
+        case .capsLock: return "⇪ Caps Lock"
+        case .leftShift: return "Left ⇧ Shift"
+        case .rightShift: return "Right ⇧ Shift"
+        case .leftControl: return "Left ⌃ Control"
+        case .rightControl: return "Right ⌃ Control"
+        case .leftOption: return "Left ⌥ Option"
+        case .rightOption: return "Right ⌥ Option"
+        case .leftCommand: return "Left ⌘ Command"
+        case .rightCommand: return "Right ⌘ Command"
+        case .function: return "fn"
+        }
+    }
+}
+
+/// Why a binding is a bad idea. `.unusable` cannot work at all and is
+/// refused; `.risky` works but shadows ordinary typing, so it is offered
+/// with a confirmation rather than silently accepted.
+enum HotkeyIssue: Equatable {
+    case unusable(String)
+    case risky(String)
+
+    var message: String {
+        switch self {
+        case .unusable(let m), .risky(let m): return m
+        }
+    }
+}
+
+/// The hold-to-talk binding: one key, plus any modifiers that must be held
+/// with it. `keyCode` may itself be a modifier key (the default, Right ⌥),
+/// in which case the tap watches `.flagsChanged`; otherwise it watches
+/// `.keyDown`/`.keyUp`. Any key the keyboard can produce is bindable.
+struct Hotkey: Equatable {
+    let keyCode: Int64
+    /// Modifiers that must *also* be held. Never includes the bound key's
+    /// own flag — a modifier key always sets its own bit, so requiring it
+    /// separately would be redundant.
+    let modifiers: CGEventFlags
+
+    /// The flags worth comparing. Two deliberate omissions: Caps Lock is a
+    /// latch rather than a held modifier, so every binding would break
+    /// whenever the light was on; and macOS sets the fn bit by itself on
+    /// arrows, F-keys and the navigation cluster, so requiring it would make
+    /// those bindings match inconsistently. fn stays bindable as a key in
+    /// its own right — it just isn't usable as a *required* modifier.
+    static let significantModifiers: CGEventFlags =
+        [.maskShift, .maskControl, .maskAlternate, .maskCommand]
+
+    /// AppKit reports modifiers as `NSEvent.ModifierFlags`; the event tap
+    /// speaks `CGEventFlags`. This is the bridge used when recording.
+    static func flags(from ns: NSEvent.ModifierFlags) -> CGEventFlags {
+        var f: CGEventFlags = []
+        if ns.contains(.shift) { f.insert(.maskShift) }
+        if ns.contains(.control) { f.insert(.maskControl) }
+        if ns.contains(.option) { f.insert(.maskAlternate) }
+        if ns.contains(.command) { f.insert(.maskCommand) }
+        return f
+    }
+
+    init(keyCode: Int64, modifiers: CGEventFlags = []) {
+        self.keyCode = keyCode
+        var m = modifiers.intersection(Hotkey.significantModifiers)
+        if let own = ModifierKey(rawValue: keyCode) { m.remove(own.flag) }
+        self.modifiers = m
+    }
+
+    var modifierKey: ModifierKey? { ModifierKey(rawValue: keyCode) }
+    var isModifierKey: Bool { modifierKey != nil }
+
+    // MARK: presets
+
+    static let rightOption = Hotkey(keyCode: ModifierKey.rightOption.rawValue)
+    static let rightCommand = Hotkey(keyCode: ModifierKey.rightCommand.rawValue)
+    static let fn = Hotkey(keyCode: ModifierKey.function.rawValue)
+
+    /// The quick picks offered in onboarding. Anything else is reachable by
+    /// recording a key, so this list is convenience, not the whole menu.
+    static let presets: [Hotkey] = [.rightOption, .rightCommand, .fn]
+    static let fallback = Hotkey.rightOption
+
+    // MARK: labels
+
+    var label: String {
+        Hotkey.join(symbols: modifiers, with: modifierKey?.longName
+                        ?? Hotkey.keyName(for: keyCode))
     }
 
     var shortLabel: String {
-        switch self {
-        case .rightOption: return "Right ⌥"
-        case .rightCommand: return "Right ⌘"
-        case .fn: return "fn"
-        }
+        Hotkey.join(symbols: modifiers, with: modifierKey?.shortName
+                        ?? Hotkey.keyName(for: keyCode))
     }
+
+    /// "⌃⌥D" reads fine closed up, but "⌃Right ⌥" does not — a spelled-out
+    /// key name gets a space in front of it.
+    private static func join(symbols flags: CGEventFlags, with name: String) -> String {
+        let prefix = Hotkey.symbols(for: flags)
+        if prefix.isEmpty { return name }
+        return name.contains(" ") ? prefix + " " + name : prefix + name
+    }
+
+    /// Apple's canonical ordering: fn, then ⌃⌥⇧⌘.
+    static func symbols(for flags: CGEventFlags) -> String {
+        var s = ""
+        if flags.contains(.maskSecondaryFn) { s += "fn " }
+        if flags.contains(.maskControl) { s += "⌃" }
+        if flags.contains(.maskAlternate) { s += "⌥" }
+        if flags.contains(.maskShift) { s += "⇧" }
+        if flags.contains(.maskCommand) { s += "⌘" }
+        return s
+    }
+
+    /// Names for the standard ANSI virtual keycodes. Unknown codes still get
+    /// a usable name so a media key or a sixth mouse thumb button on some
+    /// unusual keyboard can be bound and displayed rather than rejected.
+    static func keyName(for code: Int64) -> String {
+        if let m = ModifierKey(rawValue: code) { return m.shortName }
+        if let name = keyNames[code] { return name }
+        return "Key \(code)"
+    }
+
+    private static let keyNames: [Int64: String] = [
+        0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C",
+        9: "V", 10: "§", 11: "B", 12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y",
+        17: "T", 18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5", 24: "=",
+        25: "9", 26: "7", 27: "-", 28: "8", 29: "0", 30: "]", 31: "O", 32: "U",
+        33: "[", 34: "I", 35: "P", 36: "Return", 37: "L", 38: "J", 39: "'",
+        40: "K", 41: ";", 42: "\\", 43: ",", 44: "/", 45: "N", 46: "M", 47: ".",
+        48: "Tab", 49: "Space", 50: "`", 51: "Delete", 53: "Esc",
+        64: "F17", 65: "Keypad .", 67: "Keypad *", 69: "Keypad +", 71: "Clear",
+        75: "Keypad /", 76: "Keypad Enter", 78: "Keypad -", 79: "F18", 80: "F19",
+        81: "Keypad =", 82: "Keypad 0", 83: "Keypad 1", 84: "Keypad 2",
+        85: "Keypad 3", 86: "Keypad 4", 87: "Keypad 5", 88: "Keypad 6",
+        89: "Keypad 7", 90: "F20", 91: "Keypad 8", 92: "Keypad 9",
+        96: "F5", 97: "F6", 98: "F7", 99: "F3", 100: "F8", 101: "F9",
+        103: "F11", 105: "F13", 106: "F16", 107: "F14", 109: "F10", 110: "Menu",
+        111: "F12", 113: "F15", 114: "Help", 115: "Home", 116: "Page Up",
+        117: "Forward Delete", 118: "F4", 119: "End", 120: "F2",
+        121: "Page Down", 122: "F1", 123: "←", 124: "→", 125: "↓", 126: "↑",
+    ]
+
+    // MARK: validation
+
+    /// Keys that are safe to hold on their own because nothing types them:
+    /// F1–F20 and Help.
+    static let standaloneSafeKeyCodes: Set<Int64> = [
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,   // F1–F12
+        105, 107, 113, 106, 64, 79, 80, 90,                       // F13–F20
+        114,                                                      // Help
+    ]
+
+    var issue: HotkeyIssue? {
+        if modifierKey == .capsLock {
+            return .unusable("Caps Lock latches on and off instead of reporting when it is held, so it can't drive hold-to-talk. Pick another key.")
+        }
+        if isModifierKey { return nil }
+        if modifiers.isEmpty && !Hotkey.standaloneSafeKeyCodes.contains(keyCode) {
+            return .risky("\(shortLabel) on its own will start dictation every time you press it — including in the middle of a word. Adding ⌃ or ⌥ keeps it out of the way of typing.")
+        }
+        return nil
+    }
+
+    // MARK: persistence
+
+    /// "61:0" — keycode and modifier bits. Round-trips through
+    /// `UserDefaults` as a plain string so the old value is upgradable.
+    var storedValue: String { "\(keyCode):\(modifiers.rawValue)" }
+
+    /// Accepts both the current encoding and the three names written by
+    /// versions that only had a fixed choice of three keys.
+    init?(stored: String) {
+        if let legacy = Hotkey.legacyNames[stored] {
+            self = legacy
+            return
+        }
+        let parts = stored.split(separator: ":")
+        guard parts.count == 2,
+              let code = Int64(parts[0]),
+              let bits = UInt64(parts[1]) else { return nil }
+        self.init(keyCode: code, modifiers: CGEventFlags(rawValue: bits))
+    }
+
+    private static let legacyNames: [String: Hotkey] = [
+        "rightOption": .rightOption,
+        "rightCommand": .rightCommand,
+        "fn": .fn,
+    ]
 }
 
 enum Config {
     static let serverPort: UInt16 = 8178
 
+    /// Injectable so tests can bind a talk key without writing into the
+    /// defaults of whoever is running them. Mirrors `HistoryStore`.
+    static var defaults: UserDefaults = .standard
+
     static var hotkey: Hotkey {
         get {
-            if let raw = UserDefaults.standard.string(forKey: "hotkey"),
-               let h = Hotkey(rawValue: raw) { return h }
-            return .rightOption
+            if let raw = defaults.string(forKey: "hotkey"),
+               let h = Hotkey(stored: raw) { return h }
+            return .fallback
         }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "hotkey") }
+        set { defaults.set(newValue.storedValue, forKey: "hotkey") }
     }
 
     static var soundsEnabled: Bool {
-        UserDefaults.standard.object(forKey: "sounds") == nil
-            ? true : UserDefaults.standard.bool(forKey: "sounds")
+        defaults.object(forKey: "sounds") == nil
+            ? true : defaults.bool(forKey: "sounds")
     }
 
     static var trailingSpace: Bool {
-        UserDefaults.standard.object(forKey: "trailingSpace") == nil
-            ? true : UserDefaults.standard.bool(forKey: "trailingSpace")
+        defaults.object(forKey: "trailingSpace") == nil
+            ? true : defaults.bool(forKey: "trailingSpace")
     }
 
     static var modelsDirs: [URL] {
@@ -690,13 +924,21 @@ final class HotkeyController {
 
     private var tap: CFMachPort?
     private var hotkeyHeld = false
+    /// The keycode of the non-modifier key currently being held as the
+    /// hotkey, so its `.keyUp` can be swallowed by the same rule that
+    /// swallowed its `.keyDown`.
+    private var heldKeyCode: Int64?
 
     var tapRunning: Bool { tap != nil }
 
     func startTap() -> Bool {
         guard tap == nil else { return true }
+        // `.keyUp` matters as soon as a non-modifier key can be the hotkey:
+        // a plain key reports its release there and nowhere else.
         let mask: CGEventMask =
-            (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
+            (1 << CGEventType.flagsChanged.rawValue)
+            | (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.keyUp.rawValue)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         guard let t = CGEvent.tapCreate(tap: .cgSessionEventTap,
                                         place: .headInsertEventTap,
@@ -719,21 +961,54 @@ final class HotkeyController {
             return Unmanaged.passUnretained(event)
         }
         let hk = Config.hotkey
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
         if type == .flagsChanged {
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if keyCode == hk.keyCode {
-                let pressed = event.flags.contains(hk.flag)
-                if pressed && !hotkeyHeld {
-                    hotkeyHeld = true
-                    DispatchQueue.main.async { self.onDown?() }
-                } else if !pressed && hotkeyHeld {
-                    hotkeyHeld = false
-                    DispatchQueue.main.async { self.onUp?() }
-                }
+            guard let mod = hk.modifierKey, keyCode == hk.keyCode else {
+                return Unmanaged.passUnretained(event)
             }
-        } else if type == .keyDown, isActive?() == true {
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            // Held means this key itself is down *and* every modifier the
+            // binding asks for is still down alongside it.
+            let pressed = mod.isHeld(in: event.flags)
+                && event.flags.intersection(hk.modifiers) == hk.modifiers
+            if pressed && !hotkeyHeld {
+                hotkeyHeld = true
+                DispatchQueue.main.async { self.onDown?() }
+            } else if !pressed && hotkeyHeld {
+                hotkeyHeld = false
+                DispatchQueue.main.async { self.onUp?() }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        // A non-modifier hotkey lives on .keyDown/.keyUp. Match it before the
+        // cancel rule below, which would otherwise read the hotkey's own
+        // press as the user reaching for a keyboard shortcut.
+        if !hk.isModifierKey {
+            if type == .keyDown, keyCode == hk.keyCode, matches(hk, event.flags) {
+                // Holding a key long enough to speak generates a stream of
+                // repeats; only the first one is a press.
+                if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
+                    return nil
+                }
+                if !hotkeyHeld {
+                    hotkeyHeld = true
+                    heldKeyCode = keyCode
+                    DispatchQueue.main.async { self.onDown?() }
+                }
+                // Swallowed: the talk key shouldn't also type into whatever
+                // is in front of the user.
+                return nil
+            }
+            if type == .keyUp, keyCode == heldKeyCode {
+                hotkeyHeld = false
+                heldKeyCode = nil
+                DispatchQueue.main.async { self.onUp?() }
+                return nil
+            }
+        }
+
+        if type == .keyDown, isActive?() == true {
             if keyCode == 53 { // Esc cancels dictation and is swallowed
                 DispatchQueue.main.async { self.onCancel?() }
                 return nil
@@ -743,6 +1018,97 @@ final class HotkeyController {
             DispatchQueue.main.async { self.onCancel?() }
         }
         return Unmanaged.passUnretained(event)
+    }
+
+    /// The modifiers held must be exactly the ones the binding asks for, so
+    /// that ⌥D doesn't also fire on ⇧⌥D.
+    private func matches(_ hk: Hotkey, _ flags: CGEventFlags) -> Bool {
+        flags.intersection(Hotkey.significantModifiers) == hk.modifiers
+    }
+}
+
+// MARK: - Recording a new binding
+
+/// Listens for the next keypress inside the app and turns it into a
+/// `Hotkey`. A local monitor is enough — the settings window is frontmost
+/// while recording — so choosing a key never depends on Accessibility being
+/// granted first.
+///
+/// Two commit rules, matching how every other shortcut recorder on the
+/// platform behaves: a regular key commits the moment it goes down, taking
+/// whatever modifiers are held with it; a modifier pressed on its own
+/// commits when it is released, which is what leaves room to hold ⌃⌥ and
+/// then reach for a letter.
+final class HotkeyRecorder {
+    private var monitor: Any?
+    private var resignObserver: NSObjectProtocol?
+    private var pending: (keyCode: Int64, flags: CGEventFlags)?
+
+    var isRecording: Bool { monitor != nil }
+
+    /// `onResult` gets nil when the user pressed Esc to back out.
+    func start(_ onResult: @escaping (Hotkey?) -> Void) {
+        stop()
+        monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown, .flagsChanged]
+        ) { [weak self] event in
+            guard let self = self else { return event }
+            let code = Int64(event.keyCode)
+            let flags = Hotkey.flags(from: event.modifierFlags)
+
+            if event.type == .keyDown {
+                self.finish()
+                onResult(code == 53 ? nil : Hotkey(keyCode: code, modifiers: flags))
+                return nil
+            }
+
+            guard let mod = ModifierKey(rawValue: code) else { return nil }
+            if event.modifierFlags.contains(mod.appKitFlag) {
+                self.pending = (code, flags)
+            } else if self.pending?.keyCode == code {
+                let held = self.pending?.flags ?? []
+                self.finish()
+                onResult(Hotkey(keyCode: code, modifiers: held))
+            }
+            return nil
+        }
+        // An armed recorder swallows every keystroke in the app, so it must
+        // never outlive the window that armed it. The explicit stops on tab
+        // switch and window close are the normal path; this is the backstop
+        // for any way out of the window nobody thought of.
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.stop()
+            onResult(nil)
+        }
+    }
+
+    func stop() {
+        if let m = monitor { NSEvent.removeMonitor(m) }
+        monitor = nil
+        if let o = resignObserver { NotificationCenter.default.removeObserver(o) }
+        resignObserver = nil
+        pending = nil
+    }
+
+    private func finish() { stop() }
+
+    deinit { stop() }
+}
+
+extension ModifierKey {
+    /// The AppKit spelling of `flag`, for events that arrive as `NSEvent`.
+    var appKitFlag: NSEvent.ModifierFlags {
+        switch self {
+        case .capsLock: return .capsLock
+        case .leftShift, .rightShift: return .shift
+        case .leftControl, .rightControl: return .control
+        case .leftOption, .rightOption: return .option
+        case .leftCommand, .rightCommand: return .command
+        case .function: return .function
+        }
     }
 }
 

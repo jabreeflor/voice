@@ -68,4 +68,5 @@ background — the menu bar icon shows progress.
 
 Then click into any text field, hold Right Option (⌥), speak, release.
 Your words appear at the cursor. Esc cancels a recording.
+Prefer a different key? Settings lets you bind the talk key to any key.
 EOF

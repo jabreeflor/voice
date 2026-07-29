@@ -256,6 +256,7 @@
       <button class="hk sel" onclick="pickHk(this)">Right &#8997;<small>recommended</small></button>
       <button class="hk" onclick="pickHk(this)">Right &#8984;<small>alternative</small></button>
       <button class="hk" onclick="pickHk(this)">fn<small>alternative</small></button>
+      <button class="hk" onclick="pickHk(this)">Any key<small>click, then press it</small></button>
     </div>
     <button class="cap-btn" onclick="obGo(4)">Continue</button>
   </div>
@@ -358,8 +359,8 @@
     <div class="view" id="view-settings">
       <h1>Settings</h1>
       <div class="set-card sticker">
-        <div class="set-row"><span>Talk key</span>
-          <select><option>Hold Right &#8997; Option</option><option>Hold Right &#8984; Command</option><option>Hold fn</option></select></div>
+        <div class="set-row"><span>Talk key<small style="display:block;opacity:.45;font-size:11.5px">Click to record a different key.</small></span>
+          <button class="cap-btn lav" onclick="recordHk(this)">Right &#8997; Option</button></div>
         <div class="set-row"><span>Sound effects</span>
           <button class="switch on" onclick="this.classList.toggle('on')"><i></i></button></div>
         <div class="set-row"><span>Start at login</span>
@@ -404,6 +405,18 @@ Approve the flow and layout, and it gets implemented natively in Voice.app.</p>
   function pickHk(el) {
     document.querySelectorAll('.hk').forEach(h => h.classList.remove('sel'));
     el.classList.add('sel');
+  }
+
+  // Illustrates the two states of the settings recorder; the real app binds
+  // whatever key you press next.
+  function recordHk(el) {
+    if (el.dataset.listening) {
+      el.textContent = el.dataset.listening;
+      delete el.dataset.listening;
+      return;
+    }
+    el.dataset.listening = el.textContent;
+    el.textContent = 'Press any key…';
   }
 
   const holdbtn = document.getElementById('holdbtn');

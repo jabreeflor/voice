@@ -62,6 +62,27 @@ func hstack(_ views: [NSView] = [], spacing: CGFloat = 10) -> NSStackView {
     return s
 }
 
+/// Shared by Settings and onboarding so a binding that shadows ordinary
+/// typing is always confirmed the same way. Returns the binding to keep, or
+/// nil if it can't be used or the user backed out. Callers read
+/// `hk.issue` themselves when they want to explain a refusal.
+func confirmHotkey(_ hk: Hotkey) -> Hotkey? {
+    switch hk.issue {
+    case .unusable:
+        return nil
+    case .risky(let why):
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Use \(hk.shortLabel) as your talk key?"
+        alert.informativeText = why
+        alert.addButton(withTitle: "Use \(hk.shortLabel)")
+        alert.addButton(withTitle: "Pick another")
+        return alert.runModal() == .alertFirstButtonReturn ? hk : nil
+    case nil:
+        return hk
+    }
+}
+
 // MARK: - Sticker card (ink outline + offset shadow)
 
 final class StickerCard: NSView {
@@ -295,7 +316,12 @@ final class MainWindow: NSObject, NSWindowDelegate {
     private var statusDot: NSView!
     private var statusLabel: NSTextField!
     private var fixButton: CapsuleButton!
-    private var hkPopup: NSPopUpButton!
+    private var hkButton: CapsuleButton!
+    private var hkHint: NSTextField!
+    private let hkRecorder = HotkeyRecorder()
+    /// Keeps the periodic refresh from wiping a rejection message before the
+    /// user has had a chance to read it.
+    private var hkShowingWarning = false
     private var soundSwitch: NSSwitch!
     private var loginSwitch: NSSwitch!
 
@@ -323,6 +349,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         refreshTimer?.invalidate(); refreshTimer = nil
+        hkRecorder.stop()
         NSApp.setActivationPolicy(.accessory)
     }
 
@@ -491,6 +518,9 @@ final class MainWindow: NSObject, NSWindowDelegate {
     @objc private func openSettings() { select("settings") }
 
     private func select(_ key: String) {
+        // Walking away from Settings mid-recording shouldn't leave a monitor
+        // swallowing every keystroke in the rest of the window.
+        if key != "settings" { hkRecorder.stop(); hkShowingWarning = false }
         current = key
         for (k, v) in views { v.isHidden = (k != key) }
         for (k, b) in tabButtons {
@@ -877,10 +907,13 @@ final class MainWindow: NSObject, NSWindowDelegate {
         fixButton.isHidden = true
         let statusRow = hstack([statusDot, statusLabel, fixButton], spacing: 10)
 
-        hkPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        for hk in Hotkey.allCases { hkPopup.addItem(withTitle: "Hold \(hk.label)") }
-        hkPopup.target = self
-        hkPopup.action = #selector(hkChanged)
+        hkButton = CapsuleButton(Config.hotkey.label, style: .lav,
+                                 target: self, action: #selector(recordHotkey))
+        hkHint = makeLabel("", size: 11.5, color: Palette.faint)
+        hkHint.lineBreakMode = .byWordWrapping
+        hkHint.maximumNumberOfLines = 2
+        hkHint.preferredMaxLayoutWidth = 300
+        hkHint.isHidden = true
         soundSwitch = NSSwitch()
         soundSwitch.target = self
         soundSwitch.action = #selector(soundChanged)
@@ -892,7 +925,9 @@ final class MainWindow: NSObject, NSWindowDelegate {
 
         let card = StickerCard(padding: NSEdgeInsets(top: 6, left: 22, bottom: 6, right: 22))
         let rows = vstack([
-            settingRow("Talk key", control: hkPopup),
+            settingRow(leading: vstack([makeLabel("Talk key", size: 13.5), hkHint],
+                                       spacing: 3),
+                       control: hkButton),
             DashedLine(),
             settingRow("Sound effects", control: soundSwitch),
             DashedLine(),
@@ -927,18 +962,26 @@ final class MainWindow: NSObject, NSWindowDelegate {
     }
 
     private func settingRow(_ label: String, control: NSView) -> NSView {
-        let l = makeLabel(label, size: 13.5)
+        settingRow(leading: makeLabel(label, size: 13.5), control: control)
+    }
+
+    /// The talk-key row carries a hint under its label, so the row grows
+    /// rather than pinning itself to one line's worth of height.
+    private func settingRow(leading: NSView, control: NSView) -> NSView {
         control.translatesAutoresizingMaskIntoConstraints = false
         let row = NSView()
         row.translatesAutoresizingMaskIntoConstraints = false
-        l.translatesAutoresizingMaskIntoConstraints = false
-        row.addSubview(l); row.addSubview(control)
+        leading.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(leading); row.addSubview(control)
         NSLayoutConstraint.activate([
-            l.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            l.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            leading.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            leading.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            leading.topAnchor.constraint(greaterThanOrEqualTo: row.topAnchor, constant: 8),
+            leading.trailingAnchor.constraint(lessThanOrEqualTo: control.leadingAnchor,
+                                              constant: -12),
             control.trailingAnchor.constraint(equalTo: row.trailingAnchor),
             control.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            row.heightAnchor.constraint(equalToConstant: 52),
+            row.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
         ])
         return row
     }
@@ -949,7 +992,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
         statusDot.layer?.backgroundColor = s.color.cgColor
         statusLabel.stringValue = s.text
         fixButton.isHidden = !s.needsAccessibility
-        hkPopup.selectItem(at: Hotkey.allCases.firstIndex(of: Config.hotkey) ?? 0)
+        if !hkRecorder.isRecording && !hkShowingWarning { showHotkey(Config.hotkey) }
         soundSwitch.state = Config.soundsEnabled ? .on : .off
         loginSwitch.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
@@ -958,9 +1001,59 @@ final class MainWindow: NSObject, NSWindowDelegate {
         NSWorkspace.shared.open(URL(string:
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
-    @objc private func hkChanged() {
-        Config.hotkey = Hotkey.allCases[hkPopup.indexOfSelectedItem]
+    @objc private func recordHotkey() {
+        if hkRecorder.isRecording {
+            hkRecorder.stop()
+            showHotkey(Config.hotkey)
+            return
+        }
+        hkButton.apply(.ink, title: "Press any key…")
+        setHint("Hold the key you want, or press Esc to keep the current one.",
+                warning: false)
+        hkRecorder.start { [weak self] hk in
+            guard let self = self else { return }
+            guard let hk = hk else {
+                self.showHotkey(Config.hotkey)
+                return
+            }
+            self.adopt(hk)
+        }
+    }
+
+    /// Refuses what cannot work, asks about what merely shadows typing, and
+    /// takes everything else without ceremony.
+    private func adopt(_ hk: Hotkey) {
+        if case .unusable(let why)? = hk.issue {
+            showHotkey(Config.hotkey)
+            setHint(why, warning: true)
+            return
+        }
+        guard let chosen = confirmHotkey(hk) else {
+            // "Pick another" — stay in listening mode rather than making them
+            // click the button again.
+            showHotkey(Config.hotkey)
+            recordHotkey()
+            return
+        }
+        commit(chosen)
+    }
+
+    private func commit(_ hk: Hotkey) {
+        Config.hotkey = hk
+        showHotkey(hk)
         app?.refreshUI()
+    }
+
+    private func showHotkey(_ hk: Hotkey) {
+        hkButton.apply(.lav, title: hk.label)
+        setHint("Click to record a different key.", warning: false)
+    }
+
+    private func setHint(_ text: String, warning: Bool) {
+        hkHint.stringValue = text
+        hkHint.textColor = warning ? .systemOrange : Palette.faint
+        hkHint.isHidden = text.isEmpty
+        hkShowingWarning = warning
     }
     @objc private func soundChanged() {
         UserDefaults.standard.set(soundSwitch.state == .on, forKey: "sounds")
@@ -1003,8 +1096,17 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     private var tryContinue: CapsuleButton!
     private var tryText: NSTextView!
     private var hkTiles: [NSButton] = []
+    private var hkNote: NSTextField!
+    private var doneSub: NSTextField!
+    private let hkRecorder = HotkeyRecorder()
     private var backButton: CapsuleButton!
     private var pollTimer: Timer?
+
+    /// Read at the moment step 5 is shown rather than when it is built, so a
+    /// key chosen in step 3 is the one the closing copy names.
+    static func doneText() -> String {
+        "Voice waits in your menu bar. Hold \(Config.hotkey.shortLabel) in any app to dictate, and come back here for your dictation history and snippets."
+    }
 
     init(app: AppDelegate) {
         self.app = app
@@ -1033,6 +1135,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         pollTimer?.invalidate(); pollTimer = nil
+        hkRecorder.stop()
         UserDefaults.standard.set(true, forKey: "onboarded")
         if app?.mainWindowVisible != true { NSApp.setActivationPolicy(.accessory) }
     }
@@ -1098,6 +1201,14 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     }
 
     private func goTo(_ n: Int) {
+        if n != 3 {
+            hkRecorder.stop()
+            styleHKTiles()
+            showHKNote("", warning: false)
+        }
+        // The steps are all built up front, so the closing copy has to be
+        // re-rendered once the user has actually chosen a key.
+        if n == 5 { doneSub.stringValue = OnboardingWindow.doneText() }
         step = n
         for (i, v) in stepViews.enumerated() { v.isHidden = (i + 1 != n) }
         stepNo.stringValue = "0\(n) / 05"
@@ -1235,7 +1346,10 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         let title = heroTitle("Pick your ", "talk key", size: 32)
         let sub = subText("Hold it down to speak. Let go and your words are typed. Tap Esc to cancel.")
         let row = hstack([], spacing: 12)
-        for (i, hk) in Hotkey.allCases.enumerated() {
+        // One tile per quick pick, plus a last tile that records whatever the
+        // user presses — so the three defaults stay one click away without
+        // being the only things on offer.
+        for i in 0...Hotkey.presets.count {
             let b = NSButton(title: "", target: self, action: #selector(pickHK(_:)))
             b.isBordered = false
             b.wantsLayer = true
@@ -1244,19 +1358,52 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
             b.widthAnchor.constraint(equalToConstant: 132).isActive = true
             b.heightAnchor.constraint(equalToConstant: 62).isActive = true
             b.layer?.cornerRadius = 14
-            styleTile(b, selected: hk == Config.hotkey)
-            let sel = hk == Config.hotkey
-            b.attributedTitle = tileTitle(hk.shortLabel,
-                                          sub: i == 0 ? "recommended" : "alternative",
-                                          selected: sel)
             hkTiles.append(b)
             row.addArrangedSubview(b)
         }
+        hkNote = makeLabel("", size: 11.5, color: Palette.inkSoft)
+        hkNote.alignment = .center
+        hkNote.lineBreakMode = .byWordWrapping
+        hkNote.maximumNumberOfLines = 3
+        hkNote.preferredMaxLayoutWidth = 480
+        hkNote.isHidden = true
+        styleHKTiles()
+
         let cta = CapsuleButton("Continue", style: .ink, target: self, action: #selector(toStep4))
-        let v = centered([title, sub, row, cta], spacing: 16)
+        let v = centered([title, sub, row, hkNote, cta], spacing: 16)
         v.setCustomSpacing(26, after: sub)
-        v.setCustomSpacing(28, after: row)
+        v.setCustomSpacing(14, after: row)
+        v.setCustomSpacing(24, after: hkNote)
         return v
+    }
+
+    /// The trailing tile is the recorder: it mirrors the current binding when
+    /// that binding isn't one of the presets, and prompts otherwise.
+    private func styleHKTiles(recording: Bool = false) {
+        let current = Config.hotkey
+        let customIndex = Hotkey.presets.count
+        let isCustom = !Hotkey.presets.contains(current)
+        for (i, b) in hkTiles.enumerated() {
+            let custom = i == customIndex
+            let selected = custom ? (isCustom || recording) : (Hotkey.presets[i] == current)
+            styleTile(b, selected: selected)
+            let main: String
+            let sub: String
+            if custom {
+                main = recording ? "Listening…" : (isCustom ? current.shortLabel : "Any key")
+                sub = recording ? "press it now" : "click, then press it"
+            } else {
+                main = Hotkey.presets[i].shortLabel
+                sub = i == 0 ? "recommended" : "alternative"
+            }
+            b.attributedTitle = tileTitle(main, sub: sub, selected: selected)
+        }
+    }
+
+    private func showHKNote(_ text: String, warning: Bool) {
+        hkNote.stringValue = text
+        hkNote.textColor = warning ? .systemOrange : Palette.inkSoft
+        hkNote.isHidden = text.isEmpty
     }
 
     private func styleTile(_ b: NSButton, selected: Bool) {
@@ -1315,7 +1462,8 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         }
         let cap = blackCapsule(done, w: 150, h: 72)
         let title = heroTitle("That's the ", "whole app.", size: 34)
-        let sub = subText("Voice waits in your menu bar. Hold \(Config.hotkey.shortLabel) in any app to dictate, and come back here for your dictation history and snippets.")
+        doneSub = subText(OnboardingWindow.doneText())
+        let sub: NSTextField = doneSub
         let cta = CapsuleButton("Open Voice", style: .ink, target: self, action: #selector(finish))
         let v = centered([cap, title, sub, cta], spacing: 16)
         v.setCustomSpacing(28, after: cap)
@@ -1341,15 +1489,39 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     }
 
     @objc private func pickHK(_ sender: NSButton) {
-        Config.hotkey = Hotkey.allCases[sender.tag]
-        for (i, b) in hkTiles.enumerated() {
-            let sel = i == sender.tag
-            styleTile(b, selected: sel)
-            b.attributedTitle = tileTitle(Hotkey.allCases[i].shortLabel,
-                                          sub: i == 0 ? "recommended" : "alternative",
-                                          selected: sel)
+        hkRecorder.stop()
+        if sender.tag < Hotkey.presets.count {
+            Config.hotkey = Hotkey.presets[sender.tag]
+            showHKNote("", warning: false)
+            styleHKTiles()
+            app?.refreshUI()
+            return
         }
-        app?.refreshUI()
+        styleHKTiles(recording: true)
+        showHKNote("Hold the key you want — on its own, or with ⌃ ⌥ ⇧ ⌘. Esc keeps your current one.",
+                   warning: false)
+        hkRecorder.start { [weak self] hk in
+            guard let self = self else { return }
+            guard let hk = hk else {
+                self.styleHKTiles()
+                self.showHKNote("", warning: false)
+                return
+            }
+            if case .unusable(let why)? = hk.issue {
+                self.styleHKTiles()
+                self.showHKNote(why, warning: true)
+                return
+            }
+            guard let chosen = confirmHotkey(hk) else {
+                self.styleHKTiles()
+                self.showHKNote("", warning: false)
+                return
+            }
+            Config.hotkey = chosen
+            self.styleHKTiles()
+            self.showHKNote("", warning: false)
+            self.app?.refreshUI()
+        }
     }
 
     @objc private func finish() {
