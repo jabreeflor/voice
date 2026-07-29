@@ -350,6 +350,9 @@ final class MainWindow: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         refreshTimer?.invalidate(); refreshTimer = nil
         hkRecorder.stop()
+        // Otherwise a rejection message is still on screen when the window is
+        // reopened, describing a key the user pressed a session ago.
+        hkShowingWarning = false
         NSApp.setActivationPolicy(.accessory)
     }
 
@@ -909,6 +912,9 @@ final class MainWindow: NSObject, NSWindowDelegate {
 
         hkButton = CapsuleButton(Config.hotkey.label, style: .lav,
                                  target: self, action: #selector(recordHotkey))
+        hkRecorder.onArmedChange = { [weak self] armed in
+            self?.app?.hotkeyCaptureSuspended = armed
+        }
         hkHint = makeLabel("", size: 11.5, color: Palette.faint)
         hkHint.lineBreakMode = .byWordWrapping
         hkHint.maximumNumberOfLines = 2
@@ -1355,11 +1361,17 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
             b.wantsLayer = true
             b.tag = i
             b.translatesAutoresizingMaskIntoConstraints = false
-            b.widthAnchor.constraint(equalToConstant: 132).isActive = true
+            // Four tiles at the old 132pt plus three 12pt gaps came to 564,
+            // wider than the 540pt cap on the step container — an
+            // unsatisfiable layout. 124 leaves the strip at 532.
+            b.widthAnchor.constraint(equalToConstant: 124).isActive = true
             b.heightAnchor.constraint(equalToConstant: 62).isActive = true
             b.layer?.cornerRadius = 14
             hkTiles.append(b)
             row.addArrangedSubview(b)
+        }
+        hkRecorder.onArmedChange = { [weak self] armed in
+            self?.app?.hotkeyCaptureSuspended = armed
         }
         hkNote = makeLabel("", size: 11.5, color: Palette.inkSoft)
         hkNote.alignment = .center
@@ -1391,7 +1403,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
             let sub: String
             if custom {
                 main = recording ? "Listening…" : (isCustom ? current.shortLabel : "Any key")
-                sub = recording ? "press it now" : "click, then press it"
+                sub = recording ? "press it now" : "click, then press"
             } else {
                 main = Hotkey.presets[i].shortLabel
                 sub = i == 0 ? "recommended" : "alternative"

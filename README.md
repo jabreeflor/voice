@@ -96,8 +96,10 @@ can force one: `THEVOICE_MODEL=~/path/to/model.bin open /Applications/Voice.app`
   - Function keys and modifiers are fine on their own. An ordinary key is
     accepted too, but Voice asks first — bound bare, it would start dictation
     every time you typed that letter.
-  - <kbd>Caps Lock</kbd> is the one key that can't be used: it latches instead
-    of reporting when it's held.
+  - Two keys are spoken for. <kbd>Caps Lock</kbd> latches instead of reporting
+    when it's held, so it can't drive hold-to-talk at all; <kbd>Esc</kbd> is
+    how you back out of the recorder and cancel a recording, so it isn't
+    offered either.
   - (For fn, set *System Settings → Keyboard → "Press 🌐 key to" → Do Nothing*
     so macOS doesn't also open emoji/dictation.)
 - **Sounds** — toggle the start/paste blips
@@ -131,7 +133,7 @@ no network calls except model downloads from Hugging Face.
 
 ```sh
 swift build            # compile
-swift test             # 162 tests across four tiers
+swift test             # 220 tests across four tiers
 ./build.sh             # assemble + sign Voice.app
 ```
 

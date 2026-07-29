@@ -481,6 +481,74 @@ final class HotkeyControllerTests: XCTestCase {
         XCTAssertEqual(events, ["down", "cancel"])
     }
 
+    func testAModifierBindingWithExtraModifiersFiresRegardlessOfPressOrder() {
+        Config.hotkey = Hotkey(keyCode: 61, modifiers: [.maskControl])   // ⌃ Right ⌥
+        // ⌥ down first, so the bound key is *not* the last one pressed. Only
+        // the bound key's own events say whether it is down, but the verdict
+        // has to be recomputed when a required modifier moves too.
+        send(keyCode: 61, .flagsChanged, flags: [.maskAlternate])
+        XCTAssertEqual(events, [], "⌃ isn't down yet")
+        send(keyCode: 59, .flagsChanged, flags: [.maskAlternate, .maskControl])
+        XCTAssertEqual(events, ["down"])
+        send(keyCode: 59, .flagsChanged, flags: [.maskAlternate])
+        XCTAssertEqual(events, ["down", "up"], "letting go of ⌃ ends it")
+    }
+
+    func testChangingTheBindingMidHoldDoesNotStrandTheRecording() {
+        // Recording a new key means pressing one while the old binding may
+        // still be down. The branch that would clear the press can stop being
+        // reachable, which used to wedge the tap until relaunch.
+        Config.hotkey = .rightOption
+        send(keyCode: 61, .flagsChanged, flags: [.maskAlternate])
+        Config.hotkey = Hotkey(keyCode: 2, modifiers: [.maskAlternate])   // ⌥D
+        send(keyCode: 61, .flagsChanged, flags: [])
+        XCTAssertEqual(events, ["down", "cancel"],
+                       "the orphaned press should be dropped, not transcribed")
+
+        // And the tap still works under the new binding.
+        send(keyCode: 2, .keyDown, flags: [.maskAlternate])
+        send(keyCode: 2, .keyUp, flags: [.maskAlternate])
+        XCTAssertEqual(events, ["down", "cancel", "down", "up"])
+    }
+
+    func testASuspendedTapIgnoresTheTalkKey() {
+        Config.hotkey = .rightOption
+        controller.suspended = true
+        XCTAssertTrue(send(keyCode: 61, .flagsChanged, flags: [.maskAlternate]),
+                      "suspended means inert, not swallowing")
+        XCTAssertEqual(events, [])
+        controller.suspended = false
+        send(keyCode: 61, .flagsChanged, flags: [.maskAlternate])
+        XCTAssertEqual(events, ["down"])
+    }
+
+    private func selfPosted(keyCode: Int64, flags: CGEventFlags) -> CGEvent {
+        let e = makeEvent(keyCode: keyCode, type: .keyDown, flags: flags)
+        e.setIntegerValueField(.eventSourceUserData,
+                               value: HotkeyController.selfPostedTag)
+        return e
+    }
+
+    func testTheAppsOwnPasteDoesNotCancelARecording() {
+        Config.hotkey = .rightOption
+        send(keyCode: 61, .flagsChanged, flags: [.maskAlternate])
+        let paste = selfPosted(keyCode: 9, flags: [.maskCommand])
+        XCTAssertNotNil(controller.handle(type: .keyDown, event: paste))
+        drain()
+        XCTAssertEqual(events, ["down"], "our own ⌘V is not the user typing")
+    }
+
+    func testTheAppsOwnPasteIsNotMistakenForACommandVBinding() {
+        // Binding ⌘V would otherwise make the app swallow its own paste, so
+        // dictation would quietly stop landing anywhere.
+        Config.hotkey = Hotkey(keyCode: 9, modifiers: [.maskCommand])
+        let paste = selfPosted(keyCode: 9, flags: [.maskCommand])
+        XCTAssertNotNil(controller.handle(type: .keyDown, event: paste),
+                        "the paste must reach the app in front")
+        drain()
+        XCTAssertEqual(events, [])
+    }
+
     func testUnrelatedKeysArePassedThroughWhenIdle() {
         Config.hotkey = .rightOption
         XCTAssertTrue(send(keyCode: 0, .keyDown))

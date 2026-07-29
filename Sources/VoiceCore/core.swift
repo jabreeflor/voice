@@ -923,6 +923,22 @@ final class HotkeyController {
     /// hotkey, so its `.keyUp` can be swallowed by the same rule that
     /// swallowed its `.keyDown`.
     private var heldKeyCode: Int64?
+    /// Whether the bound modifier key is physically down. Tracked separately
+    /// from `hotkeyHeld` because a binding like "⌃ Right ⌥" also depends on
+    /// modifiers that change state in events of their own.
+    private var boundKeyDown = false
+    /// The binding the current press was matched against. Without this, a
+    /// binding that changes mid-hold strands `hotkeyHeld`: the branch that
+    /// set it may no longer be reachable to clear it.
+    private var activeBinding: Hotkey?
+
+    /// Set while the user is choosing a new talk key. The tap stays
+    /// installed — tearing it down and rebuilding it would need Accessibility
+    /// to still be granted — but it stops acting on what it sees, so pressing
+    /// the current talk key to *record over it* doesn't also start dictating.
+    var suspended = false {
+        didSet { if suspended { forgetPress() } }
+    }
 
     var tapRunning: Bool { tap != nil }
 
@@ -955,22 +971,46 @@ final class HotkeyController {
             if let tap = tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
+        if suspended { return Unmanaged.passUnretained(event) }
+
+        // Our own ⌘V from `pasteText` re-enters this tap. Left alone it
+        // cancels a recording that started while the previous one was still
+        // pasting — and if the user has bound ⌘V as their talk key, it
+        // matches the binding and the paste never lands at all.
+        if event.getIntegerValueField(.eventSourceUserData) == HotkeyController.selfPostedTag {
+            return Unmanaged.passUnretained(event)
+        }
+
         let hk = Config.hotkey
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
+        // A binding changed while its key was still down: the branch that
+        // would clear the press may no longer be reachable, so drop it here.
+        if hotkeyHeld, activeBinding != hk {
+            forgetPress()
+            DispatchQueue.main.async { self.onCancel?() }
+        }
+
         if type == .flagsChanged {
-            guard let mod = hk.modifierKey, keyCode == hk.keyCode else {
+            guard let mod = hk.modifierKey else {
                 return Unmanaged.passUnretained(event)
             }
-            // Held means this key itself is down *and* every modifier the
-            // binding asks for is still down alongside it.
-            let pressed = mod.isHeld(in: event.flags)
+            // Only events for the bound key itself say whether *it* is down —
+            // the shared flag can't tell one side of the keyboard from the
+            // other, and a synthesized event carries no side bits at all.
+            if keyCode == hk.keyCode { boundKeyDown = mod.isHeld(in: event.flags) }
+            // But a required modifier changes state in its own event, so the
+            // verdict has to be recomputed on every flags change, not just on
+            // the bound key's. Otherwise "⌃ Right ⌥" would only fire when ⌥
+            // happened to be pressed last.
+            let pressed = boundKeyDown
                 && event.flags.intersection(hk.modifiers) == hk.modifiers
             if pressed && !hotkeyHeld {
                 hotkeyHeld = true
+                activeBinding = hk
                 DispatchQueue.main.async { self.onDown?() }
             } else if !pressed && hotkeyHeld {
-                hotkeyHeld = false
+                forgetPress()
                 DispatchQueue.main.async { self.onUp?() }
             }
             return Unmanaged.passUnretained(event)
@@ -989,18 +1029,20 @@ final class HotkeyController {
                 if !hotkeyHeld {
                     hotkeyHeld = true
                     heldKeyCode = keyCode
+                    activeBinding = hk
                     DispatchQueue.main.async { self.onDown?() }
                 }
                 // Swallowed: the talk key shouldn't also type into whatever
                 // is in front of the user.
                 return nil
             }
-            if type == .keyUp, keyCode == heldKeyCode {
-                hotkeyHeld = false
-                heldKeyCode = nil
-                DispatchQueue.main.async { self.onUp?() }
-                return nil
-            }
+        }
+        // Outside the `isModifierKey` check: a key captured under the old
+        // binding must still be able to release itself.
+        if type == .keyUp, keyCode == heldKeyCode {
+            forgetPress()
+            DispatchQueue.main.async { self.onUp?() }
+            return nil
         }
 
         if type == .keyDown, isActive?() == true {
@@ -1020,6 +1062,17 @@ final class HotkeyController {
     private func matches(_ hk: Hotkey, _ flags: CGEventFlags) -> Bool {
         flags.intersection(Hotkey.significantModifiers) == hk.modifiers
     }
+
+    private func forgetPress() {
+        hotkeyHeld = false
+        heldKeyCode = nil
+        boundKeyDown = false
+        activeBinding = nil
+    }
+
+    /// Stamped on the events `pasteText` posts so this tap can recognise its
+    /// own handiwork. Any value that isn't zero will do.
+    static let selfPostedTag: Int64 = 0x564F4943   // "VOIC"
 }
 
 // MARK: - Recording a new binding
@@ -1038,6 +1091,12 @@ final class HotkeyRecorder {
     private var monitor: Any?
     private var resignObserver: NSObjectProtocol?
     private var pending: (keyCode: Int64, flags: CGEventFlags)?
+
+    /// Fired on every arm and disarm. The owner uses it to suspend the global
+    /// tap for exactly as long as the recorder is listening — routed through
+    /// here rather than through the call sites so that every way out,
+    /// including the deactivation backstop, is covered by construction.
+    var onArmedChange: ((Bool) -> Void)?
 
     var isRecording: Bool { monitor != nil }
 
@@ -1058,7 +1117,13 @@ final class HotkeyRecorder {
             }
 
             guard let mod = ModifierKey(rawValue: code) else { return nil }
-            if event.modifierFlags.contains(mod.appKitFlag) {
+            // `modifierFlags` carries the side-specific bits in its low
+            // bits, and the shared ones at the same positions CoreGraphics
+            // uses — so the same held/released test works on both. Asking
+            // only about the shared bit would report right ⌥ as still down
+            // while left ⌥ happens to be held, and the recorder would never
+            // commit.
+            if mod.isHeld(in: CGEventFlags(rawValue: UInt64(event.modifierFlags.rawValue))) {
                 self.pending = (code, flags)
             } else if self.pending?.keyCode == code {
                 let held = self.pending?.flags ?? []
@@ -1078,14 +1143,17 @@ final class HotkeyRecorder {
             self?.stop()
             onResult(nil)
         }
+        onArmedChange?(true)
     }
 
     func stop() {
+        let wasArmed = monitor != nil
         if let m = monitor { NSEvent.removeMonitor(m) }
         monitor = nil
         if let o = resignObserver { NotificationCenter.default.removeObserver(o) }
         resignObserver = nil
         pending = nil
+        if wasArmed { onArmedChange?(false) }
     }
 
     private func finish() { stop() }
@@ -1120,6 +1188,11 @@ func pasteText(_ text: String) {
     let vUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false)
     vDown?.flags = .maskCommand
     vUp?.flags = .maskCommand
+    // Marked as ours: these come back around through the global tap, where
+    // an unmarked ⌘V would cancel a recording — or, if the user has bound
+    // ⌘V as their talk key, be swallowed so the paste never happens.
+    vDown?.setIntegerValueField(.eventSourceUserData, value: HotkeyController.selfPostedTag)
+    vUp?.setIntegerValueField(.eventSourceUserData, value: HotkeyController.selfPostedTag)
     vDown?.post(tap: .cghidEventTap)
     vUp?.post(tap: .cghidEventTap)
 
