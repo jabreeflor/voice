@@ -104,6 +104,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var hotkeysRunning: Bool { hotkeys.tapRunning }
     var mainWindowVisible: Bool { mainWindow?.isVisible ?? false }
 
+    /// Held true while the user is recording a new talk key, so pressing the
+    /// current one to replace it doesn't also start a dictation.
+    var hotkeyCaptureSuspended: Bool {
+        get { hotkeys.suspended }
+        set { hotkeys.suspended = newValue }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         downloader.onProgress = { [weak self] _, p in
             self?.setupProgress = p

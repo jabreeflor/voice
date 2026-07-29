@@ -6,6 +6,9 @@
 # synthesized CGEvents, speaks a phrase out loud through `say`, releases, and
 # checks that the transcription landed in a TextEdit document.
 #
+# The talk key is user-bindable, so the script pins it to Right Option before
+# launching the app and puts your binding back on the way out.
+#
 # This needs a real logged-in GUI session with TCC permissions already granted,
 # which is exactly what a CI runner does not have. See scripts/README.md.
 #
@@ -16,6 +19,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$REPO_ROOT/Voice.app"
 PORT=8178
+BUNDLE_ID=com.local.voice
 
 # Short, phonetically distinct, and unlikely to appear in a stray transcription.
 PHRASE="the quick brown fox jumps over the lazy dog"
@@ -44,8 +48,24 @@ end tell
 OSA
         info "Closed scratch document '$DOC_NAME' without saving."
     fi
+    restore_hotkey
 }
 trap cleanup EXIT
+
+# Set for real once the talk key is pinned, below. Defined here as a no-op so
+# an early exit during preflight doesn't trip over an undefined function.
+SAVED_HOTKEY=""
+HOTKEY_PINNED=0
+restore_hotkey() {
+    [ "$HOTKEY_PINNED" -eq 1 ] || return 0
+    if [ -n "$SAVED_HOTKEY" ]; then
+        defaults write "$BUNDLE_ID" hotkey "$SAVED_HOTKEY"
+        info "Restored your talk key ($SAVED_HOTKEY)."
+    else
+        defaults delete "$BUNDLE_ID" hotkey 2>/dev/null || true
+        info "Restored the talk key to the default."
+    fi
+}
 
 # ---------------------------------------------------------------------------
 step "Preflight"
@@ -111,10 +131,34 @@ if [ "$AUTO_YES" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+step "Pinning the talk key to Right Option"
+
+# The synthesized hold below is Right Option specifically, so a custom binding
+# would simply never be seen. Pin it; the cleanup trap puts it back.
+# "61:0" is keycode 61 with no additional modifiers.
+SAVED_HOTKEY="$(defaults read "$BUNDLE_ID" hotkey 2>/dev/null || true)"
+defaults write "$BUNDLE_ID" hotkey "61:0"
+HOTKEY_PINNED=1
+if [ -n "$SAVED_HOTKEY" ]; then
+    info "Your binding ($SAVED_HOTKEY) will be restored when this finishes."
+else
+    info "No binding was set; the default is Right Option anyway."
+fi
+
+# ---------------------------------------------------------------------------
 step "Starting Voice.app"
 
+# A running instance already read the old binding, so it has to be restarted
+# for the pin above to take effect.
 if pgrep -f "Voice.app/Contents/MacOS/Voice" >/dev/null 2>&1; then
-    info "Already running — leaving it alone."
+    if [ "$SAVED_HOTKEY" != "61:0" ] && [ -n "$SAVED_HOTKEY" ]; then
+        info "Restarting Voice so it picks up the pinned talk key…"
+        pkill -f "Voice.app/Contents/MacOS/Voice" || true
+        sleep 2
+        open "$APP"
+    else
+        info "Already running — leaving it alone."
+    fi
 else
     open "$APP"
     info "Launched. Giving it a moment to spawn whisper-server…"

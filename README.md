@@ -57,11 +57,14 @@ Grant two one-time permissions when prompted:
 | **Accessibility** (System Settings → Privacy & Security) | so it can detect the hotkey and type text for you |
 
 Then click into any text field, **hold <kbd>Right ⌥</kbd>, speak, release**.
-The transcript appears at your cursor.
+The transcript appears at your cursor. <kbd>Right ⌥</kbd> is only the default —
+you can bind the talk key to any key you like in Settings.
 
 - <kbd>Esc</kbd> while recording cancels.
 - Taps shorter than ~0.35 s are ignored, and pressing another key while
-  holding the hotkey cancels — so your Option-based shortcuts still work.
+  holding the talk key cancels — so your Option-based shortcuts still work.
+  When the talk key is an ordinary key rather than a modifier, the key itself
+  is swallowed while you hold it, and its auto-repeat doesn't cancel.
 - The menu-bar waveform icon shows status and turns red while recording.
 
 ## 🧠 Models
@@ -84,9 +87,21 @@ can force one: `THEVOICE_MODEL=~/path/to/model.bin open /Applications/Voice.app`
 
 ## ⚙️ Menu bar options
 
-- **Hotkey** — <kbd>Right ⌥</kbd> (default), <kbd>Right ⌘</kbd>, or <kbd>fn/🌐</kbd>.
-  (For fn, set *System Settings → Keyboard → "Press 🌐 key to" → Do Nothing*
-  so macOS doesn't also open emoji/dictation.)
+- **Talk key** — any key on your keyboard. Settings shows the current binding;
+  click it and press the key you want. <kbd>Right ⌥</kbd> (default),
+  <kbd>Right ⌘</kbd> and <kbd>fn/🌐</kbd> are one click away in setup, but a
+  chord like <kbd>⌃⌥D</kbd>, a function key like <kbd>F13</kbd>, or either
+  <kbd>⇧</kbd>/<kbd>⌃</kbd>/<kbd>⌥</kbd>/<kbd>⌘</kbd> on either side all work
+  too.
+  - Function keys and modifiers are fine on their own. An ordinary key is
+    accepted too, but Voice asks first — bound bare, it would start dictation
+    every time you typed that letter.
+  - Two keys are spoken for. <kbd>Caps Lock</kbd> latches instead of reporting
+    when it's held, so it can't drive hold-to-talk at all; <kbd>Esc</kbd> is
+    how you back out of the recorder and cancel a recording, so it isn't
+    offered either.
+  - (For fn, set *System Settings → Keyboard → "Press 🌐 key to" → Do Nothing*
+    so macOS doesn't also open emoji/dictation.)
 - **Sounds** — toggle the start/paste blips
 - **Start at Login**
 - **Copy Last Transcript** — if a paste didn't land where you wanted
@@ -118,7 +133,7 @@ no network calls except model downloads from Hugging Face.
 
 ```sh
 swift build            # compile
-swift test             # 162 tests across four tiers
+swift test             # 220 tests across four tiers
 ./build.sh             # assemble + sign Voice.app
 ```
 

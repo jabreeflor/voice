@@ -179,22 +179,5 @@ final class ConfigTests: XCTestCase {
         }
     }
 
-    // MARK: - Hotkey
-
-    func testHotkeyKeyCodesAreDistinct() {
-        let codes = Hotkey.allCases.map(\.keyCode)
-        XCTAssertEqual(Set(codes).count, codes.count)
-    }
-
-    func testHotkeyRawValuesRoundTrip() {
-        for hk in Hotkey.allCases {
-            XCTAssertEqual(Hotkey(rawValue: hk.rawValue), hk)
-            XCTAssertFalse(hk.label.isEmpty)
-            XCTAssertFalse(hk.shortLabel.isEmpty)
-        }
-    }
-
-    func testUnknownHotkeyRawValueDoesNotResolve() {
-        XCTAssertNil(Hotkey(rawValue: "leftPinky"))
-    }
+    // Hotkey now has a file of its own: see HotkeyTests.swift.
 }
