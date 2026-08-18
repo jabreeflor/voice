@@ -73,7 +73,7 @@ else
 fi
 
 MODEL=""
-for dir in "$HOME/thevoice/models" "$HOME/.thevoice/models"; do
+for dir in "$HOME/voice/models" "$HOME/.voice/models"; do
     [ -d "$dir" ] || continue
     found=$(find "$dir" -maxdepth 1 -name 'ggml*.bin' -print -quit 2>/dev/null)
     [ -n "$found" ] && { MODEL="$found"; break; }
@@ -81,7 +81,7 @@ done
 if [ -n "$MODEL" ]; then
     info "model: $MODEL"
 else
-    fail "No ggml model found in ~/thevoice/models or ~/.thevoice/models."
+    fail "No ggml model found in ~/voice/models or ~/.voice/models."
     info "Launch Voice.app once and let it auto-download, or fetch base.en manually."
     PREFLIGHT_OK=0
 fi

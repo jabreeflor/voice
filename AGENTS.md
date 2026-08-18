@@ -4,7 +4,7 @@
 
 ### This is a macOS-only project — it cannot be built, run, or tested on the Linux Cloud Agent VM
 
-TheVoice is a native macOS menu-bar app for local voice dictation. Every file in
+voice is a native macOS menu-bar app for local voice dictation. Every file in
 `Sources/VoiceCore` imports Apple-only frameworks (`AppKit`, `AVFoundation`,
 `ApplicationServices`, `ServiceManagement`) and the app uses macOS-specific APIs
 (CoreGraphics global event taps, `NSPasteboard`, `AVAudioEngine`, `NSPanel`
@@ -30,7 +30,7 @@ section) and `build.sh`; do not duplicate them here beyond this pointer:
 
 - `swift build` — compile.
 - `swift test` — unit/integration tests (see `Tests/VoiceCoreTests`). Integration
-  tests need `whisper-server` + a `ggml` model under `~/thevoice/models`.
+  tests need `whisper-server` + a `ggml` model under `~/voice/models`.
 - `./build.sh` — assemble and code-sign `Voice.app`.
 - `scripts/e2e-smoke.sh` — manual GUI end-to-end test; needs a logged-in Mac GUI
   session with Accessibility + Microphone permissions granted. Never runs in CI.

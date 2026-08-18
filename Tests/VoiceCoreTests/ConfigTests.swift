@@ -13,11 +13,11 @@ final class ConfigTests: XCTestCase {
         dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("VoiceConfigTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        unsetenv("THEVOICE_MODEL")
+        unsetenv("VOICE_MODEL")
     }
 
     override func tearDown() {
-        unsetenv("THEVOICE_MODEL")
+        unsetenv("VOICE_MODEL")
         if let dir = dir { try? FileManager.default.removeItem(at: dir) }
         dir = nil
         super.tearDown()
@@ -82,31 +82,31 @@ final class ConfigTests: XCTestCase {
     func testModelsDirectoriesAreUnderTheUserHomeInOrder() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         XCTAssertEqual(Config.modelsDirs.map(\.path), [
-            home.appendingPathComponent("thevoice/models").path,
-            home.appendingPathComponent(".thevoice/models").path,
+            home.appendingPathComponent("voice/models").path,
+            home.appendingPathComponent(".voice/models").path,
         ])
     }
 
-    // MARK: - THEVOICE_MODEL override
+    // MARK: - VOICE_MODEL override
 
     func testEnvironmentOverrideTakesPrecedenceOverEverythingElse() {
         let fake = makeFakeModel()
-        setenv("THEVOICE_MODEL", fake.path, 1)
+        setenv("VOICE_MODEL", fake.path, 1)
         XCTAssertEqual(Config.findModel()?.path, fake.path,
-                       "THEVOICE_MODEL should win over the preference scan")
+                       "VOICE_MODEL should win over the preference scan")
     }
 
     /// The override is not filtered by the ggml naming convention — whatever
     /// path is given is used as-is.
     func testEnvironmentOverrideAcceptsAnyFilename() {
         let odd = makeFakeModel(named: "my-custom-weights.gguf")
-        setenv("THEVOICE_MODEL", odd.path, 1)
+        setenv("VOICE_MODEL", odd.path, 1)
         XCTAssertEqual(Config.findModel()?.path, odd.path)
     }
 
     func testEnvironmentOverridePointingAtAMissingFileIsIgnored() {
         let missing = dir.appendingPathComponent("not-there.bin").path
-        setenv("THEVOICE_MODEL", missing, 1)
+        setenv("VOICE_MODEL", missing, 1)
         XCTAssertNotEqual(Config.findModel()?.path, missing,
                           "a dangling override must fall through to the normal search")
     }
@@ -119,12 +119,12 @@ final class ConfigTests: XCTestCase {
         try XCTSkipIf(installed == nil, "no installed model under $HOME to point the override at")
         let real = installed!
 
-        setenv("THEVOICE_MODEL", "~" + real.path.dropFirst(home.count), 1)
+        setenv("VOICE_MODEL", "~" + real.path.dropFirst(home.count), 1)
         XCTAssertEqual(Config.findModel()?.path, real.path)
     }
 
     func testEmptyEnvironmentOverrideIsIgnored() {
-        setenv("THEVOICE_MODEL", "", 1)
+        setenv("VOICE_MODEL", "", 1)
         XCTAssertNotEqual(Config.findModel()?.path, "")
     }
 

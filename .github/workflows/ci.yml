@@ -49,7 +49,7 @@ jobs:
         id: model-cache
         uses: actions/cache@v4
         with:
-          path: ~/thevoice/models
+          path: ~/voice/models
           key: whisper-model-${{ env.MODEL_FILE }}-${{ env.MODEL_SHA256 }}
 
       # ~142 MB. Downloaded to a temp name and moved into place so an
@@ -57,16 +57,16 @@ jobs:
       - name: Download whisper model
         if: steps.model-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p "$HOME/thevoice/models"
+          mkdir -p "$HOME/voice/models"
           curl -fL --retry 3 --retry-delay 5 \
-            -o "$HOME/thevoice/models/$MODEL_FILE.part" \
+            -o "$HOME/voice/models/$MODEL_FILE.part" \
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_FILE"
-          mv "$HOME/thevoice/models/$MODEL_FILE.part" \
-             "$HOME/thevoice/models/$MODEL_FILE"
+          mv "$HOME/voice/models/$MODEL_FILE.part" \
+             "$HOME/voice/models/$MODEL_FILE"
 
       - name: Verify model integrity
         run: |
-          MODEL_PATH="$HOME/thevoice/models/$MODEL_FILE"
+          MODEL_PATH="$HOME/voice/models/$MODEL_FILE"
           if [ ! -f "$MODEL_PATH" ]; then
             echo "::error::Model file missing at $MODEL_PATH"
             exit 1
