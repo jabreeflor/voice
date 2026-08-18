@@ -66,8 +66,8 @@ enum Config {
     static var modelsDirs: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
-            home.appendingPathComponent("thevoice/models"),
-            home.appendingPathComponent(".thevoice/models"),
+            home.appendingPathComponent("voice/models"),
+            home.appendingPathComponent(".voice/models"),
         ]
     }
 
@@ -90,7 +90,7 @@ enum Config {
 
     static func findModel() -> URL? {
         let fm = FileManager.default
-        if let env = ProcessInfo.processInfo.environment["THEVOICE_MODEL"] {
+        if let env = ProcessInfo.processInfo.environment["VOICE_MODEL"] {
             let u = URL(fileURLWithPath: (env as NSString).expandingTildeInPath)
             if fm.fileExists(atPath: u.path) { return u }
         }
@@ -439,7 +439,7 @@ final class WhisperEngine {
     }
 
     private func transcribeViaServer(wav: Data, completion: @escaping (Result<String, Error>) -> Void) {
-        let boundary = "TheVoiceBoundary7f3a9c"
+        let boundary = "VoiceBoundary7f3a9c"
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/inference")!)
         req.httpMethod = "POST"
         req.timeoutInterval = 120
@@ -480,7 +480,7 @@ final class WhisperEngine {
         }
         DispatchQueue.global(qos: .userInitiated).async {
             let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("thevoice-\(UUID().uuidString).wav")
+                .appendingPathComponent("voice-\(UUID().uuidString).wav")
             do {
                 try wav.write(to: tmp)
                 let p = Process()

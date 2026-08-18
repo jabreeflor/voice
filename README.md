@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/icon_1024.png" width="120" alt="TheVoice icon">
+<img src="assets/icon_1024.png" width="120" alt="voice icon">
 
-# TheVoice
+# voice
 
 **Hold a key. Speak. Release. Your words appear — in any app.**
 
@@ -26,7 +26,7 @@ Paste this into Terminal:
 curl -fsSL https://raw.githubusercontent.com/jabreeflor/voice/main/scripts/install.sh | bash
 ```
 
-The script builds TheVoice from source on your Mac (~30 seconds), installs
+The script builds voice from source on your Mac (~30 seconds), installs
 `Voice.app` into `/Applications`, and launches it. Because it's built
 locally, there's no Gatekeeper "unidentified developer" hassle.
 
@@ -66,7 +66,7 @@ The transcript appears at your cursor.
 
 ## 🧠 Models
 
-On first launch TheVoice silently downloads **base.en** (142 MB) so dictation
+On first launch voice silently downloads **base.en** (142 MB) so dictation
 just works. Want more accuracy? The **Model** submenu in the menu bar
 downloads and switches models with live progress:
 
@@ -78,9 +78,9 @@ downloads and switches models with live progress:
 | Medium | 1.5 GB | accurate |
 | Large v3 Turbo | 1.6 GB | best |
 
-Models live in `~/thevoice/models/` (or `~/.thevoice/models/`). With no
+Models live in `~/voice/models/` (or `~/.voice/models/`). With no
 explicit selection the app prefers the most accurate model present, and you
-can force one: `THEVOICE_MODEL=~/path/to/model.bin open /Applications/Voice.app`
+can force one: `VOICE_MODEL=~/path/to/model.bin open /Applications/Voice.app`
 
 ## ⚙️ Menu bar options
 

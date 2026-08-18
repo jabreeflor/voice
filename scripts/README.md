@@ -6,7 +6,7 @@ The unit and integration tests exercise Voice's pieces in isolation. This script
 exercises the whole loop the way a person does, on a real logged-in Mac:
 
 1. Checks that `Voice.app` is built, `whisper-server` is installed, and a ggml
-   model is present in `~/thevoice/models` or `~/.thevoice/models`.
+   model is present in `~/voice/models` or `~/.voice/models`.
 2. Launches `Voice.app` if it isn't already running and polls
    `http://127.0.0.1:8178/` until the whisper engine accepts connections.
 3. Opens a scratch TextEdit document and focuses it.
@@ -28,7 +28,7 @@ Run it from anywhere:
 
 - `./build.sh` has been run, so `Voice.app` exists.
 - `brew install whisper-cpp`.
-- A model in `~/thevoice/models` — launching `Voice.app` once downloads
+- A model in `~/voice/models` — launching `Voice.app` once downloads
   `ggml-base.en.bin` automatically.
 - **Voice.app** has Accessibility and Microphone granted in System Settings >
   Privacy & Security.

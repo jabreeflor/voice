@@ -1,5 +1,5 @@
 #!/bin/bash
-# TheVoice installer — free, 100% local voice dictation for macOS.
+# voice installer — free, 100% local voice dictation for macOS.
 #
 #   curl -fsSL https://raw.githubusercontent.com/jabreeflor/voice/main/scripts/install.sh | bash
 #
@@ -14,13 +14,13 @@ DEST="/Applications/$APP"
 bold() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 fail() { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 
-[ "$(uname)" = "Darwin" ] || fail "TheVoice only runs on macOS."
+[ "$(uname)" = "Darwin" ] || fail "voice only runs on macOS."
 
 MACOS_MAJOR=$(sw_vers -productVersion | cut -d. -f1)
 [ "$MACOS_MAJOR" -ge 13 ] || fail "macOS 13 (Ventura) or later is required — you have $(sw_vers -productVersion)."
 
 if ! xcode-select -p >/dev/null 2>&1 || ! command -v swift >/dev/null 2>&1; then
-    fail "The Xcode Command Line Tools are required to build TheVoice.
+    fail "The Xcode Command Line Tools are required to build voice.
 Run:  xcode-select --install
 then re-run this script once the install finishes."
 fi
@@ -36,10 +36,10 @@ if ! command -v whisper-server >/dev/null 2>&1 \
     brew install whisper-cpp
 fi
 
-WORKDIR=$(mktemp -d /tmp/thevoice-install.XXXXXX)
+WORKDIR=$(mktemp -d /tmp/voice-install.XXXXXX)
 trap 'rm -rf "$WORKDIR"' EXIT
 
-bold "Downloading TheVoice..."
+bold "Downloading voice..."
 git clone --quiet --depth 1 "$REPO_URL" "$WORKDIR/voice"
 
 bold "Building (this takes about 30 seconds)..."
@@ -54,7 +54,7 @@ cp -R "$WORKDIR/voice/$APP" "$DEST"
 
 open "$DEST"
 
-bold "Done! TheVoice is running in your menu bar (waveform icon)."
+bold "Done! voice is running in your menu bar (waveform icon)."
 cat <<'EOF'
 
 Two one-time permission grants and you're dictating:
