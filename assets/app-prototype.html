@@ -9,7 +9,7 @@
     --bg: #F7F4EC; --paper: #FFFDF6; --ink: #21201C;
     --soft: rgba(33,32,28,.60); --faint: rgba(33,32,28,.36);
     --line: rgba(33,32,28,.14); --dash: rgba(33,32,28,.18);
-    --lav: #E5D4F9; --lav-deep: #C9ABEE; --pillk: #16150F;
+    --lav: #E5D4F9; --pillk: #16150F;
     --green: #2F7A4C;
     --serif: "New York", Georgia, "Times New Roman", serif;
     --sans: -apple-system, system-ui, sans-serif;
@@ -38,10 +38,8 @@
   .serif { font-family: var(--serif); }
 
   /* sticker pieces — the app's own identity */
-  .sticker { background: var(--paper); border: 1.5px solid var(--ink); border-radius: 16px;
-             box-shadow: 6px 6px 0 var(--lav-deep); }
-  .sticker-lav { background: var(--lav); border: 1.5px solid var(--ink); border-radius: 16px;
-                 box-shadow: 6px 6px 0 var(--ink); }
+  .sticker { background: var(--paper); border: 1.5px solid var(--ink); border-radius: 16px; }
+  .sticker-lav { background: var(--lav); border: 1.5px solid var(--ink); border-radius: 16px; }
   .cap-btn { font: 600 13.5px var(--sans); padding: 11px 24px; border-radius: 999px;
     cursor: pointer; background: var(--ink); color: #fff; border: 1.5px solid var(--ink);
     transition: transform .08s; }
@@ -72,8 +70,7 @@
              max-width: 500px; padding: 0 24px; }
   .ob-step.visible { display: flex; }
   .ob-cap { background: var(--pillk); color: #fff; border-radius: 999px; padding: 24px 42px;
-            margin-bottom: 34px; border: 1.5px solid var(--ink);
-            box-shadow: 8px 8px 0 var(--lav-deep); }
+            margin-bottom: 34px; border: 1.5px solid var(--ink); }
   .ob-cap .wave b { width: 5px; }
   .ob-step h1 { font-family: var(--serif); font-size: 42px; line-height: 1.1; margin-bottom: 14px; }
   .ob-step h1 em { font-style: italic; }
@@ -94,7 +91,7 @@
   .hk.sel { border-color: var(--ink); background: var(--lav); box-shadow: 4px 4px 0 var(--ink); }
   .try-field { width: 100%; background: var(--paper); border: 1.5px solid var(--ink);
     border-radius: 14px; padding: 16px 18px; font-size: 15px; text-align: left;
-    min-height: 84px; margin-bottom: 24px; box-shadow: 5px 5px 0 var(--lav-deep); }
+    min-height: 84px; margin-bottom: 24px; }
   .try-field .ph { color: var(--faint); }
   .holdbtn { font: 600 14px var(--sans); padding: 14px 32px; border-radius: 999px;
     cursor: pointer; background: var(--lav); border: 1.5px solid var(--ink);
@@ -134,7 +131,7 @@
   .statchip .n { font-family: var(--serif); font-size: 24px; font-weight: 700; }
   .statchip .l { font-size: 11.5px; color: var(--soft); }
   .livecap { margin-left: auto; background: var(--pillk); color: #fff; border-radius: 999px;
-    border: 1.5px solid var(--ink); box-shadow: 5px 5px 0 var(--lav-deep);
+    border: 1.5px solid var(--ink);
     display: flex; align-items: center; gap: 14px; padding: 0 24px; }
   .livecap span { font: 500 12.5px var(--sans); color: rgba(255,255,255,.7); }
   .livecap kbd { font: 600 11.5px var(--sans); background: rgba(255,255,255,.15);

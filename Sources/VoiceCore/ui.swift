@@ -12,7 +12,6 @@ enum Palette {
     static let faint = NSColor(red: 0.129, green: 0.125, blue: 0.110, alpha: 0.36)
     static let dash = NSColor(red: 0.129, green: 0.125, blue: 0.110, alpha: 0.18)
     static let lav = NSColor(red: 0.898, green: 0.831, blue: 0.976, alpha: 1)
-    static let lavDeep = NSColor(red: 0.788, green: 0.671, blue: 0.933, alpha: 1)
     static let pillBlack = NSColor(red: 0.086, green: 0.086, blue: 0.070, alpha: 1)
     static let green = NSColor(red: 0.184, green: 0.478, blue: 0.298, alpha: 1)
 }
@@ -62,14 +61,12 @@ func hstack(_ views: [NSView] = [], spacing: CGFloat = 10) -> NSStackView {
     return s
 }
 
-// MARK: - Sticker card (ink outline + offset shadow)
+// MARK: - Sticker card (ink outline, no offset accent)
 
 final class StickerCard: NSView {
     var cardFill = Palette.paper { didSet { needsDisplay = true } }
-    var shadowFill = Palette.lavDeep { didSet { needsDisplay = true } }
     var cornerRadius: CGFloat = 16 { didSet { needsDisplay = true } }
     let content = NSView()
-    private let off: CGFloat = 6
 
     init(padding: NSEdgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 14, right: 18)) {
         super.init(frame: .zero)
@@ -79,18 +76,15 @@ final class StickerCard: NSView {
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: topAnchor, constant: padding.top),
             content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padding.left),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -(padding.right + off)),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -(padding.bottom + off)),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padding.right),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -padding.bottom),
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
 
     override func draw(_ dirtyRect: NSRect) {
-        let card = NSRect(x: 0.75, y: off + 0.75,
-                          width: bounds.width - off - 1.5, height: bounds.height - off - 1.5)
-        let shadow = card.offsetBy(dx: off, dy: -off)
-        shadowFill.setFill()
-        NSBezierPath(roundedRect: shadow, xRadius: cornerRadius, yRadius: cornerRadius).fill()
+        let card = NSRect(x: 0.75, y: 0.75,
+                          width: bounds.width - 1.5, height: bounds.height - 1.5)
         let p = NSBezierPath(roundedRect: card, xRadius: cornerRadius, yRadius: cornerRadius)
         cardFill.setFill(); p.fill()
         Palette.ink.setStroke(); p.lineWidth = 1.5; p.stroke()
@@ -673,7 +667,6 @@ final class MainWindow: NSObject, NSWindowDelegate {
         // promo card
         let promo = StickerCard(padding: NSEdgeInsets(top: 22, left: 26, bottom: 22, right: 26))
         promo.cardFill = Palette.lav
-        promo.shadowFill = Palette.ink
         let h3 = NSTextField(labelWithString: "")
         let a = NSMutableAttributedString(string: "Your voice, ", attributes: [
             .font: serifFont(ofSize: 24, weight: .semibold), .foregroundColor: Palette.ink])
@@ -1145,8 +1138,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     private func blackCapsule(_ inner: NSView, w: CGFloat, h: CGFloat) -> StickerCard {
         let c = StickerCard(padding: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
         c.cardFill = Palette.pillBlack
-        c.shadowFill = Palette.lavDeep
-        c.cornerRadius = h / 2 - 3
+        c.cornerRadius = h / 2
         inner.translatesAutoresizingMaskIntoConstraints = false
         c.content.addSubview(inner)
         NSLayoutConstraint.activate([
