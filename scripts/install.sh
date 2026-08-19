@@ -54,6 +54,20 @@ cp -R "$WORKDIR/voice/$APP" "$DEST"
 
 open "$DEST"
 
+# Put `voice` on PATH so agents can add snippets without opening the app.
+CLI_SRC="$DEST/Contents/MacOS/voice"
+if [ -x "$CLI_SRC" ]; then
+    if [ -d /opt/homebrew/bin ] && [ -w /opt/homebrew/bin ]; then
+        CLI_DEST=/opt/homebrew/bin/voice
+    elif [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
+        CLI_DEST=/usr/local/bin/voice
+    else
+        mkdir -p "$HOME/.local/bin"
+        CLI_DEST="$HOME/.local/bin/voice"
+    fi
+    ln -sf "$CLI_SRC" "$CLI_DEST"
+fi
+
 bold "Done! voice is running in your menu bar (waveform icon)."
 cat <<'EOF'
 
@@ -68,4 +82,17 @@ background — the menu bar icon shows progress.
 
 Then click into any text field, hold Right Option (⌥), speak, release.
 Your words appear at the cursor. Esc cancels a recording.
+
+Add snippets with the CLI (no need to open the app):
+
+  voice add brb "be right back"
+  voice add "my email" you@example.com
+  voice list
 EOF
+if [ -n "${CLI_DEST:-}" ]; then
+    printf '\n  CLI installed at %s\n' "$CLI_DEST"
+    case ":$PATH:" in
+        *":$(dirname "$CLI_DEST"):"*) ;;
+        *) printf '  Add %s to your PATH to run `voice` from a terminal.\n' "$(dirname "$CLI_DEST")" ;;
+    esac
+fi

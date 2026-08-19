@@ -748,6 +748,9 @@ final class MainWindow: NSObject, NSWindowDelegate {
 
     func refresh(force: Bool = false) {
         guard let app = app else { return }
+        // CLI writes snippets.json out of process; pick it up so the list
+        // updates without restarting Voice.
+        app.snippetStore.reload()
         if current == "dictations", force || app.historyStore.stamp != lastHistoryStamp {
             lastHistoryStamp = app.historyStore.stamp
             rebuildDictations()

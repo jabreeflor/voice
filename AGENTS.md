@@ -36,7 +36,7 @@ Do not duplicate the Development section of `README.md` or `build.sh`.
 - `swift test` — unit + integration tests in `Tests/VoiceCoreTests`.
   Integration tests need `whisper-server` and a `ggml` model under
   `~/voice/models` (or `~/.voice/models`).
-- `./build.sh` — assemble and code-sign `Voice.app`.
+- `./build.sh` — assemble and code-sign `Voice.app` (bundles `voice` CLI).
 - `scripts/e2e-smoke.sh` — manual GUI end-to-end dictation. Needs a logged-in
   Mac session with Accessibility + Microphone granted. Never runs in CI.
 
@@ -46,15 +46,17 @@ a real keychain identity keeps grants. Microphone survives either way.
 ## Layout
 
 ```
-Package.swift                 SPM: VoiceCore, Voice executable, VoiceCoreTests
+Package.swift                 SPM: VoiceCore, Voice + voice-cli executables, tests
 Sources/VoiceApp/main.swift   Thin entry: VoiceMain.run()
+Sources/VoiceCLI/main.swift   Thin entry: SnippetCLI.main() (PATH name: voice)
 Sources/VoiceCore/core.swift  Config, models, recorder, whisper engine,
                               transcript cleanup, overlay, hotkey, paste
 Sources/VoiceCore/app.swift   AppDelegate, status decision table, recording flow
 Sources/VoiceCore/ui.swift    AppKit windows, onboarding, design system
 Sources/VoiceCore/store.swift History + snippets (Foundation only)
+Sources/VoiceCore/cli.swift   Agent CLI: add / list / remove snippets
 Tests/VoiceCoreTests/         XCTest, four tiers (see below)
-build.sh                      Release build → Voice.app + codesign
+build.sh                      Release build → Voice.app + bundled voice CLI + codesign
 Info.plist                    LSUIElement (no Dock), mic usage string
 scripts/install.sh            curl | bash installer (clones main, runs build.sh)
 scripts/e2e-smoke.sh          Tier-4 GUI smoke
@@ -81,8 +83,28 @@ split into many small files unless a new concern is genuinely independent
    `SnippetStore.expand` rewrites triggers, then `pasteText` copies to the
    clipboard, synthesizes ⌘V, and restores the previous clipboard after 0.6 s.
 
+`expand` reloads `snippets.json` first so snippets added via the CLI while
+Voice is running are live on the next utterance.
+
 `computeStatus` in `app.swift` is a pure function of `StatusInputs`. Status
 copy and precedence belong there (and in `StatusTests`), not inlined in UI.
+
+## Snippet CLI
+
+Agents deliver snippets with the bundled `voice` CLI (SPM target `voice-cli`;
+inside the app bundle it is `Voice.app/Contents/MacOS/voice`):
+
+```
+voice add <trigger> [text]     # stdin if text is omitted
+voice list                     # JSON
+voice remove <trigger>
+```
+
+`swift run voice-cli -- add brb "be right back"` from a checkout. Writes
+`~/Library/Application Support/Voice/snippets.json` — the same file the
+app uses. Do not hand-edit that JSON; go through `SnippetStore` / the CLI
+so triggers stay normalized. History/snippet tests still use a throwaway
+directory, never `Store.dir`.
 
 ## Testing
 

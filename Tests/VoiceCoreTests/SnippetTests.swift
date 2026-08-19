@@ -208,6 +208,15 @@ final class SnippetTests: XCTestCase {
         XCTAssertEqual(store.expand("brb"), "back in a bit")
     }
 
+    func testRemoveByTriggerDeletesAndReturnsFalseWhenMissing() {
+        store.add(trigger: "brb", text: "be right back")
+        store.add(trigger: "sig", text: "Best,")
+        XCTAssertTrue(store.remove(trigger: "BRB"))
+        XCTAssertEqual(store.snippets.map(\.trigger), ["sig"])
+        XCTAssertFalse(store.remove(trigger: "brb"))
+        XCTAssertFalse(store.remove(trigger: "nope"))
+    }
+
     func testRemoveDeletesByIndexAndIgnoresOutOfRange() {
         store.add(trigger: "a", text: "AAA")
         store.add(trigger: "b", text: "BBB")
@@ -259,5 +268,35 @@ final class SnippetTests: XCTestCase {
         let broken = SnippetStore(directory: dir)
         XCTAssertTrue(broken.snippets.isEmpty)
         XCTAssertEqual(broken.expand("hello"), "hello")
+    }
+
+    /// The CLI writes snippets.json as another process. expand() must notice
+    /// without anyone calling add() on this instance.
+    func testExpandPicksUpSnippetsWrittenByAnotherStore() {
+        store.add(trigger: "brb", text: "old expansion")
+        let other = SnippetStore(directory: dir)
+        other.add(trigger: "brb", text: "new expansion")
+        other.add(trigger: "sig", text: "Best,")
+        XCTAssertEqual(store.expand("brb"), "new expansion")
+        XCTAssertEqual(store.expand("okay sig later"), "okay Best, later")
+        XCTAssertEqual(store.snippets.count, 2)
+    }
+
+    func testReloadDoesNotBumpStampWhenTheFileHasNotChanged() {
+        store.add(trigger: "brb", text: "be right back")
+        let afterAdd = store.stamp
+        store.reload()
+        store.reload()
+        _ = store.expand("nothing matches")
+        XCTAssertEqual(store.stamp, afterAdd)
+    }
+
+    func testReloadBumpsStampWhenAnotherWriterChangesTheFile() {
+        store.add(trigger: "brb", text: "old")
+        let afterAdd = store.stamp
+        SnippetStore(directory: dir).add(trigger: "brb", text: "new")
+        store.reload()
+        XCTAssertEqual(store.stamp, afterAdd + 1)
+        XCTAssertEqual(store.snippets.first?.text, "new")
     }
 }

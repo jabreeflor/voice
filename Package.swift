@@ -14,6 +14,11 @@ let package = Package(
             dependencies: ["VoiceCore"],
             path: "Sources/VoiceApp"
         ),
+        .executableTarget(
+            name: "voice-cli",
+            dependencies: ["VoiceCore"],
+            path: "Sources/VoiceCLI"
+        ),
         .testTarget(
             name: "VoiceCoreTests",
             dependencies: ["VoiceCore"],

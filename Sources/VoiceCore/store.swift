@@ -133,13 +133,16 @@ final class SnippetStore {
         load()
     }
 
-    func add(trigger: String, text: String) {
-        let t = trigger.trimmingCharacters(in: CharacterSet(charactersIn: "\" ")).lowercased()
-        guard !t.isEmpty, !text.isEmpty else { return }
+    /// Returns false when the trigger or text is empty after normalizing.
+    @discardableResult
+    func add(trigger: String, text: String) -> Bool {
+        let t = Self.normalizeTrigger(trigger)
+        guard !t.isEmpty, !text.isEmpty else { return false }
         snippets.removeAll { $0.trigger == t }
         snippets.append(Snippet(trigger: t, text: text))
         stamp += 1
         save()
+        return true
     }
 
     func remove(at index: Int) {
@@ -149,10 +152,36 @@ final class SnippetStore {
         save()
     }
 
+    /// Delete by spoken trigger (the CLI can't use list indices — they race).
+    @discardableResult
+    func remove(trigger: String) -> Bool {
+        let t = Self.normalizeTrigger(trigger)
+        let before = snippets.count
+        snippets.removeAll { $0.trigger == t }
+        guard snippets.count < before else { return false }
+        stamp += 1
+        save()
+        return true
+    }
+
+    /// Re-read `snippets.json`. The CLI writes that file directly, so the
+    /// running app has to pick up changes without a restart — `expand` calls
+    /// this so a snippet added seconds ago is already live when you speak.
+    func reload() {
+        let previous = snippets
+        load()
+        if snippets != previous { stamp += 1 }
+    }
+
+    static func normalizeTrigger(_ trigger: String) -> String {
+        trigger.trimmingCharacters(in: CharacterSet(charactersIn: "\" ")).lowercased()
+    }
+
     /// Replace spoken triggers with their expansions. A trigger spoken as the
     /// entire utterance (ignoring case and trailing punctuation) becomes the
     /// snippet verbatim; triggers inside a sentence are swapped in place.
     func expand(_ transcript: String) -> String {
+        reload()
         guard !snippets.isEmpty else { return transcript }
         var out = transcript
         for s in snippets.sorted(by: { $0.trigger.count > $1.trigger.count }) {
@@ -182,7 +211,7 @@ final class SnippetStore {
 
     private func save() {
         if let data = try? JSONEncoder().encode(snippets) {
-            try? data.write(to: fileURL)
+            try? data.write(to: fileURL, options: .atomic)
         }
     }
 }

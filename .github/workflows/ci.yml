@@ -79,7 +79,9 @@ jobs:
           ls -lh "$MODEL_PATH"
 
       - name: Build
-        run: swift build --build-tests
+        run: |
+          swift build --build-tests
+          swift build --product voice-cli
 
       - name: Test
         run: |
