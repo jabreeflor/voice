@@ -248,6 +248,162 @@ class HoverRow: NSView {
     override func mouseExited(with event: NSEvent) { onHover?(false) }
 }
 
+/// Dictation history row: the whole row copies on click. No capsule button —
+/// hover tints the row and fades in a text hint; a successful copy swaps the
+/// hint to "Copied" and holds a stronger tint briefly.
+final class LedgerRow: NSView {
+    private let timeLabel: NSTextField
+    private let bodyLabel: NSTextField
+    private let hintLabel: NSTextField
+    private let text: String
+    private var hovered = false { didSet { updateChrome() } }
+    private var copied = false { didSet { updateChrome() } }
+    private var copiedReset: DispatchWorkItem?
+    private var pressed = false
+
+    init(time: String, text: String) {
+        self.text = text
+        timeLabel = makeLabel(time.uppercased(), size: 11, weight: .semibold,
+                              color: Palette.faint, mono: true)
+        bodyLabel = makeLabel(text, size: 13.5)
+        hintLabel = makeLabel("Click to copy", size: 11, weight: .semibold,
+                              color: Palette.inkSoft)
+        super.init(frame: .zero)
+
+        translatesAutoresizingMaskIntoConstraints = false
+        toolTip = "Click to copy"
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Copy dictation")
+        setAccessibilityHelp("Copies this dictation to the clipboard")
+        setAccessibilityValue(text)
+
+        bodyLabel.lineBreakMode = .byWordWrapping
+        bodyLabel.maximumNumberOfLines = 3
+        bodyLabel.preferredMaxLayoutWidth = 640
+        bodyLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        bodyLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        hintLabel.alignment = .right
+        hintLabel.alphaValue = 0
+        hintLabel.setContentHuggingPriority(.required, for: .horizontal)
+        hintLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        timeLabel.translatesAutoresizingMaskIntoConstraints = false
+        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
+        hintLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(timeLabel)
+        addSubview(bodyLabel)
+        addSubview(hintLabel)
+        NSLayoutConstraint.activate([
+            timeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            timeLabel.topAnchor.constraint(equalTo: topAnchor, constant: 16),
+            timeLabel.widthAnchor.constraint(equalToConstant: 66),
+            bodyLabel.leadingAnchor.constraint(equalTo: timeLabel.trailingAnchor, constant: 16),
+            bodyLabel.topAnchor.constraint(equalTo: topAnchor, constant: 13),
+            bodyLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -20),
+            bodyLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -13),
+            hintLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            hintLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    deinit { copiedReset?.cancel() }
+
+    override func layout() {
+        super.layout()
+        let width = max(80, bounds.width - 20 - 66 - 16 - 20)
+        if bodyLabel.preferredMaxLayoutWidth != width {
+            bodyLabel.preferredMaxLayoutWidth = width
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero,
+            options: [.mouseEnteredAndExited, .cursorUpdate, .activeInActiveApp, .inVisibleRect],
+            owner: self, userInfo: nil))
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.pointingHand.set()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseEntered(with event: NSEvent) { hovered = true }
+    override func mouseExited(with event: NSEvent) { hovered = false }
+
+    override func mouseDown(with event: NSEvent) {
+        pressed = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer { pressed = false }
+        guard pressed else { return }
+        let loc = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(loc) else { return }
+        copyToClipboard()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        copyToClipboard()
+        return true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if copied {
+            Palette.lav.setFill()
+            bounds.fill()
+        } else if hovered {
+            Palette.lav.withAlphaComponent(0.42).setFill()
+            bounds.fill()
+        }
+    }
+
+    func copyToClipboard() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        copied = true
+        copiedReset?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.copied = false
+        }
+        copiedReset = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: work)
+        NSAccessibility.post(element: self, notification: .announcementRequested,
+                             userInfo: [.announcement: "Copied" as NSString])
+    }
+
+    private func updateChrome() {
+        needsDisplay = true
+        let showHint = copied || hovered
+        if copied {
+            hintLabel.stringValue = "Copied"
+            hintLabel.textColor = Palette.green
+        } else {
+            hintLabel.stringValue = "Click to copy"
+            hintLabel.textColor = Palette.inkSoft
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.14
+            hintLabel.animator().alphaValue = showHint ? 1 : 0
+        }
+        window?.invalidateCursorRects(for: self)
+    }
+}
+
 func stickerWindow(size: NSSize) -> NSWindow {
     let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                      styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
@@ -611,42 +767,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
     }
 
     private func ledgerRow(time: String, text: String) -> NSView {
-        let row = HoverRow()
-        row.translatesAutoresizingMaskIntoConstraints = false
-        let t = makeLabel(time.uppercased(), size: 11, weight: .semibold,
-                          color: Palette.faint, mono: true)
-        let body = makeLabel(text, size: 13.5)
-        body.lineBreakMode = .byWordWrapping
-        body.maximumNumberOfLines = 3
-        body.preferredMaxLayoutWidth = 640
-        body.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        body.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let copy = CapsuleButton("Copy", style: .lav, target: self, action: #selector(copyRow(_:)))
-        copy.toolTip = text
-        copy.isHidden = true
-        t.translatesAutoresizingMaskIntoConstraints = false
-        body.translatesAutoresizingMaskIntoConstraints = false
-        row.addSubview(t); row.addSubview(body); row.addSubview(copy)
-        NSLayoutConstraint.activate([
-            t.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 20),
-            t.topAnchor.constraint(equalTo: row.topAnchor, constant: 16),
-            t.widthAnchor.constraint(equalToConstant: 66),
-            body.leadingAnchor.constraint(equalTo: t.trailingAnchor, constant: 16),
-            body.topAnchor.constraint(equalTo: row.topAnchor, constant: 13),
-            body.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor, constant: -110),
-            body.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -13),
-            copy.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -14),
-            copy.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-        ])
-        row.onHover = { copy.isHidden = !$0 }
-        return row
-    }
-
-    @objc private func copyRow(_ sender: NSButton) {
-        guard let text = sender.toolTip else { return }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
+        LedgerRow(time: time, text: text)
     }
 
     // MARK: snippets view
