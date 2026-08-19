@@ -27,8 +27,9 @@ curl -fsSL https://raw.githubusercontent.com/jabreeflor/voice/main/scripts/insta
 ```
 
 The script builds voice from source on your Mac (~30 seconds), installs
-`Voice.app` into `/Applications`, and launches it. Because it's built
-locally, there's no Gatekeeper "unidentified developer" hassle.
+`Voice.app` into `/Applications`, puts the `voice` CLI on your PATH, and
+launches the app. Because it's built locally, there's no Gatekeeper
+"unidentified developer" hassle.
 
 **Requirements:** macOS 13+, [Homebrew](https://brew.sh), and the Xcode
 Command Line Tools (`xcode-select --install`). The script checks all three
@@ -42,6 +43,7 @@ brew install whisper-cpp
 git clone https://github.com/jabreeflor/voice.git && cd voice
 ./build.sh
 cp -R Voice.app /Applications/
+ln -sf /Applications/Voice.app/Contents/MacOS/voice /opt/homebrew/bin/voice
 open /Applications/Voice.app
 ```
 
@@ -63,6 +65,28 @@ The transcript appears at your cursor.
 - Taps shorter than ~0.35 s are ignored, and pressing another key while
   holding the hotkey cancels — so your Option-based shortcuts still work.
 - The menu-bar waveform icon shows status and turns red while recording.
+
+## 📎 Snippets
+
+Snippets expand a spoken trigger into longer text before Voice pastes.
+Add them in the app (Snippets tab) or with the bundled `voice` CLI — the
+CLI is the fastest way for an agent (or a script) to deliver snippets:
+
+```sh
+voice add brb "be right back"
+voice add "my email" you@example.com
+voice add sig < signature.txt    # text from stdin, including newlines
+voice list                       # JSON
+voice remove brb
+```
+
+The same trigger replaces the previous snippet. Voice reloads
+`snippets.json` on every dictation, so a snippet added while the app is
+running is live the next time you speak. No restart.
+
+`voice` is `Voice.app/Contents/MacOS/voice`. The installer symlinks it
+onto PATH (`/opt/homebrew/bin/voice`, `/usr/local/bin/voice`, or
+`~/.local/bin/voice`). From a source checkout: `swift run voice-cli -- …`.
 
 ## 🧠 Models
 
@@ -118,8 +142,8 @@ no network calls except model downloads from Hugging Face.
 
 ```sh
 swift build            # compile
-swift test             # 162 tests across four tiers
-./build.sh             # assemble + sign Voice.app
+swift test             # 192 tests across four tiers
+./build.sh             # assemble + sign Voice.app (includes the voice CLI)
 ```
 
 Rebuilding re-signs the binary, so macOS will ask you to re-grant
