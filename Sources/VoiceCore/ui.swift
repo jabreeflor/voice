@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import QuartzCore
 import ServiceManagement
 
 // MARK: - Design system
@@ -248,13 +249,84 @@ class HoverRow: NSView {
     override func mouseExited(with event: NSEvent) { onHover?(false) }
 }
 
+/// Tiny green bits that burst out of the "Copied" hint.
+final class GreenConfetti: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.masksToBounds = false
+        layer?.backgroundColor = .clear
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var isOpaque: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func burst() {
+        guard let host = layer else { return }
+        host.sublayers?.filter { $0.name == "bit" }.forEach { $0.removeFromSuperlayer() }
+
+        let origin = CGPoint(x: bounds.midX, y: bounds.midY)
+        let greens: [CGColor] = [
+            Palette.green.cgColor,
+            NSColor(red: 0.28, green: 0.70, blue: 0.44, alpha: 1).cgColor,
+            NSColor(red: 0.16, green: 0.40, blue: 0.26, alpha: 1).cgColor,
+            NSColor(red: 0.34, green: 0.78, blue: 0.52, alpha: 1).cgColor,
+        ]
+
+        for i in 0..<16 {
+            let bit = CALayer()
+            bit.name = "bit"
+            let w = CGFloat.random(in: 2.4...5.2)
+            let h = CGFloat.random(in: 2.2...6.0)
+            bit.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+            bit.cornerRadius = Bool.random() ? min(w, h) / 2 : 0.7
+            bit.backgroundColor = greens[i % greens.count]
+            bit.position = origin
+            host.addSublayer(bit)
+
+            let angle = (CGFloat(i) / 16) * (.pi * 2) + CGFloat.random(in: -0.28...0.28)
+            let dist = CGFloat.random(in: 11...24)
+            let end = CGPoint(x: origin.x + cos(angle) * dist,
+                              y: origin.y + sin(angle) * dist)
+            let duration = Double.random(in: 0.42...0.62)
+
+            let pos = CABasicAnimation(keyPath: "position")
+            pos.fromValue = NSValue(point: NSPoint(x: origin.x, y: origin.y))
+            pos.toValue = NSValue(point: NSPoint(x: end.x, y: end.y))
+            pos.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+            let fade = CAKeyframeAnimation(keyPath: "opacity")
+            fade.values = [1, 1, 0]
+            fade.keyTimes = [0, 0.35, 1]
+
+            let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+            spin.fromValue = 0
+            spin.toValue = CGFloat.random(in: -2.8...2.8)
+
+            let group = CAAnimationGroup()
+            group.animations = [pos, fade, spin]
+            group.duration = duration
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+            bit.add(group, forKey: "burst")
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+            self?.layer?.sublayers?.filter { $0.name == "bit" }.forEach { $0.removeFromSuperlayer() }
+        }
+    }
+}
+
 /// Dictation history row: the whole row copies on click. No capsule button —
 /// hover tints the row and fades in a text hint; a successful copy swaps the
-/// hint to "Copied" and holds a stronger tint briefly.
+/// hint to "Copied" and holds a stronger tint briefly. A green confetti burst
+/// plays on the Copied label.
 final class LedgerRow: NSView {
     private let timeLabel: NSTextField
     private let bodyLabel: NSTextField
     private let hintLabel: NSTextField
+    private let confetti = GreenConfetti()
     private let text: String
     private var hovered = false { didSet { updateChrome() } }
     private var copied = false { didSet { updateChrome() } }
@@ -286,6 +358,7 @@ final class LedgerRow: NSView {
 
         hintLabel.alignment = .right
         hintLabel.alphaValue = 0
+        hintLabel.wantsLayer = true
         hintLabel.setContentHuggingPriority(.required, for: .horizontal)
         hintLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -295,6 +368,7 @@ final class LedgerRow: NSView {
         addSubview(timeLabel)
         addSubview(bodyLabel)
         addSubview(hintLabel)
+        addSubview(confetti)
         NSLayoutConstraint.activate([
             timeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             timeLabel.topAnchor.constraint(equalTo: topAnchor, constant: 16),
@@ -305,6 +379,10 @@ final class LedgerRow: NSView {
             bodyLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -13),
             hintLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
             hintLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            confetti.centerXAnchor.constraint(equalTo: hintLabel.centerXAnchor),
+            confetti.centerYAnchor.constraint(equalTo: hintLabel.centerYAnchor),
+            confetti.widthAnchor.constraint(equalToConstant: 96),
+            confetti.heightAnchor.constraint(equalToConstant: 56),
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -382,8 +460,20 @@ final class LedgerRow: NSView {
         }
         copiedReset = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: work)
+        layoutSubtreeIfNeeded()
+        popCopiedHint()
+        confetti.burst()
         NSAccessibility.post(element: self, notification: .announcementRequested,
                              userInfo: [.announcement: "Copied" as NSString])
+    }
+
+    private func popCopiedHint() {
+        let pop = CAKeyframeAnimation(keyPath: "transform.scale")
+        pop.values = [0.86, 1.12, 1]
+        pop.keyTimes = [0, 0.4, 1]
+        pop.duration = 0.28
+        pop.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        hintLabel.layer?.add(pop, forKey: "pop")
     }
 
     private func updateChrome() {

@@ -28,6 +28,8 @@ final class LedgerRowTests: XCTestCase {
         let row = LedgerRow(time: "9:38 PM", text: "hello from voice")
         row.copyToClipboard()
         XCTAssertEqual(pb.string(forType: .string), "hello from voice")
+        XCTAssertTrue(row.subviews.contains(where: { $0 is GreenConfetti }),
+                      "green confetti should burst on the Copied hint")
     }
 
     func testAccessibilityPressCopies() {
