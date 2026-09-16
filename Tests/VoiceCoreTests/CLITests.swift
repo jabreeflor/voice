@@ -39,7 +39,8 @@ final class CLITests: XCTestCase {
 
     /// No command is a usage error (2) so a script can tell it from "not found".
     func testNoCommandIsUsageError() {
-        let r = run()
+        // Explicit call: a bare `run()` would resolve to XCTestCase.run().
+        let r = VoiceCLI.run([], directory: dir)
         XCTAssertEqual(r.status, 2)
         XCTAssertTrue(r.stderr.contains("Usage:"))
     }
