@@ -5,45 +5,37 @@ import ServiceManagement
 
 // MARK: - Design system
 
+/// Light, Apple-native chat palette: a white window, flat light-gray bubble
+/// surfaces with no outlines, one black "sent message" surface, iOS blue for
+/// links and selection, and a handful of saturated mascot colors for accents.
 enum Palette {
-    static let bg = NSColor(red: 0.969, green: 0.955, blue: 0.925, alpha: 1)
-    static let paper = NSColor(red: 1.0, green: 0.992, blue: 0.965, alpha: 1)
-    static let ink = NSColor(red: 0.129, green: 0.125, blue: 0.110, alpha: 1)
-    static let inkSoft = NSColor(red: 0.129, green: 0.125, blue: 0.110, alpha: 0.60)
-    static let faint = NSColor(red: 0.129, green: 0.125, blue: 0.110, alpha: 0.36)
-    static let dash = NSColor(red: 0.129, green: 0.125, blue: 0.110, alpha: 0.18)
-    static let lav = NSColor(red: 0.898, green: 0.831, blue: 0.976, alpha: 1)
-    static let pillBlack = NSColor(red: 0.086, green: 0.086, blue: 0.070, alpha: 1)
-    static let green = NSColor(red: 0.184, green: 0.478, blue: 0.298, alpha: 1)
-}
-
-func serifFont(ofSize size: CGFloat, weight: NSFont.Weight, italic: Bool = false) -> NSFont {
-    let base = NSFont.systemFont(ofSize: size, weight: weight)
-    var desc = base.fontDescriptor
-    if let serif = desc.withDesign(.serif) { desc = serif }
-    if italic { desc = desc.withSymbolicTraits(.italic) }
-    return NSFont(descriptor: desc, size: size) ?? base
+    static let bg = NSColor.white
+    static let panel = NSColor(red: 0.949, green: 0.949, blue: 0.957, alpha: 1)      // #F2F2F4 bubble
+    static let panelDeep = NSColor(red: 0.910, green: 0.910, blue: 0.922, alpha: 1)  // hover inside a bubble
+    static let ink = NSColor(red: 0.114, green: 0.114, blue: 0.122, alpha: 1)        // #1D1D1F
+    static let inkSoft = NSColor(red: 0.431, green: 0.431, blue: 0.451, alpha: 1)    // #6E6E73 secondary
+    static let faint = NSColor(red: 0.557, green: 0.557, blue: 0.576, alpha: 1)      // #8E8E93 tertiary
+    static let line = NSColor(red: 0.898, green: 0.898, blue: 0.918, alpha: 1)       // #E5E5EA hairline
+    static let accent = NSColor(red: 0.141, green: 0.471, blue: 0.953, alpha: 1)     // #2478F3 link blue
+    static let accentTint = NSColor(red: 0.914, green: 0.949, blue: 1.0, alpha: 1)   // #E9F2FF selected
+    static let pillBlack = NSColor(red: 0.059, green: 0.059, blue: 0.063, alpha: 1)  // #0F0F10 sent bubble
+    static let green = NSColor(red: 0.204, green: 0.780, blue: 0.349, alpha: 1)      // #34C759
+    static let greenTint = NSColor(red: 0.898, green: 0.969, blue: 0.914, alpha: 1)
+    static let orange = NSColor(red: 1.0, green: 0.478, blue: 0.102, alpha: 1)       // #FF7A1A mascot
 }
 
 func makeLabel(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular,
-               color: NSColor = Palette.ink, serif: Bool = false, mono: Bool = false) -> NSTextField {
+               color: NSColor = Palette.ink, mono: Bool = false) -> NSTextField {
     let l = NSTextField(labelWithString: text)
-    if mono { l.font = .monospacedSystemFont(ofSize: size, weight: weight) }
-    else if serif { l.font = serifFont(ofSize: size, weight: weight) }
-    else { l.font = .systemFont(ofSize: size, weight: weight) }
+    l.font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+                  : NSFont.systemFont(ofSize: size, weight: weight)
     l.textColor = color
     return l
 }
 
-func microcaps(_ text: String) -> NSTextField {
-    let l = NSTextField(labelWithString: text.uppercased())
-    l.font = .systemFont(ofSize: 10.5, weight: .bold)
-    l.textColor = Palette.faint
-    if let f = l.font {
-        l.attributedStringValue = NSAttributedString(string: text.uppercased(), attributes: [
-            .font: f, .foregroundColor: Palette.faint, .kern: 1.5])
-    }
-    return l
+/// Sentence-case gray group header ("Today", "Keep up to date").
+func sectionHeader(_ text: String) -> NSTextField {
+    makeLabel(text, size: 13, weight: .regular, color: Palette.inkSoft)
 }
 
 func vstack(_ views: [NSView] = [], spacing: CGFloat = 10) -> NSStackView {
@@ -62,11 +54,11 @@ func hstack(_ views: [NSView] = [], spacing: CGFloat = 10) -> NSStackView {
     return s
 }
 
-// MARK: - Sticker card (ink outline, no offset accent)
+// MARK: - Bubble card (flat fill, no outline)
 
-final class StickerCard: NSView {
-    var cardFill = Palette.paper { didSet { needsDisplay = true } }
-    var cornerRadius: CGFloat = 16 { didSet { needsDisplay = true } }
+final class BubbleCard: NSView {
+    var cardFill = Palette.panel { didSet { needsDisplay = true } }
+    var cornerRadius: CGFloat = 20 { didSet { needsDisplay = true } }
     let content = NSView()
 
     init(padding: NSEdgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 14, right: 18)) {
@@ -84,24 +76,43 @@ final class StickerCard: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func draw(_ dirtyRect: NSRect) {
-        let card = NSRect(x: 0.75, y: 0.75,
-                          width: bounds.width - 1.5, height: bounds.height - 1.5)
-        let p = NSBezierPath(roundedRect: card, xRadius: cornerRadius, yRadius: cornerRadius)
+        let p = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
         cardFill.setFill(); p.fill()
-        Palette.ink.setStroke(); p.lineWidth = 1.5; p.stroke()
     }
+}
+
+/// Round mascot-style disc with a white glyph inside (brand mark, hero art).
+final class Blob: NSView {
+    init(color: NSColor, diameter: CGFloat, inner: NSView) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.backgroundColor = color.cgColor
+        layer?.cornerRadius = diameter / 2
+        inner.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(inner)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: diameter),
+            heightAnchor.constraint(equalToConstant: diameter),
+            inner.centerXAnchor.constraint(equalTo: centerXAnchor),
+            inner.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
 }
 
 // MARK: - Capsule button
 
 final class CapsuleButton: NSButton {
-    enum Style { case ink, lav, ghost, granted }
+    /// `ink` is the black sent-bubble; `soft` the gray received-bubble; `ghost`
+    /// reads as a blue text link; `granted` is the green done state.
+    enum Style { case ink, soft, ghost, granted }
     private var style: Style = .ink
     private var baseTitle = ""
     private var storedAction: Selector?
 
     /// Instead of `isEnabled` (whose cell dims the title into a gray blob),
-    /// an inert capsule keeps full control of its look: muted outline, no action.
+    /// an inert capsule keeps full control of its look: muted fill, no action.
     var actionable = true {
         didSet {
             action = actionable ? storedAction : nil
@@ -130,31 +141,24 @@ final class CapsuleButton: NSButton {
 
     private func restyle() {
         layer?.cornerRadius = 17
+        layer?.borderWidth = 0
         var color = NSColor.white
         if !actionable && style != .granted {
-            layer?.backgroundColor = NSColor.clear.cgColor
-            layer?.borderWidth = 1.5
-            layer?.borderColor = Palette.dash.cgColor
+            layer?.backgroundColor = Palette.panel.cgColor
             color = Palette.faint
         } else {
             switch style {
             case .ink:
-                layer?.backgroundColor = Palette.ink.cgColor
-                layer?.borderWidth = 0
+                layer?.backgroundColor = Palette.pillBlack.cgColor
                 color = .white
-            case .lav:
-                layer?.backgroundColor = Palette.lav.cgColor
-                layer?.borderWidth = 1.5
-                layer?.borderColor = Palette.ink.cgColor
+            case .soft:
+                layer?.backgroundColor = Palette.panel.cgColor
                 color = Palette.ink
             case .ghost:
                 layer?.backgroundColor = .clear
-                layer?.borderWidth = 0
-                color = Palette.inkSoft
+                color = Palette.accent
             case .granted:
-                layer?.backgroundColor = Palette.paper.cgColor
-                layer?.borderWidth = 1.5
-                layer?.borderColor = Palette.green.cgColor
+                layer?.backgroundColor = Palette.greenTint.cgColor
                 color = Palette.green
             }
         }
@@ -218,21 +222,16 @@ final class MiniWave: NSView {
 
 // MARK: - Small pieces
 
-final class DashedLine: NSView {
+final class Hairline: NSView {
     init() {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(equalToConstant: 1.5).isActive = true
+        heightAnchor.constraint(equalToConstant: 1).isActive = true
     }
     required init?(coder: NSCoder) { fatalError() }
     override func draw(_ dirtyRect: NSRect) {
-        let p = NSBezierPath()
-        p.move(to: NSPoint(x: 0, y: 0.75))
-        p.line(to: NSPoint(x: bounds.width, y: 0.75))
-        p.setLineDash([4, 4], count: 2, phase: 0)
-        p.lineWidth = 1.5
-        Palette.dash.setStroke()
-        p.stroke()
+        Palette.line.setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 }
 
@@ -335,8 +334,7 @@ final class LedgerRow: NSView {
 
     init(time: String, text: String) {
         self.text = text
-        timeLabel = makeLabel(time.uppercased(), size: 11, weight: .semibold,
-                              color: Palette.faint, mono: true)
+        timeLabel = makeLabel(time, size: 11.5, weight: .medium, color: Palette.faint)
         bodyLabel = makeLabel(text, size: 13.5)
         hintLabel = makeLabel("Click to copy", size: 11, weight: .semibold,
                               color: Palette.inkSoft)
@@ -441,10 +439,10 @@ final class LedgerRow: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         if copied {
-            Palette.lav.setFill()
+            Palette.accentTint.setFill()
             bounds.fill()
         } else if hovered {
-            Palette.lav.withAlphaComponent(0.42).setFill()
+            Palette.panelDeep.setFill()
             bounds.fill()
         }
     }
@@ -494,7 +492,7 @@ final class LedgerRow: NSView {
     }
 }
 
-func stickerWindow(size: NSSize) -> NSWindow {
+func appWindow(size: NSSize) -> NSWindow {
     let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                      styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
                      backing: .buffered, defer: false)
@@ -516,7 +514,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
     private var window: NSWindow!
 
     private var tabButtons: [String: NSButton] = [:]
-    private var underlines: [String: NSView] = [:]
+    private var tabPills: [String: NSView] = [:]
     private var gearButton: NSButton!
     private var container: NSView!
     private var views: [String: NSView] = [:]
@@ -569,7 +567,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
     // MARK: build
 
     private func build() {
-        window = stickerWindow(size: NSSize(width: 1000, height: 680))
+        window = appWindow(size: NSSize(width: 1000, height: 680))
         window.delegate = self
         let content = NSView()
         window.contentView = content
@@ -581,26 +579,14 @@ final class MainWindow: NSObject, NSWindowDelegate {
         let rule = NSView()
         rule.translatesAutoresizingMaskIntoConstraints = false
         rule.wantsLayer = true
-        rule.layer?.backgroundColor = Palette.ink.cgColor
+        rule.layer?.backgroundColor = Palette.line.cgColor
         topbar.addSubview(rule)
 
-        let brandCap = NSView()
-        brandCap.translatesAutoresizingMaskIntoConstraints = false
-        brandCap.wantsLayer = true
-        brandCap.layer?.backgroundColor = Palette.pillBlack.cgColor
-        brandCap.layer?.cornerRadius = 14
         let brandWave = MiniWave()
         brandWave.barWidth = 3; brandWave.gap = 3; brandWave.maxBar = 12; brandWave.count = 4
         brandWave.animated = false
-        brandWave.translatesAutoresizingMaskIntoConstraints = false
-        brandCap.addSubview(brandWave)
-        NSLayoutConstraint.activate([
-            brandWave.centerXAnchor.constraint(equalTo: brandCap.centerXAnchor),
-            brandWave.centerYAnchor.constraint(equalTo: brandCap.centerYAnchor),
-            brandCap.widthAnchor.constraint(equalToConstant: 44),
-            brandCap.heightAnchor.constraint(equalToConstant: 28),
-        ])
-        let brandName = makeLabel("Voice", size: 20, weight: .bold, serif: true)
+        let brandCap = Blob(color: Palette.orange, diameter: 30, inner: brandWave)
+        let brandName = makeLabel("Voice", size: 17, weight: .bold)
 
         let tabD = tabButton("Dictations", key: "dictations")
         let tabS = tabButton("Snippets", key: "snippets")
@@ -619,7 +605,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
             gearButton.heightAnchor.constraint(equalToConstant: 32),
         ])
 
-        let bar = hstack([brandCap, brandName, spacer(width: 14), tabD, tabS], spacing: 10)
+        let bar = hstack([brandCap, brandName, spacer(width: 14), tabD, tabS], spacing: 8)
         bar.translatesAutoresizingMaskIntoConstraints = false
         topbar.addSubview(bar)
         topbar.addSubview(gearButton)
@@ -636,7 +622,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
             rule.leadingAnchor.constraint(equalTo: topbar.leadingAnchor),
             rule.trailingAnchor.constraint(equalTo: topbar.trailingAnchor),
             rule.bottomAnchor.constraint(equalTo: topbar.bottomAnchor),
-            rule.heightAnchor.constraint(equalToConstant: 1.5),
+            rule.heightAnchor.constraint(equalToConstant: 1),
             bar.leadingAnchor.constraint(equalTo: topbar.leadingAnchor, constant: 92),
             bar.centerYAnchor.constraint(equalTo: topbar.centerYAnchor),
             bar.heightAnchor.constraint(equalTo: topbar.heightAnchor),
@@ -675,25 +661,27 @@ final class MainWindow: NSObject, NSWindowDelegate {
         b.isBordered = false
         b.identifier = NSUserInterfaceItemIdentifier(key)
         tabButtons[key] = b
-        let underline = NSView()
-        underline.translatesAutoresizingMaskIntoConstraints = false
-        underline.wantsLayer = true
-        underline.layer?.backgroundColor = Palette.ink.cgColor
-        underline.heightAnchor.constraint(equalToConstant: 3).isActive = true
-        underlines[key] = underline
+        // The active tab sits on a gray bubble, the way the selected
+        // conversation is highlighted in a chat sidebar.
+        let pill = NSView()
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        pill.wantsLayer = true
+        pill.layer?.backgroundColor = Palette.panel.cgColor
+        pill.layer?.cornerRadius = 15
+        tabPills[key] = pill
         let wrap = NSView()
         wrap.translatesAutoresizingMaskIntoConstraints = false
         b.translatesAutoresizingMaskIntoConstraints = false
+        wrap.addSubview(pill)
         wrap.addSubview(b)
-        wrap.addSubview(underline)
         NSLayoutConstraint.activate([
-            b.topAnchor.constraint(equalTo: wrap.topAnchor),
-            b.leadingAnchor.constraint(equalTo: wrap.leadingAnchor, constant: 4),
-            b.trailingAnchor.constraint(equalTo: wrap.trailingAnchor, constant: -4),
+            b.leadingAnchor.constraint(equalTo: wrap.leadingAnchor, constant: 14),
+            b.trailingAnchor.constraint(equalTo: wrap.trailingAnchor, constant: -14),
             b.centerYAnchor.constraint(equalTo: wrap.centerYAnchor),
-            underline.leadingAnchor.constraint(equalTo: b.leadingAnchor),
-            underline.trailingAnchor.constraint(equalTo: b.trailingAnchor),
-            underline.bottomAnchor.constraint(equalTo: wrap.bottomAnchor),
+            pill.leadingAnchor.constraint(equalTo: wrap.leadingAnchor),
+            pill.trailingAnchor.constraint(equalTo: wrap.trailingAnchor),
+            pill.centerYAnchor.constraint(equalTo: wrap.centerYAnchor),
+            pill.heightAnchor.constraint(equalToConstant: 30),
             wrap.heightAnchor.constraint(equalToConstant: 60),
         ])
         return wrap
@@ -738,9 +726,9 @@ final class MainWindow: NSObject, NSWindowDelegate {
             b.attributedTitle = NSAttributedString(string: b.title, attributes: [
                 .font: NSFont.systemFont(ofSize: 13.5, weight: .semibold),
                 .foregroundColor: active ? Palette.ink : Palette.inkSoft])
-            underlines[k]?.isHidden = !active
+            tabPills[k]?.isHidden = !active
         }
-        gearButton.layer?.backgroundColor = key == "settings" ? Palette.lav.cgColor : NSColor.clear.cgColor
+        gearButton.layer?.backgroundColor = key == "settings" ? Palette.panel.cgColor : NSColor.clear.cgColor
         refresh(force: true)
     }
 
@@ -767,7 +755,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
     private func rebuildDictations() {
         guard let app = app else { return }
         dictStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        dictStack.addArrangedSubview(makeLabel("Dictations", size: 32, weight: .bold, serif: true))
+        dictStack.addArrangedSubview(makeLabel("Dictations", size: 28, weight: .bold))
 
         let fmtWords = NumberFormatter()
         fmtWords.numberStyle = .decimal
@@ -776,17 +764,17 @@ final class MainWindow: NSObject, NSWindowDelegate {
         let lat = app.historyStore.averageLatency
 
         let strip = hstack([
-            statChip(words, "words spoken"),
-            statChip(wpm > 0 ? "\(wpm)" : "—", "words per minute"),
-            statChip(lat > 0 ? String(format: "%.1fs", lat) : "—", "average latency"),
-        ], spacing: 14)
+            statChip(words, "words spoken", tint: Palette.orange),
+            statChip(wpm > 0 ? "\(wpm)" : "—", "words per minute", tint: Palette.green),
+            statChip(lat > 0 ? String(format: "%.1fs", lat) : "—", "average latency", tint: Palette.accent),
+        ], spacing: 12)
         strip.alignment = .top
 
         let live = NSView()
         live.translatesAutoresizingMaskIntoConstraints = false
         live.wantsLayer = true
         live.layer?.backgroundColor = Palette.pillBlack.cgColor
-        live.layer?.cornerRadius = 32
+        live.layer?.cornerRadius = 22
         let lwave = MiniWave()
         lwave.translatesAutoresizingMaskIntoConstraints = false
         let llabel = makeLabel("Hold \(Config.hotkey.shortLabel) anywhere",
@@ -809,7 +797,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
 
         let groups = app.historyStore.grouped()
         if groups.isEmpty {
-            let empty = StickerCard()
+            let empty = BubbleCard()
             let msg = makeLabel("Hold \(Config.hotkey.shortLabel) in any app and your dictations will appear here.",
                                 size: 13, color: Palette.inkSoft)
             msg.translatesAutoresizingMaskIntoConstraints = false
@@ -823,15 +811,15 @@ final class MainWindow: NSObject, NSWindowDelegate {
         let timeFmt = DateFormatter()
         timeFmt.dateFormat = "h:mm a"
         for (title, items) in groups {
-            let cap = microcaps(title)
+            let cap = sectionHeader(title)
             dictStack.addArrangedSubview(cap)
             dictStack.setCustomSpacing(8, after: cap)
-            let card = StickerCard(padding: NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0))
+            let card = BubbleCard(padding: NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0))
             let rows = vstack([], spacing: 0)
             rows.translatesAutoresizingMaskIntoConstraints = false
             for (i, e) in items.enumerated() {
                 if i > 0 {
-                    let d = DashedLine()
+                    let d = Hairline()
                     rows.addArrangedSubview(d)
                     d.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
                 }
@@ -847,12 +835,21 @@ final class MainWindow: NSObject, NSWindowDelegate {
         }
     }
 
-    private func statChip(_ number: String, _ label: String) -> StickerCard {
-        let c = StickerCard(padding: NSEdgeInsets(top: 12, left: 20, bottom: 12, right: 20))
+    private func statChip(_ number: String, _ label: String, tint: NSColor) -> BubbleCard {
+        let c = BubbleCard(padding: NSEdgeInsets(top: 12, left: 18, bottom: 12, right: 20))
+        let dot = NSView()
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        dot.wantsLayer = true
+        dot.layer?.backgroundColor = tint.cgColor
+        dot.layer?.cornerRadius = 4
+        NSLayoutConstraint.activate([
+            dot.widthAnchor.constraint(equalToConstant: 8),
+            dot.heightAnchor.constraint(equalToConstant: 8),
+        ])
         let col = vstack([
-            makeLabel(number, size: 24, weight: .bold, serif: true),
-            makeLabel(label, size: 11.5, color: Palette.inkSoft),
-        ], spacing: 1)
+            makeLabel(number, size: 24, weight: .bold),
+            hstack([dot, makeLabel(label, size: 12, color: Palette.inkSoft)], spacing: 6),
+        ], spacing: 2)
         col.translatesAutoresizingMaskIntoConstraints = false
         c.content.addSubview(col)
         pinToContent(col, of: c)
@@ -870,7 +867,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
         snipStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
         let head = hstack([
-            makeLabel("Snippets", size: 32, weight: .bold, serif: true),
+            makeLabel("Snippets", size: 28, weight: .bold),
             NSView(),
             CapsuleButton("+ New snippet", style: .ink, target: self, action: #selector(showAddRow)),
         ], spacing: 10)
@@ -879,14 +876,14 @@ final class MainWindow: NSObject, NSWindowDelegate {
         snipStack.setCustomSpacing(20, after: head)
 
         // promo card
-        let promo = StickerCard(padding: NSEdgeInsets(top: 22, left: 26, bottom: 22, right: 26))
-        promo.cardFill = Palette.lav
+        let promo = BubbleCard(padding: NSEdgeInsets(top: 22, left: 26, bottom: 22, right: 26))
+        promo.cardFill = Palette.accentTint
         let h3 = NSTextField(labelWithString: "")
         let a = NSMutableAttributedString(string: "Your voice, ", attributes: [
-            .font: serifFont(ofSize: 24, weight: .semibold), .foregroundColor: Palette.ink])
+            .font: NSFont.systemFont(ofSize: 22, weight: .bold), .foregroundColor: Palette.ink])
         a.append(NSAttributedString(string: "abbreviated.", attributes: [
-            .font: serifFont(ofSize: 24, weight: .semibold, italic: true),
-            .foregroundColor: Palette.ink]))
+            .font: NSFont.systemFont(ofSize: 22, weight: .bold),
+            .foregroundColor: Palette.accent]))
         h3.attributedStringValue = a
         let sub = makeLabel("Save the things you re-type constantly. Say the trigger while dictating and Voice swaps in the full text before it lands.",
                             size: 13, color: Palette.inkSoft)
@@ -905,14 +902,14 @@ final class MainWindow: NSObject, NSWindowDelegate {
         snipStack.setCustomSpacing(22, after: promo)
 
         // list card
-        let card = StickerCard(padding: NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0))
+        let card = BubbleCard(padding: NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0))
         let rows = vstack([], spacing: 0)
         rows.translatesAutoresizingMaskIntoConstraints = false
 
         // add-row
         trigField = NSTextField(string: "")
         trigField.placeholderString = "trigger"
-        trigField.font = serifFont(ofSize: 13, weight: .medium, italic: true)
+        trigField.font = .systemFont(ofSize: 13, weight: .medium)
         bodyField = NSTextField(string: "")
         bodyField.placeholderString = "Text to insert…"
         bodyField.font = .systemFont(ofSize: 13)
@@ -961,7 +958,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
                 // separators handled below
             }
             if i > 0 {
-                let d = DashedLine()
+                let d = Hairline()
                 rows.addArrangedSubview(d)
                 d.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
             }
@@ -978,8 +975,8 @@ final class MainWindow: NSObject, NSWindowDelegate {
 
     private func exampleRow(say: String, out: String) -> NSView {
         let sayChip = paddedChip("\u{201C}\(say)\u{201D}",
-                                 font: serifFont(ofSize: 13, weight: .semibold, italic: true),
-                                 fg: Palette.ink, bg: Palette.paper, border: true)
+                                 font: .systemFont(ofSize: 13, weight: .semibold),
+                                 fg: Palette.ink, bg: Palette.bg, border: true)
         let arrow = makeLabel("→", size: 13, weight: .semibold, color: Palette.inkSoft, mono: true)
         let outChip = paddedChip(out, font: .systemFont(ofSize: 12.5),
                                  fg: .white, bg: Palette.pillBlack, border: false)
@@ -993,7 +990,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
         v.wantsLayer = true
         v.layer?.backgroundColor = bg.cgColor
         v.layer?.cornerRadius = 14
-        if border { v.layer?.borderWidth = 1.5; v.layer?.borderColor = Palette.ink.cgColor }
+        if border { v.layer?.borderWidth = 1; v.layer?.borderColor = Palette.line.cgColor }
         let l = NSTextField(labelWithString: text)
         l.font = font
         l.textColor = fg
@@ -1014,8 +1011,8 @@ final class MainWindow: NSObject, NSWindowDelegate {
         let row = HoverRow()
         row.translatesAutoresizingMaskIntoConstraints = false
         let chip = paddedChip("\u{201C}\(s.trigger)\u{201D}",
-                              font: serifFont(ofSize: 13, weight: .semibold, italic: true),
-                              fg: Palette.ink, bg: Palette.lav, border: true)
+                              font: .systemFont(ofSize: 13, weight: .semibold),
+                              fg: Palette.ink, bg: Palette.bg, border: true)
         let arrow = makeLabel("→", size: 13, weight: .semibold, color: Palette.faint, mono: true)
         let body = makeLabel(s.text, size: 13, color: Palette.inkSoft)
         body.lineBreakMode = .byTruncatingTail
@@ -1065,7 +1062,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
         let root = NSView()
         root.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = makeLabel("Settings", size: 32, weight: .bold, serif: true)
+        let title = makeLabel("Settings", size: 28, weight: .bold)
 
         statusDot = NSView()
         statusDot.translatesAutoresizingMaskIntoConstraints = false
@@ -1079,7 +1076,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
         statusLabel.lineBreakMode = .byWordWrapping
         statusLabel.maximumNumberOfLines = 2
         statusLabel.preferredMaxLayoutWidth = 380
-        fixButton = CapsuleButton("Open Settings…", style: .lav,
+        fixButton = CapsuleButton("Open Settings…", style: .soft,
                                   target: self, action: #selector(openAX))
         fixButton.isHidden = true
         let statusRow = hstack([statusDot, statusLabel, fixButton], spacing: 10)
@@ -1094,17 +1091,17 @@ final class MainWindow: NSObject, NSWindowDelegate {
         loginSwitch = NSSwitch()
         loginSwitch.target = self
         loginSwitch.action = #selector(loginChanged)
-        let micBtn = CapsuleButton("Run 3-second test", style: .lav,
+        let micBtn = CapsuleButton("Run 3-second test", style: .soft,
                                    target: self, action: #selector(micTest))
 
-        let card = StickerCard(padding: NSEdgeInsets(top: 6, left: 22, bottom: 6, right: 22))
+        let card = BubbleCard(padding: NSEdgeInsets(top: 6, left: 22, bottom: 6, right: 22))
         let rows = vstack([
             settingRow("Talk key", control: hkPopup),
-            DashedLine(),
+            Hairline(),
             settingRow("Sound effects", control: soundSwitch),
-            DashedLine(),
+            Hairline(),
             settingRow("Start at login", control: loginSwitch),
-            DashedLine(),
+            Hairline(),
             settingRow("Microphone check", control: micBtn),
         ], spacing: 0)
         rows.translatesAutoresizingMaskIntoConstraints = false
@@ -1178,7 +1175,7 @@ final class MainWindow: NSObject, NSWindowDelegate {
     }
     @objc private func micTest() { app?.previewMic() }
 
-    private func pinToContent(_ v: NSView, of card: StickerCard) {
+    private func pinToContent(_ v: NSView, of card: BubbleCard) {
         NSLayoutConstraint.activate([
             v.topAnchor.constraint(equalTo: card.content.topAnchor),
             v.leadingAnchor.constraint(equalTo: card.content.leadingAnchor),
@@ -1252,12 +1249,12 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     // MARK: build
 
     private func build() {
-        window = stickerWindow(size: NSSize(width: 760, height: 610))
+        window = appWindow(size: NSSize(width: 760, height: 610))
         window.delegate = self
         let content = NSView()
         window.contentView = content
 
-        stepNo = makeLabel("01 / 05", size: 12, weight: .semibold, color: Palette.faint, mono: true)
+        stepNo = makeLabel("01 / 05", size: 12, weight: .medium, color: Palette.faint)
         stepNo.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(stepNo)
 
@@ -1268,7 +1265,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         progress = NSView()
         progress.translatesAutoresizingMaskIntoConstraints = false
         progress.wantsLayer = true
-        progress.layer?.backgroundColor = Palette.ink.cgColor
+        progress.layer?.backgroundColor = Palette.accent.cgColor
         content.addSubview(progress)
         progressWidth = progress.widthAnchor.constraint(equalTo: content.widthAnchor, multiplier: 0.2)
 
@@ -1288,7 +1285,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
             container.widthAnchor.constraint(lessThanOrEqualToConstant: 540),
             progress.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             progress.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            progress.heightAnchor.constraint(equalToConstant: 4),
+            progress.heightAnchor.constraint(equalToConstant: 3),
             progressWidth,
         ])
 
@@ -1329,13 +1326,15 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         return s
     }
 
-    private func heroTitle(_ regular: String, _ italic: String, size: CGFloat = 40) -> NSTextField {
+    /// Bold sans headline; the second run is the blue emphasis, the way a
+    /// chat app bolds the one phrase that matters in a message.
+    private func heroTitle(_ regular: String, _ emphasis: String, size: CGFloat = 36) -> NSTextField {
         let l = NSTextField(labelWithString: "")
         let a = NSMutableAttributedString(string: regular, attributes: [
-            .font: serifFont(ofSize: size, weight: .bold), .foregroundColor: Palette.ink])
-        a.append(NSAttributedString(string: italic, attributes: [
-            .font: serifFont(ofSize: size, weight: .bold, italic: true),
-            .foregroundColor: Palette.ink]))
+            .font: NSFont.systemFont(ofSize: size, weight: .bold), .foregroundColor: Palette.ink])
+        a.append(NSAttributedString(string: emphasis, attributes: [
+            .font: NSFont.systemFont(ofSize: size, weight: .bold),
+            .foregroundColor: Palette.accent]))
         l.attributedStringValue = a
         return l
     }
@@ -1349,9 +1348,10 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         return l
     }
 
-    private func blackCapsule(_ inner: NSView, w: CGFloat, h: CGFloat) -> StickerCard {
-        let c = StickerCard(padding: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
-        c.cardFill = Palette.pillBlack
+    private func heroCapsule(_ inner: NSView, w: CGFloat, h: CGFloat,
+                             fill: NSColor = Palette.pillBlack) -> BubbleCard {
+        let c = BubbleCard(padding: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
+        c.cardFill = fill
         c.cornerRadius = h / 2
         inner.translatesAutoresizingMaskIntoConstraints = false
         c.content.addSubview(inner)
@@ -1367,7 +1367,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     private func buildStep1() -> NSView {
         let wave = MiniWave()
         wave.barWidth = 5; wave.gap = 5; wave.maxBar = 28
-        let cap = blackCapsule(wave, w: 190, h: 84)
+        let cap = heroCapsule(wave, w: 190, h: 84, fill: Palette.orange)
         let title = heroTitle("Say it. ", "It's typed.")
         let sub = subText("Voice turns speech into text in any app on your Mac. It runs entirely on this computer — no accounts, no subscriptions, and nothing you say ever leaves your machine.")
         let cta = CapsuleButton("Set up Voice", style: .ink, target: self, action: #selector(toStep2))
@@ -1378,19 +1378,17 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     }
 
     private func permCard(symbol: String, title: String, sub: String,
-                          button: CapsuleButton) -> StickerCard {
-        let card = StickerCard(padding: NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16))
+                          button: CapsuleButton) -> BubbleCard {
+        let card = BubbleCard(padding: NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16))
         let glyphBox = NSView()
         glyphBox.translatesAutoresizingMaskIntoConstraints = false
         glyphBox.wantsLayer = true
-        glyphBox.layer?.backgroundColor = Palette.lav.cgColor
-        glyphBox.layer?.cornerRadius = 12
-        glyphBox.layer?.borderWidth = 1.5
-        glyphBox.layer?.borderColor = Palette.ink.cgColor
+        glyphBox.layer?.backgroundColor = Palette.accentTint.cgColor
+        glyphBox.layer?.cornerRadius = 21
         let img = NSImageView(image: NSImage(systemSymbolName: symbol,
                                              accessibilityDescription: title)!
             .withSymbolConfiguration(.init(pointSize: 17, weight: .semibold))!)
-        img.contentTintColor = Palette.ink
+        img.contentTintColor = Palette.accent
         img.translatesAutoresizingMaskIntoConstraints = false
         glyphBox.addSubview(img)
         NSLayoutConstraint.activate([
@@ -1419,10 +1417,10 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     }
 
     private func buildStep2() -> NSView {
-        let title = heroTitle("Two permissions, ", "once", size: 32)
+        let title = heroTitle("Two permissions, ", "once", size: 30)
         let sub = subText("Voice only listens while you hold the hotkey — never in the background.")
-        micButton = CapsuleButton("Allow", style: .lav, target: self, action: #selector(askMic))
-        axButton = CapsuleButton("Open Settings", style: .lav, target: self, action: #selector(askAX))
+        micButton = CapsuleButton("Allow", style: .soft, target: self, action: #selector(askMic))
+        axButton = CapsuleButton("Open Settings", style: .soft, target: self, action: #selector(askAX))
         let mic = permCard(symbol: "mic", title: "Microphone",
                            sub: "To hear you while the hotkey is held.", button: micButton)
         let ax = permCard(symbol: "keyboard", title: "Accessibility",
@@ -1438,7 +1436,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     }
 
     private func buildStep3() -> NSView {
-        let title = heroTitle("Pick your ", "talk key", size: 32)
+        let title = heroTitle("Pick your ", "talk key", size: 30)
         let sub = subText("Hold it down to speak. Let go and your words are typed. Tap Esc to cancel.")
         let row = hstack([], spacing: 12)
         for (i, hk) in Hotkey.allCases.enumerated() {
@@ -1466,9 +1464,9 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     }
 
     private func styleTile(_ b: NSButton, selected: Bool) {
-        b.layer?.backgroundColor = (selected ? Palette.lav : Palette.paper).cgColor
-        b.layer?.borderWidth = 1.5
-        b.layer?.borderColor = (selected ? Palette.ink : Palette.dash).cgColor
+        b.layer?.backgroundColor = (selected ? Palette.accentTint : Palette.panel).cgColor
+        b.layer?.borderWidth = selected ? 1.5 : 0
+        b.layer?.borderColor = Palette.accent.cgColor
     }
 
     private func tileTitle(_ main: String, sub: String, selected: Bool) -> NSAttributedString {
@@ -1476,7 +1474,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
         p.alignment = .center
         let a = NSMutableAttributedString(string: main + "\n", attributes: [
             .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
-            .foregroundColor: Palette.ink, .paragraphStyle: p])
+            .foregroundColor: selected ? Palette.accent : Palette.ink, .paragraphStyle: p])
         a.append(NSAttributedString(string: sub, attributes: [
             .font: NSFont.systemFont(ofSize: 10.5, weight: .medium),
             .foregroundColor: Palette.inkSoft, .paragraphStyle: p]))
@@ -1484,15 +1482,15 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     }
 
     private func buildStep4() -> NSView {
-        let title = heroTitle("Take it for ", "a spin", size: 32)
+        let title = heroTitle("Take it for ", "a spin", size: 30)
         let sub = subText("Click into the box, hold your talk key, say anything, then release.")
-        let box = StickerCard(padding: NSEdgeInsets(top: 12, left: 14, bottom: 12, right: 14))
+        let box = BubbleCard(padding: NSEdgeInsets(top: 12, left: 14, bottom: 12, right: 14))
         tryText = NSTextView()
         tryText.font = .systemFont(ofSize: 15)
         tryText.textColor = Palette.ink
         tryText.backgroundColor = .clear
         tryText.isRichText = false
-        tryText.insertionPointColor = Palette.ink
+        tryText.insertionPointColor = Palette.accent
         tryText.translatesAutoresizingMaskIntoConstraints = false
         box.content.addSubview(tryText)
         NSLayoutConstraint.activate([
@@ -1514,13 +1512,9 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
     }
 
     private func buildStep5() -> NSView {
-        let done = makeLabel("done", size: 26, weight: .semibold, color: .white, serif: true)
-        if let f = done.font,
-           let it = NSFont(descriptor: f.fontDescriptor.withSymbolicTraits(.italic), size: 26) {
-            done.font = it
-        }
-        let cap = blackCapsule(done, w: 150, h: 72)
-        let title = heroTitle("That's the ", "whole app.", size: 34)
+        let done = makeLabel("done", size: 24, weight: .bold, color: .white)
+        let cap = heroCapsule(done, w: 150, h: 72, fill: Palette.green)
+        let title = heroTitle("That's the ", "whole app.", size: 32)
         let sub = subText("Voice waits in your menu bar. Hold \(Config.hotkey.shortLabel) in any app to dictate, and come back here for your dictation history and snippets.")
         let cta = CapsuleButton("Open Voice", style: .ink, target: self, action: #selector(finish))
         let v = centered([cap, title, sub, cta], spacing: 16)
