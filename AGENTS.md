@@ -132,9 +132,14 @@ Rules:
   `Config.preferredModels` is ordered for latency, not size; tiny is last.
 - Extract testable pure functions (`computeStatus`, `cleanTranscript`,
   `Recorder.wavData`) rather than mocking AppKit.
-- UI: `Palette`, serif-capable labels, `StickerCard` (ink outline, **no**
-  purple offset accent). `CapsuleButton` uses `actionable` instead of
-  `isEnabled` so disabled titles do not gray into a blob.
+- UI: Apple-native chat look. `Palette` is a white window, flat light-gray
+  `BubbleCard` surfaces (no outlines, no dashed rules — `Hairline` only),
+  one black `pillBlack` surface for the primary action, `accent` blue for
+  links/selection/emphasis, and `orange`/`green` mascot colors for the brand
+  `Blob` and hero art. System sans only: no serif, no italics, no uppercase
+  microcaps (`sectionHeader` is sentence case). `CapsuleButton` uses
+  `actionable` instead of `isEnabled` so disabled titles do not gray into a
+  blob. `assets/app-prototype.html` mirrors these tokens; keep it in sync.
 - Comments explain non-obvious constraints (ports, skip-vs-fail, TCC,
   clipboard restore timing). Do not narrate obvious code.
 
