@@ -752,6 +752,9 @@ final class MainWindow: NSObject, NSWindowDelegate {
             lastHistoryStamp = app.historyStore.stamp
             rebuildDictations()
         }
+        // Edits made by voicectl (or by hand) bump the stamp via reload, so the
+        // 1 s refresh timer keeps the tab in sync with the file.
+        if current == "snippets" { app.snippetStore.reloadIfChanged() }
         if current == "snippets", force || app.snippetStore.stamp != lastSnippetStamp {
             lastSnippetStamp = app.snippetStore.stamp
             rebuildSnippets()

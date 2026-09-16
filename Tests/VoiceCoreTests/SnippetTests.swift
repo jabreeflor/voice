@@ -253,6 +253,69 @@ final class SnippetTests: XCTestCase {
         XCTAssertTrue(SnippetStore(directory: other).snippets.isEmpty)
     }
 
+    // MARK: - External edits (voicectl writes the same file)
+
+    func testReloadIfChangedPicksUpAnotherStoresWrite() {
+        let writer = SnippetStore(directory: dir)
+        let stamp = store.stamp
+        XCTAssertFalse(store.reloadIfChanged(), "nothing changed yet")
+
+        writer.add(trigger: "brb", text: "be right back")
+        XCTAssertTrue(store.reloadIfChanged())
+        XCTAssertEqual(store.snippets, writer.snippets)
+        XCTAssertEqual(store.stamp, stamp + 1, "the UI keys its rebuild off the stamp")
+        XCTAssertFalse(store.reloadIfChanged(), "a second call is a no-op")
+    }
+
+    func testExpandAndMutationsSeeExternalChangesWithoutAnExplicitReload() {
+        let writer = SnippetStore(directory: dir)
+        writer.add(trigger: "brb", text: "be right back")
+        XCTAssertEqual(store.expand("okay brb"), "okay be right back")
+
+        // A stale in-memory list must not clobber the other writer's snippet.
+        store.add(trigger: "sig", text: "Jabree")
+        XCTAssertEqual(SnippetStore(directory: dir).snippets.map(\.trigger), ["brb", "sig"])
+    }
+
+    func testDeletedFileEmptiesTheStoreOnReload() {
+        store.add(trigger: "brb", text: "be right back")
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent("snippets.json"))
+        XCTAssertTrue(store.reloadIfChanged())
+        XCTAssertTrue(store.snippets.isEmpty)
+    }
+
+    func testOwnSaveDoesNotCountAsAnExternalChange() {
+        store.add(trigger: "brb", text: "be right back")
+        let stamp = store.stamp
+        XCTAssertFalse(store.reloadIfChanged())
+        XCTAssertEqual(store.stamp, stamp)
+    }
+
+    func testRemoveByTriggerNormalizesAndReportsMissing() {
+        store.add(trigger: "my email", text: "x@y.com")
+        XCTAssertFalse(store.remove(trigger: "nope"))
+        XCTAssertTrue(store.remove(trigger: " \"My Email\" "))
+        XCTAssertTrue(store.snippets.isEmpty)
+    }
+
+    func testSnippetForTriggerNormalizes() {
+        store.add(trigger: "my email", text: "x@y.com")
+        XCTAssertEqual(store.snippet(for: "MY EMAIL")?.text, "x@y.com")
+        XCTAssertNil(store.snippet(for: "other"))
+    }
+
+    func testReplaceAllNormalizesDropsEmptiesAndDedupes() {
+        store.add(trigger: "old", text: "OLD")
+        store.replaceAll(with: [
+            Snippet(trigger: " A ", text: "first"),
+            Snippet(trigger: "", text: "dropped"),
+            Snippet(trigger: "b", text: ""),
+            Snippet(trigger: "a", text: "second"),
+        ])
+        XCTAssertEqual(store.snippets, [Snippet(trigger: "a", text: "second")])
+        XCTAssertEqual(SnippetStore(directory: dir).snippets, store.snippets)
+    }
+
     func testCorruptSnippetFileLeavesStoreEmptyRatherThanCrashing() {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? Data("not json".utf8).write(to: dir.appendingPathComponent("snippets.json"))

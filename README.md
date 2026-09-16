@@ -90,6 +90,36 @@ can force one: `VOICE_MODEL=~/path/to/model.bin open /Applications/Voice.app`
 - **Sounds** — toggle the start/paste blips
 - **Start at Login**
 - **Copy Last Transcript** — if a paste didn't land where you wanted
+- **Snippets** (in the main window) — say a trigger phrase, paste a longer
+  text. Also editable from Terminal with [`voicectl`](#️-command-line-voicectl).
+
+## ⌨️ Command line: `voicectl`
+
+`voicectl` ships inside `Voice.app` and the installer links it onto your
+PATH. It edits the same snippets the app uses, so scripts and coding agents
+can manage them without clicking through the Snippets tab. The running app
+picks changes up immediately.
+
+```sh
+voicectl snippets add "my email" "you@example.com"   # say "my email" to paste it
+voicectl snippets add signoff - <<'TXT'              # multi-line text from stdin
+Best,
+Jabree
+TXT
+voicectl snippets list                               # or --json
+voicectl snippets expand "okay brb see you"          # preview the rewrite
+voicectl snippets remove brb
+voicectl snippets export > snippets.json             # back up / share
+voicectl snippets import snippets.json               # merge (--replace to overwrite)
+```
+
+Exit status is 0 on success, 1 when a trigger is missing or input is
+invalid, and 2 for a usage error. If the installer could not find a writable
+bin directory, link it yourself:
+
+```sh
+sudo ln -sfn /Applications/Voice.app/Contents/MacOS/voicectl /usr/local/bin/voicectl
+```
 
 ## 🔬 How it works
 
@@ -118,9 +148,12 @@ no network calls except model downloads from Hugging Face.
 
 ```sh
 swift build            # compile
-swift test             # 162 tests across four tiers
-./build.sh             # assemble + sign Voice.app
+swift test             # unit + integration tests across four tiers
+./build.sh             # assemble + sign Voice.app (includes voicectl)
 ```
+
+`voicectl` is a second executable target (`Sources/VoiceCLI`) that links
+`VoiceCore`; `build.sh` copies it into `Voice.app/Contents/MacOS/`.
 
 Rebuilding re-signs the binary, so macOS will ask you to re-grant
 **Accessibility** (toggle Voice off/on in the list). Microphone permission

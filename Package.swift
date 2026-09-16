@@ -14,6 +14,14 @@ let package = Package(
             dependencies: ["VoiceCore"],
             path: "Sources/VoiceApp"
         ),
+        // Command-line snippet editor bundled into Voice.app by build.sh.
+        // Named voicectl rather than voice: the app binary is `Voice`, and a
+        // `voice` product would collide with it on a case-insensitive disk.
+        .executableTarget(
+            name: "voicectl",
+            dependencies: ["VoiceCore"],
+            path: "Sources/VoiceCLI"
+        ),
         .testTarget(
             name: "VoiceCoreTests",
             dependencies: ["VoiceCore"],

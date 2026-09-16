@@ -54,6 +54,23 @@ cp -R "$WORKDIR/voice/$APP" "$DEST"
 
 open "$DEST"
 
+# Put the bundled voicectl on PATH so scripts and agents can edit snippets.
+# A symlink (not a copy) keeps it in lockstep with the installed app. Prefer
+# a bin dir that is already on PATH and writable without sudo.
+CLI_SRC="$DEST/Contents/MacOS/voicectl"
+CLI_LINK=""
+for BIN_DIR in /opt/homebrew/bin /usr/local/bin; do
+    case ":$PATH:" in
+        *":$BIN_DIR:"*) ;;
+        *) continue ;;
+    esac
+    if [ -d "$BIN_DIR" ] && [ -w "$BIN_DIR" ]; then
+        ln -sfn "$CLI_SRC" "$BIN_DIR/voicectl"
+        CLI_LINK="$BIN_DIR/voicectl"
+        break
+    fi
+done
+
 bold "Done! voice is running in your menu bar (waveform icon)."
 cat <<'EOF'
 
@@ -69,3 +86,11 @@ background — the menu bar icon shows progress.
 Then click into any text field, hold Right Option (⌥), speak, release.
 Your words appear at the cursor. Esc cancels a recording.
 EOF
+
+if [ -n "$CLI_LINK" ]; then
+    printf '\nThe voicectl command is installed at %s\n' "$CLI_LINK"
+    printf 'Try:  voicectl snippets add brb "be right back"\n'
+else
+    printf '\nTo use the voicectl command (edit snippets from a script), link it onto PATH:\n'
+    printf '  sudo ln -sfn "%s" /usr/local/bin/voicectl\n' "$CLI_SRC"
+fi
