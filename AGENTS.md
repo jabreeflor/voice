@@ -48,15 +48,18 @@ a real keychain identity keeps grants. Microphone survives either way.
 ```
 Package.swift                 SPM: VoiceCore, Voice executable, VoiceCoreTests
 Sources/VoiceApp/main.swift   Thin entry: VoiceMain.run()
+Sources/VoiceCLI/main.swift   Thin entry: exit(VoiceCLI.main()) -> voicectl
 Sources/VoiceCore/core.swift  Config, models, recorder, whisper engine,
                               transcript cleanup, overlay, hotkey, paste
 Sources/VoiceCore/app.swift   AppDelegate, status decision table, recording flow
 Sources/VoiceCore/ui.swift    AppKit windows, onboarding, design system
 Sources/VoiceCore/store.swift History + snippets (Foundation only)
+Sources/VoiceCore/cli.swift   voicectl: arg parsing + snippet commands (pure `VoiceCLI.run`)
 Tests/VoiceCoreTests/         XCTest, four tiers (see below)
-build.sh                      Release build → Voice.app + codesign
+build.sh                      Release build → Voice.app (+ bundled voicectl) + codesign
 Info.plist                    LSUIElement (no Dock), mic usage string
-scripts/install.sh            curl | bash installer (clones main, runs build.sh)
+scripts/install.sh            curl | bash installer (clones main, runs build.sh,
+                              symlinks voicectl onto PATH)
 scripts/e2e-smoke.sh          Tier-4 GUI smoke
 .github/workflows/ci.yml      macOS 15: brew whisper-cpp, cache base.en, swift test
 ```
@@ -84,11 +87,22 @@ split into many small files unless a new concern is genuinely independent
 `computeStatus` in `app.swift` is a pure function of `StatusInputs`. Status
 copy and precedence belong there (and in `StatusTests`), not inlined in UI.
 
+## voicectl (bundled CLI)
+
+`voicectl` lives at `Voice.app/Contents/MacOS/voicectl` and is the supported
+way for scripts and agents to edit snippets: `voicectl snippets
+list|get|add|remove|expand|export|import|path`, `--json` for machine output,
+`-` for stdin, `--dir` to target another data directory. Exit codes: 0 ok,
+1 not found/invalid, 2 usage. It writes the same `snippets.json` the app
+reads; `SnippetStore.reloadIfChanged` (called from `expand`, from mutations,
+and from the Snippets tab's refresh timer) is what makes the running app see
+those edits. Keep `VoiceCLI.run` pure and cover new commands in `CLITests`.
+
 ## Testing
 
 | Tier | What | Where |
 | --- | --- | --- |
-| 1 | Pure logic (transcript, WAV, config, stores) | CI `swift test` |
+| 1 | Pure logic (transcript, WAV, config, stores, voicectl) | CI `swift test` |
 | 2 | Real `whisper-server` + fixture audio | CI `swift test` |
 | 3 | `computeStatus` decision table | CI `swift test` |
 | 4 | Full GUI dictation | `scripts/e2e-smoke.sh` only |
