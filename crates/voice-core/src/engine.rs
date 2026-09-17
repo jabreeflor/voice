@@ -4,9 +4,12 @@
 //! Privacy invariant: the server is always started with `--host 127.0.0.1`.
 //!
 //! The Swift original delivered status changes on the main queue. There is no
-//! main queue here: `set_on_status_change` callbacks run on whichever thread
-//! changed the status (the readiness/exit supervisor thread, or the caller of
-//! `start`/`stop`), so a GUI host must marshal to its UI thread itself.
+//! main queue here: `set_on_status_change` callbacks run *synchronously* on
+//! whichever thread changed the status — inside `start()` on the caller's own
+//! thread, or on the readiness/exit supervisor thread. Because the callback
+//! can re-enter the caller of `start()`, it must not acquire a lock that
+//! caller already holds and must not call back into the engine; it should only
+//! post to the host's UI loop.
 
 use std::ffi::OsStr;
 use std::io::Write;
@@ -23,10 +26,17 @@ use crate::wav::wav_data;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
+    /// Reserved for the app layer (no model configured at all). `transcribe`
+    /// itself reports a missing model on the cold path as [`NotReady`].
+    ///
+    /// [`NotReady`]: EngineError::NotReady
     #[error("no model found")]
     NoModel,
-    /// `whisper-cli` is missing, so the cold-path fallback cannot run. A
-    /// missing `whisper-server` is reported through `status_text()` instead.
+    /// Reserved for the app layer (whisper.cpp not installed at all).
+    /// `transcribe` reports a missing `whisper-cli` on the cold path as
+    /// [`NotReady`]; a missing `whisper-server` goes through `status_text()`.
+    ///
+    /// [`NotReady`]: EngineError::NotReady
     #[error("Whisper engine not ready (install whisper.cpp)")]
     NotInstalled,
     #[error("Bad response from whisper engine")]
@@ -35,11 +45,10 @@ pub enum EngineError {
     Http(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    /// Never returned by the engine itself: reserved for the app layer, which
-    /// raises it when it declines to transcribe before the server is up
-    /// (`transcribe` falls back to `whisper-cli` and returns `NoModel` or
-    /// `NotInstalled` when that fallback is impossible).
-    #[error("Whisper engine not ready")]
+    /// The server is not up and the `whisper-cli` fallback is impossible too
+    /// (no model, or no `whisper-cli` binary). Same wording as the Swift
+    /// original's cold-path error, which is what the user sees.
+    #[error("Whisper engine not ready (install whisper.cpp)")]
     NotReady,
 }
 
@@ -226,6 +235,14 @@ impl WhisperEngine {
         self.model.as_deref()
     }
 
+    /// Registers the status-change callback. It runs synchronously on the
+    /// thread that changed the status: on the caller's thread from inside
+    /// `start()` (so it can fire before `start()` returns), and on the
+    /// supervisor thread for "ready" / "engine stopped" / "engine did not
+    /// start". It may therefore re-enter the caller of `start()`: do not
+    /// acquire a lock that caller already holds, and do not call back into
+    /// the engine — only post to the UI loop. (`status_text` and
+    /// `set_on_status_change` are the exceptions: they are safe to call.)
     pub fn set_on_status_change(&self, f: Box<dyn Fn() + Send + Sync>) {
         *lock(&self.inner.on_status_change) = Some(Arc::from(f));
     }
@@ -246,20 +263,11 @@ impl WhisperEngine {
     /// Cold path used before the server is up (or when it never came up):
     /// one whisper-cli process per utterance, which reloads the model every
     /// time. `-np -nt` suppress prints and timestamps so stdout is the text.
+    /// `NotReady` when the fallback is impossible, as in the Swift original.
     fn transcribe_via_cli(&self, wav: &[u8]) -> Result<String, EngineError> {
-        let model = self.model.as_ref().ok_or(EngineError::NoModel)?;
-        let bin = Self::find_binary("whisper-cli").ok_or(EngineError::NotInstalled)?;
-        // A private directory rather than a predictably named file in the
-        // shared temp dir: `create_dir` fails instead of following a symlink
-        // an attacker pre-planted at that name (on Linux `/tmp` is
-        // world-writable), and the per-process counter keeps concurrent calls
-        // from colliding on one path.
-        let dir = std::env::temp_dir().join(format!(
-            "voice-{}-{}",
-            std::process::id(),
-            CLI_TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir(&dir)?;
+        let model = self.model.as_ref().ok_or(EngineError::NotReady)?;
+        let bin = Self::find_binary("whisper-cli").ok_or(EngineError::NotReady)?;
+        let dir = create_cli_scratch_dir()?;
         let tmp = dir.join("audio.wav");
         let result = (|| {
             std::fs::write(&tmp, wav)?;
@@ -281,6 +289,35 @@ impl WhisperEngine {
 
 /// Per-process counter for `transcribe_via_cli` scratch directories.
 static CLI_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Attempts at a fresh scratch-directory name before giving up.
+const CLI_TMP_ATTEMPTS: u32 = 8;
+
+/// A private directory rather than a predictably named file in the shared
+/// temp dir: `create_dir` (never `create_dir_all`) fails instead of following
+/// a symlink an attacker pre-planted at that name (on Linux `/tmp` is
+/// world-writable), and the per-process counter keeps concurrent calls from
+/// colliding on one path. `AlreadyExists` is retried with the next counter
+/// value: a SIGKILLed run leaves `voice-<pid>-0` behind, and a later process
+/// handed the recycled pid must not fail its first cold-path transcription
+/// over that stale directory.
+fn create_cli_scratch_dir() -> std::io::Result<PathBuf> {
+    let base = std::env::temp_dir();
+    let pid = std::process::id();
+    let mut last_err = None;
+    for _ in 0..CLI_TMP_ATTEMPTS {
+        let dir = base.join(format!(
+            "voice-{pid}-{}",
+            CLI_TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        match std::fs::create_dir(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last_err = Some(e),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| std::io::Error::other("scratch dir")))
+}
 
 /// `Command::new` plus the Windows no-console flag (a no-op elsewhere).
 fn hidden_command(bin: impl AsRef<OsStr>) -> Command {

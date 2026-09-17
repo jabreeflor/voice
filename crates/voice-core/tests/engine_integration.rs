@@ -501,13 +501,27 @@ fn start_without_model_reports_no_model_and_notifies() {
     assert_eq!(fired.load(Ordering::SeqCst), 1);
 }
 
+/// Production stays on 8178 and tests stay on 18178 (AGENTS.md invariant);
+/// Swift pinned this in SmokeTests.testPackageBuildsAndLinks.
 #[test]
-fn transcribe_without_server_or_model_is_no_model() {
+fn production_port_is_8178() {
+    assert_eq!(Config::SERVER_PORT, 8178);
+    assert_ne!(TEST_PORT, Config::SERVER_PORT);
+}
+
+/// Cold path with no model: the whisper-cli fallback is impossible, so the
+/// caller gets `NotReady` with the Swift original's user-facing wording.
+#[test]
+fn transcribe_without_server_or_model_is_not_ready() {
     let engine = WhisperEngine::new(None, TEST_PORT, 1);
-    assert!(matches!(
-        engine.transcribe(&wav_data(&[0.0; 100])),
-        Err(EngineError::NoModel)
-    ));
+    let err = engine
+        .transcribe(&wav_data(&[0.0; 100]))
+        .expect_err("no server and no model cannot transcribe");
+    assert!(matches!(err, EngineError::NotReady), "{err:?}");
+    assert_eq!(
+        err.to_string(),
+        "Whisper engine not ready (install whisper.cpp)"
+    );
 }
 
 #[test]

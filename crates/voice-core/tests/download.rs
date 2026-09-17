@@ -125,8 +125,12 @@ fn wait_finished(h: &Harness) -> (String, Option<PathBuf>) {
 fn successful_download_streams_to_part_then_renames() {
     let body = fake_model();
     let expected = body.clone();
+    // The request path is asserted on the test thread below: a panic inside
+    // `respond` would only kill the server thread, and the failure would then
+    // surface as an unrelated connection reset.
+    let (path_tx, path_rx) = mpsc::channel::<String>();
     let server = spawn_server(Duration::from_millis(300), move |path| {
-        assert_eq!(path, "/ggml-tiny.en.bin");
+        let _ = path_tx.send(path.to_string());
         response("200 OK", &body, None)
     });
     let h = harness();
@@ -141,6 +145,12 @@ fn successful_download_streams_to_part_then_renames() {
 
     let (file, path) = wait_finished(&h);
     assert_eq!(file, SPEC.file);
+    assert_eq!(
+        path_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("server saw a request"),
+        "/ggml-tiny.en.bin"
+    );
     let dest = path.expect("download should succeed");
     assert_eq!(dest, h.dir.path().join("models").join(SPEC.file));
     assert_eq!(std::fs::read(&dest).expect("read model"), expected);

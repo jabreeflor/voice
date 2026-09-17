@@ -22,12 +22,15 @@ type SharedFinishedFn = Arc<dyn Fn(&str, Option<PathBuf>) + Send + Sync>;
 
 const COPY_BUFFER: usize = 64 * 1024;
 
-/// Ceiling on receiving the whole body. ureq's `recv_body` budget is total,
-/// not per-read (there is no inactivity timeout like URLSession's 60 s), so it
-/// has to be generous enough for a 1.6 GB model on a slow link — but bounded,
-/// or a half-open connection would pin `progress[file]` forever and make every
-/// retry a silent no-op.
-const BODY_TIMEOUT: Duration = Duration::from_secs(3 * 60 * 60);
+/// Ceiling on receiving the whole body. ureq's `recv_body` budget is *total*,
+/// not per-read: unlike URLSession's 60 s inactivity timeout, a transfer that
+/// is slow but still progressing gets killed when this budget runs out, and
+/// the `.part` file is discarded. It therefore has to be well past any honest
+/// transfer — calibrated against the largest catalog model, 1.6 GB
+/// (`ggml-medium.en.bin`): 12 h covers a link sustaining ~37 KB/s
+/// (~0.3 Mbit/s). Still bounded, though, or a half-open connection would pin
+/// `progress[file]` forever and make every retry a silent no-op.
+const BODY_TIMEOUT: Duration = Duration::from_secs(12 * 60 * 60);
 
 pub struct ModelDownloader {
     directory: PathBuf,
