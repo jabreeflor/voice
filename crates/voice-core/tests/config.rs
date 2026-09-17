@@ -153,12 +153,24 @@ fn environment_override_pointing_at_a_missing_file_is_ignored() {
 }
 
 /// Swift skipped this when no model was installed under $HOME. Here the fake
-/// model lives in a temp dir created *inside* $HOME, so the tilde form always
-/// has something real to resolve to and the test never skips.
+/// model lives in a temp dir created *inside* $HOME, so the tilde form has
+/// something real to resolve to whenever $HOME exists and is writable. When it
+/// is not, that is an environment limitation, not a defect, so the test skips
+/// (like the Swift original) instead of going red. The prefix labels the
+/// directory so a stray one is recognizable if a panic ever prevents cleanup.
 #[test]
 fn environment_override_expands_a_tilde() {
-    let home = home();
-    let dir = tempfile::tempdir_in(&home).expect("temp dir under $HOME");
+    let Some(home) = dirs::home_dir() else {
+        println!("SKIPPED: no home directory");
+        return;
+    };
+    let Ok(dir) = tempfile::Builder::new()
+        .prefix(".voice-config-test-")
+        .tempdir_in(&home)
+    else {
+        println!("SKIPPED: $HOME is not writable");
+        return;
+    };
     let settings = Settings::in_dir(dir.path());
     let real = dir.path().join("ggml-tilde.bin");
     fs::write(&real, [0u8]).expect("write fake model");
@@ -179,7 +191,41 @@ fn environment_override_expands_a_tilde() {
 #[test]
 fn empty_environment_override_is_ignored() {
     let f = fixture();
-    assert_ne!(f.find_model(Some("")), Some(PathBuf::from("")));
+    assert_eq!(
+        f.find_model(Some("")),
+        f.find_model(None),
+        "an empty VOICE_MODEL must behave exactly like an unset one"
+    );
+}
+
+/// `URL(fileURLWithPath:)` anchored a relative `VOICE_MODEL` to the cwd, so the
+/// path the UI shows (and any later persistence) stays valid after a cwd
+/// change. The port must do the same rather than hand back the relative form.
+#[test]
+fn relative_environment_override_is_returned_absolute() {
+    let f = fixture();
+    let real = f.make_fake_model("ggml-relative.bin");
+    let cwd = std::env::current_dir().expect("cwd");
+    let relative = pathdiff_relative(&real, &cwd);
+    let found = f.find_model(relative.to_str()).expect("override is found");
+    assert!(found.is_absolute(), "got relative path {found:?}");
+    assert_eq!(found, std::path::absolute(&relative).expect("absolute"));
+}
+
+/// Build a `..`-based relative path from `base` to `target` without touching
+/// the filesystem. Both inputs are absolute (temp dir and cwd).
+fn pathdiff_relative(target: &Path, base: &Path) -> PathBuf {
+    let t: Vec<_> = target.components().collect();
+    let b: Vec<_> = base.components().collect();
+    let common = t.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    let mut out = PathBuf::new();
+    for _ in common..b.len() {
+        out.push("..");
+    }
+    for c in &t[common..] {
+        out.push(c);
+    }
+    out
 }
 
 /// A bare `~` and a non-tilde path are the other two shapes `expand_tilde`

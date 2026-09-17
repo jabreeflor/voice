@@ -216,12 +216,18 @@ impl Config {
         env_override: Option<&str>,
         dirs: &[PathBuf],
     ) -> Option<PathBuf> {
-        // An empty override would otherwise resolve to "" — the cwd — and
-        // pass the existence check.
+        // Swift's `URL(fileURLWithPath: "")` standardizes to the cwd and would
+        // pass `fileExists`; Rust's `Path::new("")` never exists, so this guard
+        // only makes the spec's "empty is ignored" rule explicit and immune to
+        // a future canonicalizing change.
         if let Some(env) = env_override.filter(|e| !e.is_empty()) {
             let path = expand_tilde(env);
             if path.exists() {
-                return Some(path);
+                // `URL(fileURLWithPath:)` always yielded an absolute path, so a
+                // relative override is anchored to the cwd here too. `absolute`
+                // does not touch the filesystem or resolve symlinks, unlike
+                // `canonicalize`.
+                return Some(std::path::absolute(&path).unwrap_or(path));
             }
         }
         if let Some(found) = Config::selected_model_file(settings)
@@ -252,10 +258,17 @@ impl Config {
 /// dependent, so sort to keep `find_model` stable across calls.
 fn any_ggml_model(dir: &Path) -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
-    let mut names: Vec<String> = entries
+    // Keep the `OsString`: Swift's `lastPathComponent` matched any byte
+    // sequence, so a non-UTF-8 name must not silently vanish from the one
+    // path that exists to rescue an oddly named model. `OsString` sorts by
+    // bytes, which is the same order as `String` for valid UTF-8.
+    let mut names: Vec<std::ffi::OsString> = entries
         .filter_map(|e| e.ok())
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| n.starts_with("ggml") && Path::new(n).extension().is_some_and(|x| x == "bin"))
+        .map(|e| e.file_name())
+        .filter(|n| {
+            n.to_string_lossy().starts_with("ggml")
+                && Path::new(n).extension().is_some_and(|x| x == "bin")
+        })
         .collect();
     names.sort();
     names.first().map(|n| dir.join(n))
