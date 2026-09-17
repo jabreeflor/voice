@@ -33,10 +33,15 @@ impl Store {
 /// Unix seconds at Apple's reference date, 2001-01-01T00:00:00Z.
 const APPLE_EPOCH_OFFSET: f64 = 978_307_200.0;
 
-/// chrono's `NaiveDate` spans about ±262_000 years, i.e. ~8.2e12 s from 1970,
-/// and `Duration::from_secs_f64` panics on NaN or huge values. `history.json`
-/// is user-editable, so [`DictationEntry::system_time`] clamps to this.
-const MAX_UNIX_SECS: f64 = 8.0e12;
+/// Bound for a `date` read from user-editable `history.json`, chosen so that
+/// `UNIX_EPOCH ± Duration::from_secs_f64(MAX_UNIX_SECS)` is representable on
+/// every target: Windows `SystemTime` is a FILETIME (i64 100-ns ticks), which
+/// overflows around 9.2e11 s, well before chrono's `NaiveDate` limit (~8.2e12 s,
+/// about ±262_000 years). 8.0e11 s is roughly year 27_000. The conversion in
+/// [`DictationEntry::system_time`] still uses checked arithmetic on top of the
+/// clamp, so a platform with a tighter range degrades to `UNIX_EPOCH` instead
+/// of panicking.
+const MAX_UNIX_SECS: f64 = 8.0e11;
 
 /// Atomic write: temp file next to the target, then rename, so a concurrent
 /// reader (the app, voicectl, or another store on the same file) never sees
@@ -98,10 +103,12 @@ impl DictationEntry {
         }
     }
 
-    /// Total for every `f64`: history.json is user-editable, and both
-    /// `Duration::from_secs_f64` (NaN, huge) and chrono's `DateTime` (outside
-    /// roughly ±262_000 years) would otherwise panic on a garbage `date`. Swift
-    /// produced a harmless nonsense label for such files; we clamp instead.
+    /// Total for every `f64`: history.json is user-editable, and
+    /// `Duration::from_secs_f64` (NaN, huge), `SystemTime` arithmetic (Windows
+    /// FILETIME range) and chrono's `DateTime` (outside roughly ±262_000 years)
+    /// would otherwise panic on a garbage `date`. Swift produced a harmless
+    /// nonsense label for such files; we clamp, and fall back to `UNIX_EPOCH`
+    /// if the clamped value still does not fit the platform's `SystemTime`.
     pub fn system_time(&self) -> SystemTime {
         let unix = self.date + APPLE_EPOCH_OFFSET;
         let unix = if unix.is_nan() {
@@ -109,11 +116,13 @@ impl DictationEntry {
         } else {
             unix.clamp(-MAX_UNIX_SECS, MAX_UNIX_SECS)
         };
-        if unix >= 0.0 {
-            UNIX_EPOCH + Duration::from_secs_f64(unix)
+        let d = Duration::from_secs_f64(unix.abs());
+        let t = if unix >= 0.0 {
+            UNIX_EPOCH.checked_add(d)
         } else {
-            UNIX_EPOCH - Duration::from_secs_f64(-unix)
-        }
+            UNIX_EPOCH.checked_sub(d)
+        };
+        t.unwrap_or(UNIX_EPOCH)
     }
 }
 
@@ -443,7 +452,11 @@ impl SnippetStore {
     }
 }
 
-/// Perl/ICU `\w`: Unicode letters, digits and underscore.
+/// The spec's `\w`: Unicode alphanumeric or `_`. This only approximates ICU's
+/// `\w` (what NSRegularExpression used), which also counts combining marks,
+/// ZWJ/ZWNJ and connector punctuation as word characters and excludes the Nl/No
+/// number categories, so decomposed accents (e + U+0301) and superscripts bound
+/// a trigger differently here than in the Swift build.
 fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }

@@ -191,7 +191,9 @@ fn dollar_signs_in_snippet_text_are_not_treated_as_template_references() {
 
 /// `\w` is Unicode in the Swift regex, so an accented letter next to the
 /// trigger is a word character, and a rejected match must not hide a valid
-/// one that starts inside it (the "a-a" in "ba-a-a" case).
+/// one that starts inside it (the "a-a" in "ba-a-a" case). This only uses a
+/// precomposed U+00E9; it pins the spec's "alphanumeric or `_`" rule, not
+/// full ICU `\w` parity (see `is_word_char` in store.rs).
 #[test]
 fn boundaries_are_unicode_aware_and_overlapping_matches_are_found() {
     let mut f = Fixture::new();
@@ -485,11 +487,14 @@ fn replace_all_normalizes_drops_empties_and_dedupes() {
     assert_eq!(f.other_store().snippets(), f.store.snippets());
 }
 
-/// load() does not normalize, so an empty trigger from a hand-edited file
-/// reaches the matcher, where its zero-width match must not spin forever.
-/// "!!" trims to "" and takes the whole-utterance path; "! x" does not, so
-/// it exercises replace_bounded, whose single leading insertion mirrors what
-/// Swift's replacingOccurrences did with the same file.
+/// load() does not normalize, so an empty trigger can only reach the matcher
+/// from a hand-edited snippets.json; its zero-width match must not spin
+/// forever. "!!" trims to "" and takes the whole-utterance path; "! x" does
+/// not, so it exercises replace_bounded, whose `break` exists solely to stop
+/// the zero-width match from looping. It deliberately stops after the first
+/// insertion rather than reproducing Swift's replacingOccurrences, which
+/// inserted the text at every word boundary ("ZZZ!ZZZ x") - nonsense output
+/// that is not worth matching.
 #[test]
 fn empty_trigger_from_file_does_not_hang_expand() {
     let f = Fixture::new();
