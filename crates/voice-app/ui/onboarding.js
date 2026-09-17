@@ -1,0 +1,98 @@
+// Onboarding window: five steps, mirrors OnboardingWindow in ui.swift.
+(() => {
+  const { invoke } = window.__TAURI__.core;
+  const { listen } = window.__TAURI__.event;
+  const $ = (id) => document.getElementById(id);
+
+  let step = 1;
+  let settings = null;
+  let pollTimer = null;
+
+  function goTo(n) {
+    step = n;
+    document.querySelectorAll('.ob-step').forEach((s) =>
+      s.classList.toggle('visible', Number(s.dataset.step) === n));
+    $('stepno').textContent = '0' + n + ' / 05';
+    $('progress').style.width = (n * 20) + '%';
+    $('back').classList.toggle('visible', n > 1);
+    if (n === 4) $('try-text').focus();
+    if (n === 5) renderDone();
+  }
+  document.querySelectorAll('[data-go]').forEach((b) =>
+    b.addEventListener('click', () => goTo(Number(b.dataset.go))));
+  $('back').addEventListener('click', () => { if (step > 1) goTo(step - 1); });
+
+  // ── step 2: permissions ───────────────────────────────────────────────
+  $('mic-btn').addEventListener('click', () => invoke('request_mic'));
+  $('ax-btn').addEventListener('click', async () => {
+    await invoke('request_accessibility');
+    await invoke('open_accessibility_settings');
+  });
+
+  function markGranted(btn) {
+    btn.textContent = 'Granted';
+    btn.classList.remove('lav');
+    btn.classList.add('granted');
+    btn.disabled = true;
+  }
+
+  // Polled every 0.8 s while step 2 is showing, like the AppKit window: the
+  // OS grants land outside the app, so there is no event to wait for.
+  async function poll() {
+    if (step !== 2) return;
+    const p = await invoke('permission_state');
+    const micCard = $('perm-mic');
+    const axCard = $('perm-ax');
+    const micApplies = p.mic !== 'not_applicable';
+    const axApplies = settings.platform === 'macos';
+    micCard.classList.toggle('hidden', !micApplies);
+    axCard.classList.toggle('hidden', !axApplies);
+    $('perm-none').style.display = micApplies || axApplies ? 'none' : 'block';
+    if (micApplies && p.mic === 'granted') markGranted($('mic-btn'));
+    if (axApplies && p.hotkeys_running) markGranted($('ax-btn'));
+    const micOk = !micApplies || p.mic === 'granted';
+    const axOk = !axApplies || p.hotkeys_running;
+    $('perm-next').disabled = !(micOk && axOk);
+  }
+
+  // ── step 3: talk key ──────────────────────────────────────────────────
+  function renderHotkeys() {
+    const row = $('hk-row');
+    row.textContent = '';
+    settings.hotkeys.forEach((hk, i) => {
+      const b = document.createElement('button');
+      b.className = 'hk' + (hk.id === settings.hotkey ? ' sel' : '');
+      b.textContent = hk.short_label;
+      const small = document.createElement('small');
+      small.textContent = i === 0 ? 'recommended' : 'alternative';
+      b.appendChild(small);
+      b.addEventListener('click', async () => {
+        await invoke('set_hotkey', { id: hk.id });
+        settings.hotkey = hk.id;
+        renderHotkeys();
+      });
+      row.appendChild(b);
+    });
+  }
+
+  // ── step 5: done ──────────────────────────────────────────────────────
+  function renderDone() {
+    const hk = settings.hotkeys.find((h) => h.id === settings.hotkey) || settings.hotkeys[0];
+    const where = settings.platform === 'macos' ? 'menu bar' : 'system tray';
+    $('done-text').textContent = `Voice waits in your ${where}. Hold ${hk.short_label} in any app to dictate, and come back here for your dictation history and snippets.`;
+  }
+  $('finish').addEventListener('click', () => invoke('finish_onboarding'));
+
+  async function init() {
+    settings = await invoke('get_settings');
+    document.body.classList.add(settings.platform);
+    renderHotkeys();
+    // A dictation that landed while step 4 is showing unlocks Continue.
+    listen('dictation-landed', () => { if (step === 4) $('try-next').disabled = false; });
+    pollTimer = setInterval(poll, 800);
+    poll();
+    goTo(1);
+  }
+  init();
+  window.addEventListener('beforeunload', () => clearInterval(pollTimer));
+})();

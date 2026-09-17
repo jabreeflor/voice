@@ -1,3 +1,70 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>Voice</title><link rel="stylesheet" href="app.css"></head>
-<body><!-- placeholder: onboarding --><script src="onboarding.js"></script></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up Voice</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="onboarding" data-tauri-drag-region>
+<div class="stepno" id="stepno">01 / 05</div>
+
+<div class="ob-step visible" data-step="1">
+  <div class="ob-cap"><div class="wave animated"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+  <h1>Say it. <em>It's typed.</em></h1>
+  <p>Voice turns speech into text in any app on your computer. It runs entirely on this
+     machine — no accounts, no subscriptions, and nothing you say ever leaves it.</p>
+  <button class="cap-btn" data-go="2">Set up Voice</button>
+</div>
+
+<div class="ob-step" data-step="2">
+  <h1 class="sm">Two permissions, <em>once</em></h1>
+  <p>Voice only listens while you hold the hotkey — never in the background.</p>
+  <div class="perm sticker" id="perm-mic">
+    <div class="glyph">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#2478F3" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/></svg>
+    </div>
+    <div class="tx"><b>Microphone</b><small>To hear you while the hotkey is held.</small></div>
+    <button class="cap-btn lav" id="mic-btn">Allow</button>
+  </div>
+  <div class="perm sticker" id="perm-ax">
+    <div class="glyph">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#2478F3" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+    </div>
+    <div class="tx"><b>Accessibility</b><small>To catch the hotkey anywhere and type at your cursor.</small></div>
+    <button class="cap-btn lav" id="ax-btn">Open Settings</button>
+  </div>
+  <p id="perm-none" class="hidden" style="display:none">Nothing to grant on this system — Voice can listen for the talk key right away.</p>
+  <button class="cap-btn mt12" id="perm-next" disabled data-go="3">Continue</button>
+  <button class="cap-btn ghost mt2" data-go="3">Skip for now</button>
+</div>
+
+<div class="ob-step" data-step="3">
+  <h1 class="sm">Pick your <em>talk key</em></h1>
+  <p>Hold it down to speak. Let go and your words are typed. Tap Esc to cancel.</p>
+  <div class="hk-row" id="hk-row"></div>
+  <button class="cap-btn" data-go="4">Continue</button>
+</div>
+
+<div class="ob-step" data-step="4">
+  <h1 class="sm">Take it for <em>a spin</em></h1>
+  <p>Click into the box, hold your talk key, say anything, then release.</p>
+  <textarea class="try-field" id="try-text" spellcheck="false"></textarea>
+  <button class="cap-btn" id="try-next" disabled data-go="5">Continue</button>
+  <button class="cap-btn ghost mt2" data-go="5">Skip for now</button>
+</div>
+
+<div class="ob-step" data-step="5">
+  <div class="ob-cap done">done</div>
+  <h1 class="md">That's the <em>whole app.</em></h1>
+  <p id="done-text">Voice waits in your menu bar. Hold the talk key in any app to dictate,
+     and come back here for your dictation history and snippets.</p>
+  <button class="cap-btn" id="finish">Open Voice</button>
+</div>
+
+<button class="cap-btn ghost back" id="back">Back</button>
+<div class="progress" id="progress" style="width:20%"></div>
+
+<script src="onboarding.js"></script>
+</body>
+</html>
