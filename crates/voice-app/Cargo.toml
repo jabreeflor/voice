@@ -18,7 +18,6 @@ tauri-build.workspace = true
 voice-core.workspace = true
 tauri.workspace = true
 tauri-plugin-autostart.workspace = true
-tauri-plugin-opener.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 cpal.workspace = true
