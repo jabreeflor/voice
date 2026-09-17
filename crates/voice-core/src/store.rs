@@ -4,6 +4,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -32,11 +33,20 @@ impl Store {
 /// Unix seconds at Apple's reference date, 2001-01-01T00:00:00Z.
 const APPLE_EPOCH_OFFSET: f64 = 978_307_200.0;
 
+/// chrono's `NaiveDate` spans about ±262_000 years, i.e. ~8.2e12 s from 1970,
+/// and `Duration::from_secs_f64` panics on NaN or huge values. `history.json`
+/// is user-editable, so [`DictationEntry::system_time`] clamps to this.
+const MAX_UNIX_SECS: f64 = 8.0e12;
+
 /// Atomic write: temp file next to the target, then rename, so a concurrent
 /// reader (the app, voicectl, or another store on the same file) never sees
-/// a half-written file. Failures are swallowed; the in-memory list stays
+/// a half-written file. The temp name carries the pid *and* a process-wide
+/// counter: two stores on the same file inside one process must not share a
+/// temp path, or one's `fs::write` truncates the file the other is about to
+/// rename over. Failures are swallowed; the in-memory list stays
 /// authoritative for this process.
 fn write_atomically(path: &Path, bytes: &[u8]) {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let Some(dir) = path.parent() else {
         return;
     };
@@ -44,7 +54,8 @@ fn write_atomically(path: &Path, bytes: &[u8]) {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return;
     };
-    let tmp = dir.join(format!(".{}-{}.tmp", name, std::process::id()));
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp = dir.join(format!(".{}-{}-{}.tmp", name, std::process::id(), n));
     if fs::write(&tmp, bytes).is_ok() && fs::rename(&tmp, path).is_err() {
         let _ = fs::remove_file(&tmp);
     }
@@ -87,8 +98,17 @@ impl DictationEntry {
         }
     }
 
+    /// Total for every `f64`: history.json is user-editable, and both
+    /// `Duration::from_secs_f64` (NaN, huge) and chrono's `DateTime` (outside
+    /// roughly ±262_000 years) would otherwise panic on a garbage `date`. Swift
+    /// produced a harmless nonsense label for such files; we clamp instead.
     pub fn system_time(&self) -> SystemTime {
         let unix = self.date + APPLE_EPOCH_OFFSET;
+        let unix = if unix.is_nan() {
+            0.0
+        } else {
+            unix.clamp(-MAX_UNIX_SECS, MAX_UNIX_SECS)
+        };
         if unix >= 0.0 {
             UNIX_EPOCH + Duration::from_secs_f64(unix)
         } else {
@@ -462,7 +482,10 @@ fn replace_bounded(text: &str, trigger: &str, replacement: &str) -> String {
             copied = m.end();
             pos = m.end();
             if m.start() == m.end() {
-                break; // an empty trigger never gets here, but never spin
+                // snippets.json is user-editable and load() does not
+                // normalize, so an empty trigger can reach this; its
+                // zero-width match would otherwise spin forever.
+                break;
             }
         } else {
             // A rejected match may overlap a valid one starting inside it

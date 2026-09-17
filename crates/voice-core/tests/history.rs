@@ -242,6 +242,46 @@ fn corrupt_history_file_leaves_store_empty_rather_than_crashing() {
     assert_eq!(texts(f.make_store().entries()), ["recovered"]);
 }
 
+/// `date` values that JSON accepts but `Duration` / chrono cannot represent
+/// must not take the app down: Swift never crashed on such a file, it just
+/// showed a nonsense day label.
+#[test]
+fn out_of_range_dates_do_not_panic() {
+    for date in ["1e30", "-1e30", "1e18", "-1e18", "1e308", "-1e308"] {
+        let f = Fixture::new();
+        fs::write(
+            f.history_file(),
+            format!(r#"[{{"text":"boom","date":{date},"duration":0,"latency":0}}]"#),
+        )
+        .expect("write");
+        let store = f.make_store();
+        assert_eq!(texts(store.entries()), ["boom"], "date {date}");
+        let groups = store.grouped(40);
+        assert_eq!(count_entries(&groups), 1, "date {date}");
+        assert!(!groups[0].0.is_empty(), "date {date}");
+    }
+}
+
+/// Values inside the representable range still round-trip exactly, so the
+/// clamp in `system_time()` is invisible for real history.
+#[test]
+fn in_range_dates_are_not_clamped() {
+    let apple_zero = UNIX_EPOCH + Duration::from_secs(978_307_200);
+    for (date, expected) in [
+        (0.0, apple_zero),
+        (700_000_000.0, apple_zero + Duration::from_secs(700_000_000)),
+        (-978_307_200.0, UNIX_EPOCH),
+    ] {
+        let e = DictationEntry {
+            text: String::new(),
+            date,
+            duration: 0.0,
+            latency: 0.0,
+        };
+        assert_eq!(e.system_time(), expected, "date {date}");
+    }
+}
+
 // MARK: - grouped()
 
 #[test]

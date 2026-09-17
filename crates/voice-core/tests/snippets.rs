@@ -485,6 +485,20 @@ fn replace_all_normalizes_drops_empties_and_dedupes() {
     assert_eq!(f.other_store().snippets(), f.store.snippets());
 }
 
+/// load() does not normalize, so an empty trigger from a hand-edited file
+/// reaches the matcher, where its zero-width match must not spin forever.
+/// "!!" trims to "" and takes the whole-utterance path; "! x" does not, so
+/// it exercises replace_bounded, whose single leading insertion mirrors what
+/// Swift's replacingOccurrences did with the same file.
+#[test]
+fn empty_trigger_from_file_does_not_hang_expand() {
+    let f = Fixture::new();
+    fs::write(f.snippets_file(), r#"[{"trigger":"","text":"ZZZ"}]"#).expect("write");
+    let mut store = f.other_store();
+    assert_eq!(store.expand("!!"), "ZZZ");
+    assert_eq!(store.expand("! x"), "ZZZ! x");
+}
+
 #[test]
 fn corrupt_snippet_file_leaves_store_empty_rather_than_crashing() {
     let f = Fixture::new();
