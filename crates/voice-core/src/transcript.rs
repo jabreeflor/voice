@@ -37,22 +37,28 @@ pub fn clean_transcript(raw: &str) -> String {
 }
 
 /// Removes every case-insensitive occurrence of `needle` from `haystack`.
-/// Matching is done on a lowercased copy; the artifacts are ASCII apart from
-/// "♪", so lowercasing never changes byte offsets relative to the original.
+/// Case folding is ASCII-only, on bytes: the artifacts are ASCII apart from
+/// "♪" (which has no case), and folding the haystack with `to_lowercase` would
+/// shift byte offsets wherever a character's lowercase form has a different
+/// UTF-8 length (e.g. "İ"). Every needle starts and ends on ASCII or on a
+/// complete non-ASCII char, so a match always lands on char boundaries.
 fn remove_case_insensitive(haystack: &str, needle: &str) -> String {
-    let lower = haystack.to_lowercase();
-    let needle = needle.to_lowercase();
-    if lower.len() != haystack.len() || needle.is_empty() {
-        // Lowercasing changed a non-ASCII length; fall back to exact removal
-        // rather than risk slicing at a wrong offset.
-        return haystack.replace(&needle, "");
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return haystack.to_string();
     }
+    let bytes = haystack.as_bytes();
     let mut out = String::with_capacity(haystack.len());
     let mut from = 0;
-    while let Some(pos) = lower[from..].find(&needle) {
-        let start = from + pos;
-        out.push_str(&haystack[from..start]);
-        from = start + needle.len();
+    let mut i = 0;
+    while i + needle.len() <= bytes.len() {
+        if bytes[i..i + needle.len()].eq_ignore_ascii_case(needle) {
+            out.push_str(&haystack[from..i]);
+            i += needle.len();
+            from = i;
+        } else {
+            i += 1;
+        }
     }
     out.push_str(&haystack[from..]);
     out
