@@ -49,8 +49,16 @@ pub fn request_accessibility() {
 /// URL the Swift app opened through NSWorkspace.
 pub fn open_accessibility_settings() {
     let url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
-    if let Err(e) = Command::new("/usr/bin/open").arg(url).spawn() {
-        log::warn!("could not open Accessibility settings: {e}");
+    match Command::new("/usr/bin/open").arg(url).spawn() {
+        // `open` exits as soon as it has handed the URL over; reap it off the
+        // caller's thread so each click does not leave a zombie behind for
+        // the lifetime of the app.
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => log::warn!("could not open Accessibility settings: {e}"),
     }
 }
 
@@ -102,6 +110,8 @@ pub fn relaunch_self() {
         // Not inside a .app (e.g. `cargo run`): re-exec the binary directly.
         None => format!("sleep 0.7; exec {}", shell_quote(&exe)),
     };
+    // Not reaped on purpose: the caller quits right after this, and the
+    // child must outlive us anyway.
     if let Err(e) = Command::new("/bin/sh").arg("-c").arg(script).spawn() {
         log::warn!("relaunch failed: {e}");
     }

@@ -30,8 +30,10 @@ log.workspace = true
 env_logger.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Accessibility (AXIsProcessTrusted*) and microphone (AVCaptureDevice) checks.
+# Accessibility (AXIsProcessTrusted*) and microphone (AVCaptureDevice) checks,
+# plus the hold-to-talk CGEvent tap.
 core-foundation.workspace = true
+core-graphics.workspace = true
 objc2.workspace = true
 objc2-foundation.workspace = true
 objc2-av-foundation.workspace = true
