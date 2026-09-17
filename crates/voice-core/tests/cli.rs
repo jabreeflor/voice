@@ -242,9 +242,13 @@ fn json_get() {
 }
 
 /// Swift encoded with `.prettyPrinted, .sortedKeys`; agents may diff or
-/// hash the output, so the exact layout is part of the contract. `Snippet`
+/// hash the output, so the layout is part of the contract. The bytes are
+/// serde_json's, though, not Foundation's — intentionally: serde_json writes
+/// `"key": value` where JSONEncoder wrote `"key" : value`, and an empty
+/// array as `[]` where JSONEncoder printed `[\n\n]`. What this pins is
+/// sorted keys, 2-space indentation and the trailing newline. `Snippet`
 /// declares `trigger` before `text`, so a derived encoder would emit them in
-/// that order — this pins the sorted order (and the trailing newline).
+/// that order — the sorted order is the part that matters.
 #[test]
 fn json_is_pretty_printed_with_sorted_keys() {
     let f = Fixture::new();

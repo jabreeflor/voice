@@ -326,10 +326,14 @@ fn strip_trailing_newlines(mut text: String) -> String {
 }
 
 /// Pretty JSON with sorted keys and a trailing newline (Swift used
-/// `.prettyPrinted, .sortedKeys`). Going through `serde_json::Value` is what
-/// sorts the keys: `Value`'s map is a `BTreeMap` unless the `preserve_order`
-/// feature is on, whereas a derived `Serialize` emits fields in declaration
-/// order.
+/// `.prettyPrinted, .sortedKeys`). The byte layout is serde_json's, not
+/// Foundation's, and that difference is deliberate: serde_json writes
+/// `"key": value` where JSONEncoder wrote `"key" : value`, and prints an
+/// empty array as `[]` where JSONEncoder printed `[\n\n]`. The contract is
+/// sorted keys, 2-space indentation and the trailing newline, not the exact
+/// Foundation bytes. Going through `serde_json::Value` is what sorts the
+/// keys: `Value`'s map is a `BTreeMap` unless the `preserve_order` feature
+/// is on, whereas a derived `Serialize` emits fields in declaration order.
 fn encode<T: Serialize + ?Sized>(value: &T) -> String {
     serde_json::to_value(value)
         .and_then(|v| serde_json::to_string_pretty(&v))
