@@ -30,6 +30,14 @@ arboard = "3"
 enigo = "0.6"
 log = "0.4"
 env_logger = "0.11"
+# macOS permission shims (platform/macos.rs).
+core-foundation = "0.10"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat", "block2"] }
+block2 = "0.6"
+# Windows microphone consent (platform/windows.rs).
+winreg = "0.55"
 
 [profile.release]
 strip = true

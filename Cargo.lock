@@ -5119,6 +5119,7 @@ name = "voice-app"
 version = "2.0.0"
 dependencies = [
  "arboard",
+ "block2",
  "core-foundation 0.10.1",
  "cpal",
  "enigo",
@@ -5136,6 +5137,7 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-opener",
  "voice-core",
+ "winreg 0.55.0",
 ]
 
 [[package]]
