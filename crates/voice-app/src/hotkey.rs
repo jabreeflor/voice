@@ -6,13 +6,17 @@
 //! and is passed through so Option/Alt-based shortcuts keep working. Key
 //! repeats are ignored.
 //!
-//! Backends:
-//! - macOS: a CGEvent tap installed directly through `core-graphics`, the
-//!   same shape as the Swift tap (session tap, `flagsChanged | keyDown` mask,
-//!   re-armed on `tapDisabledByTimeout` / `tapDisabledByUserInput`). rdev's
-//!   grab is not used here: it subscribes to every event type, cannot
-//!   re-enable a tap the WindowServer switched off, and folds modifier
-//!   changes into `KeyPress`, which would cancel dictation on Shift.
+//! Backends (this deliberately supersedes the SPEC.md bullet that asks for
+//! `rdev::grab` on macOS; the spec's key mapping and event rules are kept):
+//! - macOS: a CGEvent tap installed directly through `core-graphics` (a
+//!   macOS-only dependency of this crate), the same shape as the Swift tap:
+//!   session tap, head insert, `flagsChanged | keyDown` mask, re-armed on
+//!   `tapDisabledByTimeout` / `tapDisabledByUserInput`, on its own thread's
+//!   run loop. rdev's grab is not used here: it subscribes to every event
+//!   type (each mouse move through a Rust callback is what trips the
+//!   WindowServer tap timeout), never re-enables a tap the WindowServer
+//!   switched off, and folds modifier changes into `KeyPress`, which would
+//!   cancel dictation on Shift.
 //! - Windows: `rdev::grab` (low-level keyboard + mouse hooks).
 //! - Linux/X11: `rdev::listen` (XRecord; cannot swallow Escape; Wayland
 //!   unsupported).
@@ -182,10 +186,13 @@ struct Inner {
     /// send never waits on the app. `Inner` itself is pinned for the process
     /// lifetime once a hook is up (the hook thread never returns), so this
     /// sender is not dropped with the controller by accident: `Drop` for
-    /// `HotkeyController` takes it out explicitly, which closes the channel,
-    /// ends the dispatch thread and stops late events reaching a torn-down
-    /// app.
+    /// `HotkeyController` takes it out explicitly, which closes the channel
+    /// and ends the dispatch thread.
     queue: Mutex<Option<Sender<HotkeyEvent>>>,
+    /// Set by `Drop`. mpsc drains what was queued before the sender closed,
+    /// so closing `queue` alone would still hand the hook's last event(s) to
+    /// the callback of a torn-down app; `deliver` checks this first.
+    shutdown: AtomicBool,
     state: Mutex<HookState>,
     running: AtomicBool,
     /// Report channel of the hook thread that `start` considered successful.
@@ -214,9 +221,15 @@ impl Inner {
     /// send happens. The mutexes are only ever held for a few instructions.
     fn dispatch(&self, event: &EventType, hotkey: Hotkey) -> bool {
         let active = (self.is_active)();
-        let (out, swallow) = match self.state.lock() {
-            Ok(mut state) => handle(&mut state, event, hotkey, active),
-            Err(_) => (None, false),
+        // `HookState` is a plain bool, so a poisoned lock still holds a
+        // consistent value; giving up here would leave the hook silent for
+        // the rest of the process while `tap_running` keeps reporting it up.
+        let (out, swallow) = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            handle(&mut state, event, hotkey, active)
         };
         if let Some(ev) = out {
             if let Ok(q) = self.queue.lock() {
@@ -233,10 +246,37 @@ impl Inner {
 
     /// Delivers one queued event to the app callback (dispatch thread only).
     fn deliver(&self, ev: HotkeyEvent) {
+        if self.shutdown.load(Ordering::SeqCst) {
+            return;
+        }
         let cb = self.on_event.lock().ok().and_then(|g| g.clone());
         if let Some(cb) = cb {
             cb(ev);
         }
+    }
+
+    /// The hotkey the hook should act on right now: the configured one,
+    /// clamped to what this platform can deliver. `Config::hotkey` reads the
+    /// raw settings value without consulting `Hotkey::available()`, so a
+    /// `settings.json` carrying `"hotkey":"fn"` (hand-edited, or synced from
+    /// a Mac) reaches Windows/Linux, where rdev's key tables have no
+    /// `Function` entry and the hook would run fine while no keystroke ever
+    /// matched. Fall back to the platform default (the same fallback an
+    /// unknown raw value gets) and say so once in the log.
+    fn hotkey(&self) -> Hotkey {
+        let configured = (self.current_hotkey)();
+        let available = Hotkey::available();
+        if available.contains(&configured) {
+            return configured;
+        }
+        let fallback = available[0];
+        // A fixed message: this runs in the OS hook callback on every event
+        // while the setting is wrong, so no formatting there.
+        self.warn_once(
+            "configured hotkey cannot be hooked on this platform",
+            "using the platform default instead",
+        );
+        fallback
     }
 
     /// Hook-thread entry for one rdev event (Windows/Linux).
@@ -250,7 +290,7 @@ impl Inner {
         if !matches!(event, EventType::KeyPress(_) | EventType::KeyRelease(_)) {
             return false;
         }
-        let hotkey = (self.current_hotkey)();
+        let hotkey = self.hotkey();
         self.dispatch(event, hotkey)
     }
 
@@ -282,11 +322,14 @@ pub struct HotkeyController {
 /// The hook thread keeps a strong `Arc<Inner>` and never returns, so the
 /// event channel inside `Inner` would otherwise stay open after the
 /// controller is gone and the dispatch thread would keep invoking the stored
-/// callback on an app that has been torn down. Closing the sender here ends
-/// the dispatch thread; the hook itself keeps running (it cannot be stopped
-/// from outside the OS run loop) but its events now go nowhere.
+/// callback on an app that has been torn down. `shutdown` is raised first so
+/// that nothing already sitting in the queue is delivered either (mpsc
+/// drains buffered items before reporting the close); closing the sender
+/// then ends the dispatch thread. The hook itself keeps running (it cannot
+/// be stopped from outside the OS run loop) but its events now go nowhere.
 impl Drop for HotkeyController {
     fn drop(&mut self) {
+        self.inner.shutdown.store(true, Ordering::SeqCst);
         if let Ok(mut q) = self.inner.queue.lock() {
             *q = None;
         }
@@ -304,6 +347,7 @@ impl HotkeyController {
             is_active,
             on_event: Mutex::new(None),
             queue: Mutex::new(Some(tx)),
+            shutdown: AtomicBool::new(false),
             state: Mutex::new(HookState::default()),
             running: AtomicBool::new(false),
             watch: Mutex::new(None),
@@ -402,9 +446,11 @@ impl HotkeyController {
                 // which would reset the controller underneath us and leave
                 // this hook unwatched (and a second one spawned by the
                 // app's retry).
-                if let Ok(mut w) = self.inner.watch.lock() {
-                    *w = Some(rx);
-                }
+                *self
+                    .inner
+                    .watch
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(rx);
                 self.inner.running.store(true, Ordering::SeqCst);
                 if let Ok(mut last) = self.inner.last_failure.lock() {
                     *last = None;
@@ -430,22 +476,31 @@ impl HotkeyController {
         if !self.inner.running.load(Ordering::SeqCst) {
             return false;
         }
-        let died = match self.inner.watch.lock() {
-            Ok(mut w) => match w.as_ref().map(Receiver::try_recv) {
-                Some(Err(TryRecvError::Empty)) => false,
-                Some(Ok(Err(reason))) => {
-                    log::warn!("hotkey hook stopped: {reason}");
-                    *w = None;
-                    true
-                }
-                Some(Ok(Ok(()))) | Some(Err(TryRecvError::Disconnected)) => {
-                    *w = None;
-                    true
-                }
-                None => true,
-            },
-            Err(_) => false,
+        // Recover a poisoned lock rather than bail: the receiver inside is
+        // always consistent, and giving up here (in either direction) would
+        // be wrong — "running" would hide a dead hook behind a live status
+        // line, "dead" would make the retry timer spawn a second hook thread
+        // every second because `start_with` could no longer publish its
+        // receiver.
+        let mut w = self
+            .inner
+            .watch
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let died = match w.as_ref().map(Receiver::try_recv) {
+            Some(Err(TryRecvError::Empty)) => false,
+            Some(Ok(Err(reason))) => {
+                log::warn!("hotkey hook stopped: {reason}");
+                *w = None;
+                true
+            }
+            Some(Ok(Ok(()))) | Some(Err(TryRecvError::Disconnected)) => {
+                *w = None;
+                true
+            }
+            None => true,
         };
+        drop(w);
         if died {
             self.inner.running.store(false, Ordering::SeqCst);
             if let Ok(mut s) = self.inner.state.lock() {
@@ -545,7 +600,7 @@ fn run_hook(inner: Arc<Inner>) -> Result<(), String> {
                 _ => return CallbackResult::Keep,
             }
             let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
-            let hotkey = (inner.current_hotkey)();
+            let hotkey = inner.hotkey();
             let ev = match kind {
                 CGEventType::FlagsChanged => TapEvent::FlagsChanged {
                     keycode,
@@ -884,6 +939,81 @@ mod tests {
         );
     }
 
+    // `Config::hotkey` does not clamp to `Hotkey::available()`, so a
+    // settings file from another platform can name a key rdev cannot deliver
+    // here. The hook must fall back to the platform default rather than run
+    // with a key that never matches.
+    #[test]
+    fn unavailable_hotkey_falls_back_to_platform_default() {
+        let available = Hotkey::available();
+        let foreign = Hotkey::ALL
+            .iter()
+            .copied()
+            .find(|h| !available.contains(h))
+            .expect("every platform hides at least one hotkey");
+        let c = HotkeyController::new(Arc::new(move || foreign), Arc::new(|| false));
+        assert_eq!(c.inner.hotkey(), available[0]);
+        // Only the log line is deduplicated; the clamp itself is per call.
+        assert_eq!(c.inner.hotkey(), available[0]);
+        for hk in available.iter().copied() {
+            let c = HotkeyController::new(Arc::new(move || hk), Arc::new(|| false));
+            assert_eq!(c.inner.hotkey(), hk);
+        }
+    }
+
+    // The state lock is taken inside the OS hook callback; a panic that
+    // poisoned it must not turn the hook mute for the rest of the process.
+    #[test]
+    fn poisoned_state_lock_still_dispatches() {
+        let c = controller();
+        let (tx, rx) = mpsc::channel();
+        c.set_on_event(Arc::new(move |ev| {
+            let _ = tx.send(ev);
+        }));
+        let inner = Arc::clone(&c.inner);
+        let _ = thread::spawn(move || {
+            let _guard = inner.state.lock().unwrap();
+            panic!("poison the state lock");
+        })
+        .join();
+        assert!(c.inner.state.lock().is_err(), "lock was not poisoned");
+        c.inner.dispatch(&press(Key::AltGr), Hotkey::RightOption);
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(5)).unwrap(),
+            HotkeyEvent::Down
+        );
+    }
+
+    // Likewise for the watch lock: the hook's health must stay readable
+    // through a poisoned lock. Reporting "dead" instead would send the app's
+    // retry into `start`, which could then not publish its receiver and
+    // would spawn a fresh hook thread on every tick.
+    #[test]
+    fn poisoned_watch_lock_keeps_tracking_the_hook() {
+        let c = controller();
+        assert!(c.start_with(hook_parks_uncounted));
+        assert!(c.tap_running());
+        let inner = Arc::clone(&c.inner);
+        let _ = thread::spawn(move || {
+            let _guard = inner.watch.lock().unwrap();
+            panic!("poison the watch lock");
+        })
+        .join();
+        assert!(c.inner.watch.lock().is_err(), "lock was not poisoned");
+        assert!(c.tap_running());
+        // Still one hook: a second start sees it and returns at once.
+        let t = Instant::now();
+        assert!(c.start_with(hook_parks_uncounted));
+        assert!(t.elapsed() < START_GRACE);
+        // And a death is still noticed through the poisoned lock.
+        *c.inner
+            .watch
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        assert!(!c.tap_running());
+        assert!(!c.inner.running.load(Ordering::SeqCst));
+    }
+
     #[test]
     fn controller_reports_not_running_before_start() {
         let c = HotkeyController::new(Arc::new(|| Hotkey::RightOption), Arc::new(|| false));
@@ -907,6 +1037,14 @@ mod tests {
 
     fn hook_parks_forever(_: Arc<Inner>) -> Result<(), String> {
         PARKED_HOOKS.fetch_add(1, Ordering::SeqCst);
+        loop {
+            thread::park();
+        }
+    }
+
+    /// Same as `hook_parks_forever` but uncounted, for tests that only need
+    /// a live hook and must not disturb `PARKED_HOOKS`.
+    fn hook_parks_uncounted(_: Arc<Inner>) -> Result<(), String> {
         loop {
             thread::park();
         }
@@ -1003,9 +1141,13 @@ mod tests {
         let pinned = Arc::clone(&c.inner);
         drop(c);
         assert!(pinned.queue.lock().unwrap().is_none());
+        assert!(pinned.shutdown.load(Ordering::SeqCst));
         // A late event from the (still running) hook is dropped, not
         // delivered, and does not panic.
         assert!(!pinned.dispatch(&press(Key::AltGr), Hotkey::RightOption));
+        // An event the hook queued just before the drop (mpsc hands buffered
+        // items out even after the sender is gone) is not delivered either.
+        pinned.deliver(HotkeyEvent::Down);
         assert!(matches!(
             rx.recv_timeout(Duration::from_millis(200)),
             Err(RecvTimeoutError::Timeout) | Err(RecvTimeoutError::Disconnected)
