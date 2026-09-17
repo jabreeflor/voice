@@ -131,7 +131,28 @@ fn prepare_once() -> Result<Booted, String> {
             model.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
         );
         engine.stop();
-        return Err(reason);
+        // The engine discards the child's stdio, so a server that dies on
+        // launch (missing shared library, bad flag) leaves no trace. Run the
+        // binary once more with --help and surface what it says, which is
+        // usually the whole diagnosis when this skip shows up on CI.
+        let probe = WhisperEngine::find_binary("whisper-server")
+            .map(|bin| {
+                std::process::Command::new(bin)
+                    .arg("--help")
+                    .output()
+                    .map(|o| {
+                        let text = String::from_utf8_lossy(&o.stderr).to_string()
+                            + &String::from_utf8_lossy(&o.stdout);
+                        format!(
+                            "probe exit {:?}: {}",
+                            o.status.code(),
+                            text.lines().take(3).collect::<Vec<_>>().join(" | ")
+                        )
+                    })
+                    .unwrap_or_else(|e| format!("probe failed to run: {e}"))
+            })
+            .unwrap_or_else(|| "probe: binary not found".to_string());
+        return Err(format!("{reason}; {probe}"));
     }
 
     let booted = Booted {
