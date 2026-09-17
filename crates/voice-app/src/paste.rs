@@ -52,6 +52,10 @@ fn with_clipboard<R>(f: impl FnOnce(&mut Clipboard) -> R) -> Option<R> {
     guard.as_mut().map(f)
 }
 
+/// Blocking: call from a worker thread, never the Tauri main thread. The
+/// clipboard read can wait up to 4 s for the X11 selection owner (arboard's
+/// long timeout) and enigo sleeps ~80 ms on macOS while the paste events
+/// drain, all while holding the process-wide `CLIPBOARD` mutex.
 pub fn paste_text(text: &str) {
     // Err means "nothing textual on the clipboard" (empty, image, ...);
     // Swift's `string(forType:)` returns nil there and skips the restore.
@@ -91,6 +95,8 @@ pub fn paste_text(text: &str) {
 /// Plain clipboard write (menu "Copy Last Dictation", ledger row click).
 /// Uses the shared handle so the text keeps being served on X11 and the
 /// caller (a Tauri IPC thread) never blocks on arboard's drop-time handover.
+/// Still blocking: `set_text` may wait on the X11 selection, so keep it off
+/// the Tauri main thread too.
 pub fn copy_text(text: &str) {
     if let Some(Err(e)) = with_clipboard(|clipboard| clipboard.set_text(text)) {
         log::error!("clipboard write failed: {e}");

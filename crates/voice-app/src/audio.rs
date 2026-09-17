@@ -213,15 +213,16 @@ impl Recorder {
         let Some(shared) = self.shared.take() else {
             return Vec::new();
         };
-        let mut result = shared
-            .samples
-            .lock()
-            .map(|mut s| std::mem::take(&mut *s))
-            .unwrap_or_default();
-        if let Ok(mut pipeline) = shared.pipeline.lock() {
-            if let Some(conv) = pipeline.converter.as_mut() {
-                conv.flush(&mut result);
-            }
+        // A poisoned lock (a callback panicked mid-buffer) still holds every
+        // sample captured so far; recover it rather than drop the recording,
+        // as `paste.rs` does with its clipboard handle.
+        let mut result = {
+            let mut samples = shared.samples.lock().unwrap_or_else(|p| p.into_inner());
+            std::mem::take(&mut *samples)
+        };
+        let mut pipeline = shared.pipeline.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(conv) = pipeline.converter.as_mut() {
+            conv.flush(&mut result);
         }
         result
     }
@@ -370,7 +371,11 @@ impl RateConverter {
         // The first call carries the real tail; later ones feed zeros only.
         // Each partial call is padded to a full chunk, so one extra call is
         // enough when tail + delay exceed the chunk. An empty tail must go in
-        // as `None`: rubato treats an empty channel slice as inactive.
+        // as `None`, not `Some(&[&[]])`: rubato (0.16) marks every channel
+        // active regardless of length, clears its padded input for a
+        // zero-length channel, and then fails validation with
+        // `InsufficientInputBufferSize { size: 0, .. }`. `None` leaves the
+        // padded buffer full of zeros, which is exactly the flush we want.
         let mut tail = (!tail.is_empty()).then_some(tail);
         while needed > 0 {
             let result = match tail.take() {
