@@ -138,6 +138,33 @@ fn add_reads_text_from_stdin_and_keeps_inner_newlines() {
     );
 }
 
+/// CRLF-terminated input (Windows `type file | voicectl ...`, CRLF editors)
+/// must not leave a stray `\r` at the end of the stored text, and inner CRLFs
+/// are escaped in the listing like bare newlines so one snippet is one row.
+#[test]
+fn add_from_stdin_strips_trailing_crlf_pairs() {
+    let f = Fixture::new();
+    let r = f.run_stdin(
+        &["snippets", "add", "signoff", "-"],
+        "Best,\r\nJabree\r\n\r\n",
+    );
+    assert_eq!(r.status, 0);
+    assert_eq!(
+        f.store().snippet_for("signoff").map(|s| s.text.clone()),
+        Some("Best,\r\nJabree".to_string())
+    );
+    assert_eq!(
+        f.run(&["snippets", "list"]).stdout,
+        "signoff\tBest,\\nJabree\n"
+    );
+    // Whitespace-only input (a lone CRLF) is still rejected as empty.
+    assert_eq!(
+        f.run_stdin(&["snippets", "add", "empty", "-"], "\r\n")
+            .status,
+        1
+    );
+}
+
 #[test]
 fn add_rejects_empty_trigger_or_text() {
     let f = Fixture::new();

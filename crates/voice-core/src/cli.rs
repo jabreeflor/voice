@@ -74,7 +74,14 @@ Exit status: 0 ok, 1 not found / invalid input, 2 usage error.";
 
     /// Process entry point: real argv, the app's data directory, real stdin.
     pub fn main() -> i32 {
-        let args: Vec<String> = std::env::args().skip(1).collect();
+        // `args()` panics on non-UTF-8 argv (a non-UTF-8 `--dir` path, an
+        // unpaired surrogate on Windows), which would turn the documented
+        // 0/1/2 exit codes into a 101. Swift's `CommandLine.arguments` repairs
+        // invalid UTF-8 lossily, so do the same.
+        let args: Vec<String> = std::env::args_os()
+            .skip(1)
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
         let mut stdin = || {
             let mut buf = Vec::new();
             let _ = std::io::stdin().lock().read_to_end(&mut buf);
@@ -190,9 +197,14 @@ fn snippets(args: &[String], directory: &Path, stdin: &mut dyn FnMut() -> String
                 return CliResult::usage("add needs a trigger and text (use - for stdin)");
             };
             let text = if raw_text == "-" {
-                // Strip only the trailing newline `echo`/heredocs append; inner
-                // newlines are part of a multi-line snippet.
-                stdin().trim_end_matches('\n').to_string()
+                // Strip only the trailing newline(s) `echo`/heredocs append;
+                // inner newlines are part of a multi-line snippet. CRLF is
+                // stripped as a pair so `type file | voicectl ...` on Windows
+                // does not store a stray `\r` that would paste a carriage
+                // return. (Swift's `hasSuffix("\n")` compares grapheme
+                // clusters and left a trailing CRLF untouched, which was an
+                // accident of Character semantics rather than intent.)
+                strip_trailing_newlines(stdin())
             } else {
                 raw_text.to_string()
             };
@@ -295,7 +307,22 @@ fn snippets(args: &[String], directory: &Path, stdin: &mut dyn FnMut() -> String
 /// One line per snippet; newlines inside the text are shown as `\n` so a
 /// multi-line snippet cannot masquerade as several rows.
 fn line(s: &Snippet) -> String {
-    format!("{}\t{}", s.trigger, s.text.replace('\n', "\\n"))
+    let escaped = s.text.replace("\r\n", "\\n").replace('\n', "\\n");
+    format!("{}\t{}", s.trigger, escaped)
+}
+
+/// Drop trailing `\n` / `\r\n` terminators (only whole pairs, so a CRLF never
+/// leaves a lone `\r` behind). Inner line breaks are kept.
+fn strip_trailing_newlines(mut text: String) -> String {
+    loop {
+        if text.ends_with("\r\n") {
+            text.truncate(text.len() - 2);
+        } else if text.ends_with('\n') {
+            text.pop();
+        } else {
+            return text;
+        }
+    }
 }
 
 /// Pretty JSON with sorted keys and a trailing newline (Swift used
