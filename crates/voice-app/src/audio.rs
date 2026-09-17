@@ -148,6 +148,14 @@ impl Recorder {
         if self.is_recording() {
             return Ok(());
         }
+        // cpal cannot see a TCC denial on macOS: the device opens and the
+        // callback just receives silence, where AVAudioEngine's degenerate
+        // input format made Swift throw. Ask the OS explicitly so the user
+        // gets the permission hint instead of an empty transcript. Windows
+        // reports denial from WASAPI itself; Linux returns NotApplicable.
+        if crate::platform::mic_status() == crate::platform::MicStatus::Denied {
+            return Err(NO_INPUT.to_string());
+        }
         let host = cpal::default_host();
         let device = host.default_input_device().ok_or(NO_INPUT)?;
         let supported = device.default_input_config().map_err(|e| {
@@ -198,8 +206,10 @@ impl Recorder {
     pub fn stop(&mut self) -> Vec<f32> {
         // Dropping the stream stops callbacks before we take the pipeline, so
         // the flush below sees every buffer the device delivered.
+        // `started` is deliberately left set (as Swift leaves `startTime`)
+        // so `duration()` is still valid after `stop()`; the caller reads the
+        // samples and the duration in either order. `start()` overwrites it.
         self.stream = None;
-        self.started = None;
         let Some(shared) = self.shared.take() else {
             return Vec::new();
         };
@@ -230,7 +240,8 @@ impl Recorder {
         self.shared.as_ref().map(|s| s.level()).unwrap_or(0.0)
     }
 
-    /// Time since `start()` (zero when idle).
+    /// Time since the most recent `start()`. Stays valid after `stop()` so
+    /// the 0.35 s short-tap guard can run on it; zero before the first start.
     pub fn duration(&self) -> Duration {
         self.started.map(|t| t.elapsed()).unwrap_or_default()
     }

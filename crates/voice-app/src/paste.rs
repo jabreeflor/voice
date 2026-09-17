@@ -120,10 +120,25 @@ fn send_paste_shortcut() -> bool {
     } else {
         Key::Control
     };
+    // Layout-independent V, like Swift's `virtualKey: 9`. `Key::Unicode('v')`
+    // is resolved through the active input source: with a non-Latin layout
+    // (Cyrillic, Greek, Hebrew, kana, ...) enigo finds no keycode on macOS
+    // and falls through to keycode 0 = kVK_ANSI_A, turning the paste into a
+    // destructive ⌘A; on Windows `VkKeyScanExW` fails and enigo silently
+    // types a literal "v" instead. `Key::Other` is passed straight through as
+    // a raw keycode (macOS) / virtual key (Windows). Linux keeps the keysym
+    // lookup, which is layout-correct there.
+    let v_key = if cfg!(target_os = "macos") {
+        Key::Other(9) // kVK_ANSI_V
+    } else if cfg!(target_os = "windows") {
+        Key::Other(0x56) // VK_V
+    } else {
+        Key::Unicode('v')
+    };
     let sequence = [
         (modifier, Direction::Press),
-        (Key::Unicode('v'), Direction::Press),
-        (Key::Unicode('v'), Direction::Release),
+        (v_key, Direction::Press),
+        (v_key, Direction::Release),
         (modifier, Direction::Release),
     ];
     for (key, direction) in sequence {
