@@ -22,6 +22,13 @@ type SharedFinishedFn = Arc<dyn Fn(&str, Option<PathBuf>) + Send + Sync>;
 
 const COPY_BUFFER: usize = 64 * 1024;
 
+/// Ceiling on receiving the whole body. ureq's `recv_body` budget is total,
+/// not per-read (there is no inactivity timeout like URLSession's 60 s), so it
+/// has to be generous enough for a 1.6 GB model on a slow link — but bounded,
+/// or a half-open connection would pin `progress[file]` forever and make every
+/// retry a silent no-op.
+const BODY_TIMEOUT: Duration = Duration::from_secs(3 * 60 * 60);
+
 pub struct ModelDownloader {
     directory: PathBuf,
     state: Arc<State>,
@@ -57,12 +64,23 @@ impl ModelDownloader {
 
     /// Same downloader targeting an explicit directory (tests use a temp dir).
     pub fn with_directory(directory: PathBuf) -> ModelDownloader {
+        Self::with_directory_and_body_timeout(directory, BODY_TIMEOUT)
+    }
+
+    /// `with_directory` with an explicit body-receive ceiling, so a test can
+    /// prove a stalled transfer fails without waiting the production hours.
+    pub fn with_directory_and_body_timeout(
+        directory: PathBuf,
+        body_timeout: Duration,
+    ) -> ModelDownloader {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
             // No global timeout: a 1.6 GB model on a slow link takes a while.
-            // Connect/header timeouts still catch a dead host.
+            // Connect/header timeouts still catch a dead host; the body has
+            // its own (large) ceiling so a wedged transfer still ends.
             .timeout_connect(Some(Duration::from_secs(30)))
             .timeout_recv_response(Some(Duration::from_secs(60)))
+            .timeout_recv_body(Some(body_timeout))
             .build()
             .into();
         ModelDownloader {

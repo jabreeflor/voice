@@ -219,6 +219,62 @@ fn truncated_body_fails_and_removes_part_file() {
     assert!(!models.join("ggml-tiny.en.bin.part").exists());
 }
 
+/// A server that sends headers plus a few body bytes and then hangs without
+/// closing: the body-receive ceiling must turn that into a failure, clear the
+/// in-flight state and fire `on_finished(file, None)` so the user can retry.
+/// Without it `is_downloading` would stay true for the life of the process.
+#[test]
+fn stalled_body_times_out_and_allows_retry() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let port = listener.local_addr().expect("local addr").port();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        if read_request_path(&mut stream).is_none() {
+            return;
+        }
+        // Full headers, 1 KB of a declared 300 KB body, then silence: the
+        // socket is held open until the test finishes so the client cannot
+        // see EOF and must rely on its own timeout.
+        let _ = stream.write_all(&response(
+            "200 OK",
+            &fake_model()[..1024],
+            Some(FAKE_MODEL_LEN),
+        ));
+        let _ = stream.flush();
+        let _ = release_rx.recv();
+    });
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let downloader = ModelDownloader::with_directory_and_body_timeout(
+        dir.path().join("models"),
+        Duration::from_secs(2),
+    );
+    let (tx, finished) = mpsc::channel();
+    downloader.set_on_finished(Box::new(move |file, path| {
+        let _ = tx.send((file.to_string(), path));
+    }));
+    downloader.download_from(&SPEC, &format!("http://127.0.0.1:{port}/stall"));
+    assert!(downloader.is_downloading(SPEC.file));
+
+    let (file, path) = finished
+        .recv_timeout(Duration::from_secs(30))
+        .expect("a stalled body must still report on_finished");
+    assert_eq!(file, SPEC.file);
+    assert!(path.is_none(), "a timed-out transfer is a failure");
+    assert!(
+        !downloader.is_downloading(SPEC.file),
+        "progress entry must be cleared so a retry is not a no-op"
+    );
+    assert_eq!(downloader.progress(SPEC.file), None);
+    let models = dir.path().join("models");
+    assert!(!models.join(SPEC.file).exists());
+    assert!(!models.join("ggml-tiny.en.bin.part").exists());
+    drop(release_tx);
+}
+
 #[test]
 fn unreachable_server_fails() {
     // A port nobody listens on: bind-and-drop guarantees it was free just now.

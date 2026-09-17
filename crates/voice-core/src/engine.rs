@@ -8,7 +8,10 @@
 //! changed the status (the readiness/exit supervisor thread, or the caller of
 //! `start`/`stop`), so a GUI host must marshal to its UI thread itself.
 
+use std::ffi::OsStr;
 use std::io::Write;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -22,7 +25,9 @@ use crate::wav::wav_data;
 pub enum EngineError {
     #[error("no model found")]
     NoModel,
-    #[error("Whisper engine not ready (install whisper.cpp: whisper-server)")]
+    /// `whisper-cli` is missing, so the cold-path fallback cannot run. A
+    /// missing `whisper-server` is reported through `status_text()` instead.
+    #[error("Whisper engine not ready (install whisper.cpp)")]
     NotInstalled,
     #[error("Bad response from whisper engine")]
     BadResponse,
@@ -30,6 +35,10 @@ pub enum EngineError {
     Http(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// Never returned by the engine itself: reserved for the app layer, which
+    /// raises it when it declines to transcribe before the server is up
+    /// (`transcribe` falls back to `whisper-cli` and returns `NoModel` or
+    /// `NotInstalled` when that fallback is impossible).
     #[error("Whisper engine not ready")]
     NotReady,
 }
@@ -41,6 +50,13 @@ const MULTIPART_BOUNDARY: &str = "VoiceBoundary7f3a9c";
 const READINESS_POLL_INTERVAL: Duration = Duration::from_millis(300);
 const READINESS_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 const INFERENCE_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Keeps a console-subsystem child (whisper-server.exe, whisper-cli.exe) off
+/// screen: the app is a GUI-subsystem binary with no console of its own, so
+/// without this flag Windows would allocate a visible console window for the
+/// child. `Stdio::null()` does not prevent that; only the creation flag does.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Shareable handle (`Send + Sync`); clone-free sharing via `Arc`.
 pub struct WhisperEngine {
@@ -138,7 +154,13 @@ impl WhisperEngine {
             .map(|n| n.get())
             .unwrap_or(1);
         let threads = std::cmp::max(4, cpus.saturating_sub(2));
-        let spawned = Command::new(bin)
+        // A previous child would keep the port and make the new bind fail;
+        // dropping a `Child` does not kill it, so reap it explicitly.
+        if let Some(mut old) = lock(&self.inner.child).take() {
+            let _ = old.kill();
+            let _ = old.wait();
+        }
+        let spawned = hidden_command(bin)
             .arg("-m")
             .arg(model)
             .args(["--host", "127.0.0.1"])
@@ -164,10 +186,19 @@ impl WhisperEngine {
         let inner = Arc::clone(&self.inner);
         let port = self.port;
         let max_polls = self.max_readiness_polls;
-        thread::Builder::new()
+        if thread::Builder::new()
             .name("whisper-engine-supervisor".into())
             .spawn(move || supervise(inner, generation, port, max_polls))
-            .ok();
+            .is_err()
+        {
+            // Nothing would ever poll readiness or reap this child, so treat
+            // it like a launch failure rather than sitting on "loading model…".
+            if let Some(mut child) = lock(&self.inner.child).take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            self.set_status("failed to launch engine");
+        }
     }
 
     pub fn stop(&self) {
@@ -218,14 +249,21 @@ impl WhisperEngine {
     fn transcribe_via_cli(&self, wav: &[u8]) -> Result<String, EngineError> {
         let model = self.model.as_ref().ok_or(EngineError::NoModel)?;
         let bin = Self::find_binary("whisper-cli").ok_or(EngineError::NotInstalled)?;
-        let tmp = std::env::temp_dir().join(format!(
-            "voice-{}-{}.wav",
+        // A private directory rather than a predictably named file in the
+        // shared temp dir: `create_dir` fails instead of following a symlink
+        // an attacker pre-planted at that name (on Linux `/tmp` is
+        // world-writable), and the per-process counter keeps concurrent calls
+        // from colliding on one path.
+        let dir = std::env::temp_dir().join(format!(
+            "voice-{}-{}",
             std::process::id(),
-            unique_suffix()
+            CLI_TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
+        std::fs::create_dir(&dir)?;
+        let tmp = dir.join("audio.wav");
         let result = (|| {
             std::fs::write(&tmp, wav)?;
-            let output = Command::new(bin)
+            let output = hidden_command(bin)
                 .arg("-m")
                 .arg(model)
                 .arg("-f")
@@ -236,9 +274,24 @@ impl WhisperEngine {
                 .output()?;
             Ok(String::from_utf8_lossy(&output.stdout).into_owned())
         })();
-        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_dir_all(&dir);
         result
     }
+}
+
+/// Per-process counter for `transcribe_via_cli` scratch directories.
+static CLI_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// `Command::new` plus the Windows no-console flag (a no-op elsewhere).
+fn hidden_command(bin: impl AsRef<OsStr>) -> Command {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new(bin);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd
+    }
+    #[cfg(not(windows))]
+    Command::new(bin)
 }
 
 impl Drop for WhisperEngine {
@@ -300,9 +353,15 @@ fn supervise(inner: Arc<Inner>, generation: u64, port: u16, max_polls: usize) {
     } else if inner.child_running() == Some(true) {
         // Give up: kill the child too, or a late-binding server would be
         // left running untracked, squatting on the port forever.
-        if let Some(mut child) = lock(&inner.child).take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        let Some(mut child) = lock(&inner.child).take() else {
+            return;
+        };
+        let _ = child.kill();
+        let _ = child.wait();
+        if !current() {
+            // stop() won the race; an intentional shutdown must not be
+            // displayed as "engine did not start".
+            return;
         }
         inner.ready.store(false, Ordering::SeqCst);
         inner.set_status("engine did not start");
@@ -435,13 +494,6 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(not(unix))]
 fn is_executable(path: &Path) -> bool {
     path.is_file()
-}
-
-fn unique_suffix() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0)
 }
 
 /// Status/child state stays consistent even if a callback panicked while a

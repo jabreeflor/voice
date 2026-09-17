@@ -69,7 +69,10 @@ fn booted() -> Option<&'static Booted> {
     match BOOT.get_or_init(prepare_once) {
         Ok(b) => Some(b),
         Err(reason) => {
-            println!("SKIPPED: {reason}");
+            // libtest captures println! and only replays it for failing
+            // tests; CI greps the log for this line, so it has to reach the
+            // real stdout regardless of --nocapture.
+            let _ = writeln!(std::io::stdout().lock(), "SKIPPED: {reason}");
             None
         }
     }
