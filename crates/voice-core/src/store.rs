@@ -61,7 +61,10 @@ fn write_atomically(path: &Path, bytes: &[u8]) {
     };
     let n = SEQ.fetch_add(1, Ordering::Relaxed);
     let tmp = dir.join(format!(".{}-{}-{}.tmp", name, std::process::id(), n));
-    if fs::write(&tmp, bytes).is_ok() && fs::rename(&tmp, path).is_err() {
+    // Whether the write or the rename fails, remove the temp file so a full
+    // disk does not litter the data directory with one orphan per save.
+    let ok = fs::write(&tmp, bytes).is_ok() && fs::rename(&tmp, path).is_ok();
+    if !ok {
         let _ = fs::remove_file(&tmp);
     }
 }
@@ -201,7 +204,8 @@ impl HistoryStore {
         let words = word_count(&entry.text);
         self.entries.insert(0, entry);
         self.entries.truncate(Self::LIMIT);
-        self.set_total_words(self.total_words() + words);
+        // Saturate: `wordsTotal` is user-editable JSON and must never trap.
+        self.set_total_words(self.total_words().saturating_add(words));
         self.stamp += 1;
         self.save();
     }
@@ -257,7 +261,7 @@ impl HistoryStore {
         let mut words = self.total_words();
         for (i, text) in old.into_iter().enumerate() {
             let date = now - Duration::from_secs(60 * i as u64);
-            words += word_count(&text);
+            words = words.saturating_add(word_count(&text));
             self.entries.push(DictationEntry::new(text, date, 0.0, 0.0));
         }
         self.set_total_words(words);

@@ -162,6 +162,17 @@ fn total_words_is_read_from_the_injected_suite_only() {
     assert_eq!(f.make_store().total_words(), 42);
 }
 
+/// `wordsTotal` lives in user-editable settings.json, so a huge value must
+/// saturate instead of trapping on overflow.
+#[test]
+fn total_words_saturates_instead_of_overflowing() {
+    let f = Fixture::new();
+    f.settings.set("wordsTotal", i64::MAX);
+    let mut store = f.make_store();
+    store.add(entry("one two three"));
+    assert_eq!(store.total_words(), i64::MAX);
+}
+
 // MARK: - Persistence
 
 #[test]
