@@ -72,7 +72,111 @@ pub struct StatusInfo {
     pub needs_accessibility: bool,
 }
 
+fn info(text: impl Into<String>, color: StatusColor, needs_accessibility: bool) -> StatusInfo {
+    StatusInfo {
+        text: text.into(),
+        color,
+        needs_accessibility,
+    }
+}
+
+/// Branch order is the contract: mic → hook → setup progress → setup failed →
+/// engine exists → engine ready → not installed → starting. Only the copy for
+/// platform-specific remedies differs off macOS; precedence never does.
 pub fn compute_status(i: &StatusInputs) -> StatusInfo {
-    let _ = i;
-    todo!()
+    use StatusColor::{Green, Orange, Red};
+
+    if i.mic_denied {
+        let text = match i.platform {
+            Platform::MacOs => {
+                "Microphone access is off — enable it in System Settings, Privacy & Security"
+            }
+            _ => "Microphone access is off — enable it in your system privacy settings",
+        };
+        return info(text, Red, false);
+    }
+    if !i.tap_running {
+        if i.ax_trusted {
+            if i.recently_relaunched {
+                return info(
+                    "Permission granted but blocked — toggle Voice off and on in Accessibility settings",
+                    Orange,
+                    true,
+                );
+            }
+            // The auto-relaunch is suppressed while onboarding is on screen,
+            // so don't promise a restart that won't happen until it closes.
+            if i.onboarding_visible {
+                return info(
+                    "Permission granted — Voice will finish applying it when setup closes",
+                    Orange,
+                    false,
+                );
+            }
+            return info(
+                "Permission granted — restarting Voice to apply it",
+                Orange,
+                false,
+            );
+        }
+        // Only macOS gates the hook behind a permission the user can grant;
+        // elsewhere a failed hook is an environment problem, so there is no
+        // Accessibility pane to open.
+        return match i.platform {
+            Platform::MacOs => info(
+                "Grant Accessibility permission to enable the talk key. Already listed? Toggle Voice off and on.",
+                Orange,
+                true,
+            ),
+            Platform::Linux => info(
+                "Could not listen for the talk key. On Linux this needs an X11 session (Wayland is not supported yet).",
+                Orange,
+                false,
+            ),
+            Platform::Windows => info(
+                "Could not listen for the talk key — restart Voice",
+                Orange,
+                false,
+            ),
+        };
+    }
+    if let Some(p) = i.setup_progress {
+        // Truncates like Swift's Int(p * 100): 0.999 reads as 99%.
+        let percent = (p * 100.0) as i64;
+        return info(
+            format!("Setting up — downloading the speech engine ({percent}%)"),
+            Orange,
+            false,
+        );
+    }
+    if i.setup_failed {
+        return info(
+            "Setup failed — check your connection and relaunch Voice",
+            Red,
+            false,
+        );
+    }
+    if !i.engine_exists {
+        return info("Preparing", Orange, false);
+    }
+    if i.engine_ready {
+        return info(
+            format!("Ready — hold {} and speak", i.hotkey_label),
+            Green,
+            false,
+        );
+    }
+    if i.engine_status_text == "whisper-server not installed" {
+        let text = match i.platform {
+            Platform::MacOs => "Speech engine missing — run: brew install whisper-cpp",
+            Platform::Windows => {
+                "Speech engine missing — put whisper-server.exe next to Voice or on PATH"
+            }
+            Platform::Linux => {
+                "Speech engine missing — install whisper.cpp (whisper-server) and put it on PATH"
+            }
+        };
+        return info(text, Red, false);
+    }
+    info("Starting the speech engine", Orange, false)
 }
