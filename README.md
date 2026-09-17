@@ -54,8 +54,10 @@ curl -fsSL https://raw.githubusercontent.com/jabreeflor/voice/main/scripts/insta
 The script checks for `cargo`, `whisper-server` and (on Linux) the system
 libraries, clones `main`, runs the release build, installs
 `Voice.app` into `/Applications` (macOS) or the `.deb`/AppImage (Linux),
-launches it, and links `voicectl` onto your PATH. Because it is built
-locally there is no Gatekeeper "unidentified developer" hassle on macOS.
+launches it, and installs `voicectl` (symlinked into a writable PATH
+directory on macOS, copied into `~/.local/bin` on Linux — add that directory
+to your PATH if it is not there already). Because it is built locally there
+is no Gatekeeper "unidentified developer" hassle on macOS.
 Windows users: use a prebuilt bundle or build from source below.
 
 **Requirements:** [Rust](https://rustup.rs) (stable), `git`, and on macOS
@@ -185,8 +187,11 @@ just works. Want more accuracy? Drop another `ggml-*.bin` from
 
 With several models present the app picks the fastest one that is good
 enough for hold-to-talk (base → small → medium → large-v3-turbo → tiny). To
-pin one, set `"modelFile": "ggml-small.en.bin"` in `settings.json` (see
-[Where things live](#-where-things-live)), or force a path for one run:
+pin one, quit Voice, set `"modelFile": "ggml-small.en.bin"` in
+`settings.json` (see [Where things live](#-where-things-live)), then
+relaunch — the app loads `settings.json` once at startup and rewrites the
+whole file whenever a setting changes, so an edit made while it is running
+is lost. To force a path for one run instead:
 
 ```sh
 open --env VOICE_MODEL=~/path/to/model.bin /Applications/Voice.app   # macOS

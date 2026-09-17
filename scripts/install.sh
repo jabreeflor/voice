@@ -98,6 +98,14 @@ On Debian/Ubuntu install them with:
 librsvg, ALSA, xdo, XTest, xkbcommon and OpenSSL development packages.)"
     fi
 
+    # The .deb is installed with sudo; check up front so the failure lands
+    # before the build, not after the running app has been killed.
+    if have dpkg && ! have sudo; then
+        fail "sudo is required to install the .deb package.
+Install sudo, or build with 'cargo tauri build' and install the .deb yourself
+(or run the AppImage from target/release/bundle/appimage)."
+    fi
+
     if [ "${XDG_SESSION_TYPE:-}" = "wayland" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
         printf '\033[33mNote:\033[0m this looks like a Wayland session. voice needs an X11 session\n'
         printf '      to see the talk key in other apps; it will install but not hear the key here.\n'
@@ -150,7 +158,13 @@ else
     APPIMAGE=$(find "$BUNDLE/appimage" -maxdepth 1 -name '*.AppImage' -print -quit 2>/dev/null || true)
     if have dpkg && [ -n "$DEB" ]; then
         bold "Installing $(basename "$DEB") (sudo may prompt)..."
-        sudo dpkg -i "$DEB"
+        # apt-get resolves the runtime dependencies (WebKitGTK etc.) that a
+        # bare dpkg -i would leave unconfigured.
+        if have apt-get; then
+            sudo apt-get install -y "$DEB"
+        else
+            sudo dpkg -i "$DEB"
+        fi
         LAUNCH="voice"
     elif [ -n "$APPIMAGE" ]; then
         bold "Installing AppImage to ~/.local/bin/voice..."

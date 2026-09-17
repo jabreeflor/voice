@@ -3,8 +3,10 @@
 ## `install.sh` — curl | bash installer
 
 Builds voice from source on macOS or Linux and installs it (`/Applications`
-on macOS; the `.deb` or an AppImage in `~/.local/bin` on Linux), then puts
-`voicectl` on PATH. It checks for `cargo`, `whisper-server` and, on Linux,
+on macOS; the `.deb` or an AppImage in `~/.local/bin` on Linux), then
+installs `voicectl` (a symlink in a writable PATH directory on macOS; a copy
+in `~/.local/bin` on Linux, which the user may need to add to PATH). It
+checks for `cargo`, `whisper-server` and, on Linux,
 the WebKitGTK/GTK/ALSA/xdo development packages, and prints the exact fix
 for whatever is missing. Windows users are pointed at the prebuilt bundles
 in the README. The script must stay ASCII-only and bash 3.2 compatible.
