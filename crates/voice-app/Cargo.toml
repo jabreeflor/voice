@@ -28,6 +28,10 @@ arboard.workspace = true
 enigo.workspace = true
 log.workspace = true
 env_logger.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Accessibility (AXIsProcessTrusted*) and microphone (AVCaptureDevice) checks,
