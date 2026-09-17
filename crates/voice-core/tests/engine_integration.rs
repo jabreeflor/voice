@@ -44,11 +44,12 @@ const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 /// surfaces as a clear failure instead of hanging the suite.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
-// jfk.wav is the public-domain recording whisper.cpp ships as its own sample
-// (samples/jfk.wav): a real human voice, so it pins that speech survives the
-// whole path. hello.wav is espeak-ng synthesis, which whisper transcribes
+// jfk.wav is the first four seconds of the public-domain recording
+// whisper.cpp ships as its own sample (samples/jfk.wav): a real human voice,
+// so it pins that speech survives the whole path. Trimmed because GitHub's
+// macOS runners transcribe at well under 0.1x realtime. hello.wav is espeak-ng synthesis, which whisper transcribes
 // unreliably (CI runs read it as " the"), so it is only a smoke check.
-const JFK_PHRASE: &str = "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.";
+const JFK_PHRASE: &str = "And so my fellow Americans, ask not";
 const JFK_KEYWORD: &str = "fellow americans";
 const SECOND_PHRASE: &str = "Hello world, this is a test of the voice engine.";
 
@@ -280,11 +281,12 @@ fn test4_warm_transcription_meets_latency_budget() {
     );
 
     // Budget observed ~0.3 s warm on Apple Silicon; 5 s is the local bar.
-    // GitHub's shared VMs run whisper ~50x slower (measured 11-12 s for 2.5 s
-    // of audio). CI uses a tighter hang/regression ceiling than the old 60 s
-    // guard so large slowdowns still fail.
+    // GitHub's shared VMs run whisper far slower: the macOS runner measured
+    // 23 s warm (42 s cold) for 3.4 s of audio, Linux about 1.7 s. CI uses a
+    // hang/regression ceiling well under the 60 s request timeout so a large
+    // slowdown still fails without the request timing out first.
     let is_ci = std::env::var_os("CI").is_some();
-    let budget = if is_ci { 25.0 } else { 5.0 };
+    let budget = if is_ci { 45.0 } else { 5.0 };
     let mut elapsed = 0.0;
     for attempt in 1..=3 {
         let start = Instant::now();
@@ -628,10 +630,12 @@ fn find_binary_in_prefers_extra_dirs_over_path() {
 #[cfg(unix)]
 #[test]
 fn find_binary_in_skips_non_executable_files() {
+    // A made-up name: the install prefixes are always searched too, so on a
+    // Mac with Homebrew's whisper-cpp a real "whisper-server" would be found.
     let dir = tempfile::tempdir().expect("temp dir");
-    std::fs::write(dir.path().join("whisper-server"), b"not runnable").expect("write");
+    std::fs::write(dir.path().join("voice-not-runnable"), b"not runnable").expect("write");
     let found =
-        WhisperEngine::find_binary_in("whisper-server", Some(""), &[dir.path().to_path_buf()]);
+        WhisperEngine::find_binary_in("voice-not-runnable", Some(""), &[dir.path().to_path_buf()]);
     assert_eq!(found, None);
 }
 

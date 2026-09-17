@@ -18,7 +18,7 @@ env:
   # SHA-256 from https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-base.en.bin
   MODEL_SHA256: a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
   # whisper.cpp tag built from source on Linux/Windows (Homebrew provides it on macOS).
-  WHISPER_CPP_TAG: v1.7.6
+  WHISPER_CPP_TAG: v1.9.4
 
 jobs:
   test:
