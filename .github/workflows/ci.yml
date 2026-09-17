@@ -145,8 +145,13 @@ jobs:
       - name: Build
         run: cargo build --workspace --all-targets
 
+      # VOICE_ENGINE_LOG lets whisper-server's own stderr through so a
+      # transcription that comes back wrong can be traced to what the server
+      # actually received.
       - name: Test
         shell: bash
+        env:
+          VOICE_ENGINE_LOG: "1"
         run: |
           set -o pipefail
           cargo test --workspace -- --nocapture 2>&1 | tee test-output.log

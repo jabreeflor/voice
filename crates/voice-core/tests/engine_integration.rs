@@ -190,12 +190,14 @@ fn test1_server_boots_and_becomes_ready() {
         BOOT_TIMEOUT.as_secs()
     );
     log(&format!(
-        "booted {} on port {TEST_PORT} in {:.2}s",
+        "booted {} on port {TEST_PORT} in {:.2}s (fox fixture: {} WAV bytes, {:.2}s)",
         b.model_path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy(),
-        b.boot_seconds
+        b.boot_seconds,
+        b.fox_wav.len(),
+        b.fox_duration
     ));
 }
 

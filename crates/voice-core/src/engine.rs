@@ -178,8 +178,8 @@ impl WhisperEngine {
             .args(["-bs", "1"]) // greedy decoding — ~2x faster than beam search
             .arg("-nf") // no temperature fallback — kills worst-case retries
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(engine_log_stdio())
+            .stderr(engine_log_stdio())
             .spawn();
         let child = match spawned {
             Ok(child) => child,
@@ -317,6 +317,17 @@ fn create_cli_scratch_dir() -> std::io::Result<PathBuf> {
         }
     }
     Err(last_err.unwrap_or_else(|| std::io::Error::other("scratch dir")))
+}
+
+/// whisper-server's own log is discarded so it never spams the app's stderr,
+/// except when `VOICE_ENGINE_LOG` is set: CI turns that on so a server that
+/// receives bad audio or dies on launch explains itself in the job log.
+fn engine_log_stdio() -> Stdio {
+    if std::env::var_os("VOICE_ENGINE_LOG").is_some() {
+        Stdio::inherit()
+    } else {
+        Stdio::null()
+    }
 }
 
 /// `Command::new` plus the Windows no-console flag (a no-op elsewhere).
