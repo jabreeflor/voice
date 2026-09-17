@@ -449,9 +449,12 @@ fn float_samples_from_wav(data: &[u8]) -> Result<Vec<f32>, String> {
         cursor = body + size + (size % 2); // chunks are word-aligned
     }
     let pcm = payload.ok_or("no data chunk")?;
-    Ok(pcm
-        .chunks_exact(2)
-        .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+    // `as_chunks` rather than `chunks_exact`: newer clippy flags the latter
+    // for constant sizes, and CI runs whatever stable clippy ships.
+    let (pairs, _rest) = pcm.as_chunks::<2>();
+    Ok(pairs
+        .iter()
+        .map(|b| i16::from_le_bytes(*b) as f32 / 32768.0)
         .collect())
 }
 
