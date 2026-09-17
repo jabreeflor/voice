@@ -286,6 +286,12 @@ pub fn finish_onboarding(app: State<'_, Arc<App>>) {
     app.finish_onboarding();
 }
 
+/// Backend half of the ledger row. The row's contract (pinned by
+/// Tests/VoiceCoreTests/LedgerRowTests.swift for the AppKit `LedgerRow`) is
+/// implemented by `ledgerRow` in ui/app.js: the row itself is a `<button>`
+/// labelled "Copy dictation" with no nested Copy button, and pressing it
+/// invokes this command with the entry's `text`. `dictations_dto_entries_
+/// carry_exactly_time_and_text` below pins the payload it consumes.
 #[tauri::command]
 pub fn copy_text(text: String) {
     crate::paste::copy_text(&text);
@@ -362,5 +368,24 @@ mod tests {
         // Newest first, time in "h:mm a".
         assert_eq!(dto.groups[0].entries[0].text, "second");
         assert!(dto.groups[0].entries[0].time.ends_with('M'));
+    }
+
+    /// The ledger row (ui/app.js `ledgerRow`) reads `time` and `text` and
+    /// hands `text` back to `copy_text`; renaming either breaks the copy
+    /// silently, so the wire shape is pinned here (the DOM half lives in
+    /// LedgerRowTests.swift for the AppKit app).
+    #[test]
+    fn dictations_dto_entries_carry_exactly_time_and_text() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let settings = Arc::new(Settings::in_dir(dir.path()));
+        let mut history = HistoryStore::new(dir.path().to_path_buf(), settings);
+        history.add(DictationEntry::new("copy me", SystemTime::now(), 1.0, 0.5));
+        let dto = dictations_dto(&history, Hotkey::RightOption);
+        let json = serde_json::to_value(&dto.groups[0].entries[0]).expect("serialise entry");
+        let object = json.as_object().expect("entry is an object");
+        let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["text", "time"]);
+        assert_eq!(object["text"], "copy me");
     }
 }

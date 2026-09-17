@@ -42,6 +42,8 @@ objc2.workspace = true
 objc2-foundation.workspace = true
 objc2-av-foundation.workspace = true
 block2.workspace = true
+# Overlay window: collection behaviour + status-bar level (see overlay.rs).
+objc2-app-kit.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # Microphone consent lives in the CapabilityAccessManager registry store.

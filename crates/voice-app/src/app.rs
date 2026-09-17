@@ -15,9 +15,14 @@
 //!   or into another `App` method that locks** — read what you need, drop the
 //!   guard, then act. Otherwise a worker holding a lock waits on the main
 //!   thread while the main thread waits on the lock.
-//! - The mutexes are never nested. Each method takes one at a time. If that
-//!   ever changes, the order is: `state` → `preview_active` → `recorder` →
+//! - The mutexes are not nested, with one exception: `claim_recording` /
+//!   `claim_preview` read `preview_active` under `state` so the dictation
+//!   worker and the main thread cannot both start the recorder. Any further
+//!   nesting must follow the order `state` → `preview_active` → `recorder` →
 //!   `snippets` → `history` → `engine` → `setup_*` → `tray_items`.
+//! - Bind a lock's result before testing it (`let r = lock(&x).f(); if let
+//!   Err(e) = r`): in edition 2021 an `if let` on the locked expression keeps
+//!   the guard alive for the whole body.
 //! - Hotkey events arrive on the hook thread and must not block it: the
 //!   callback only pushes onto a channel; a single worker thread applies them
 //!   in order (Down before Up, always). Transcription runs on its own thread
@@ -245,7 +250,7 @@ impl App {
                 }
             }));
             let weak = Arc::downgrade(&app);
-            std::thread::Builder::new()
+            let worker = std::thread::Builder::new()
                 .name("voice-dictation".into())
                 .spawn(move || {
                     for event in rx {
@@ -262,8 +267,12 @@ impl App {
                             app.recover_from_panic();
                         }
                     }
-                })
-                .expect("spawn dictation worker");
+                });
+            if let Err(e) = worker {
+                // No hold-to-talk this session, but the windows and tray
+                // still work; a panic here would take the whole app down.
+                log::error!("spawn dictation worker: {e}");
+            }
         }
 
         {
@@ -476,6 +485,34 @@ impl App {
         *lock(&self.state) == state
     }
 
+    /// Moves Idle → Recording unless a mic preview owns the device. The
+    /// preview flag is read under the `state` lock (the one place the
+    /// mutexes nest, in the documented order) so this and `claim_preview`
+    /// exclude each other across the worker and main threads.
+    fn claim_recording(&self) -> bool {
+        let mut state = lock(&self.state);
+        if *state != State::Idle || *lock(&self.preview_active) {
+            return false;
+        }
+        *state = State::Recording;
+        self.recording.store(true, Ordering::SeqCst);
+        true
+    }
+
+    /// Counterpart of `claim_recording` for the Settings mic test.
+    fn claim_preview(&self) -> bool {
+        let state = lock(&self.state);
+        if *state != State::Idle {
+            return false;
+        }
+        let mut active = lock(&self.preview_active);
+        if *active {
+            return false;
+        }
+        *active = true;
+        true
+    }
+
     fn set_state(&self, state: State) {
         *lock(&self.state) = state;
         self.recording
@@ -505,7 +542,7 @@ impl App {
             return;
         }
         let weak = Arc::downgrade(self);
-        std::thread::Builder::new()
+        let retry = std::thread::Builder::new()
             .name("voice-hotkey-retry".into())
             .spawn(move || loop {
                 std::thread::sleep(HOTKEY_RETRY_INTERVAL);
@@ -519,8 +556,12 @@ impl App {
                     app.auto_relaunch_if_needed();
                     app.refresh_ui();
                 }
-            })
-            .expect("spawn hotkey retry");
+            });
+        if let Err(e) = retry {
+            log::error!("spawn hotkey retry: {e}");
+            // Let the next `ensure_event_tap` try again.
+            self.hotkey_retry_running.store(false, Ordering::SeqCst);
+        }
     }
 
     /// macOS applies a fresh Accessibility grant only to a new process. Do it
@@ -539,16 +580,24 @@ impl App {
 
     /// 3-second microphone test from Settings: shows the listening overlay.
     pub fn preview_mic(self: &Arc<Self>) {
-        if !self.state_is(State::Idle) || *lock(&self.preview_active) {
+        // Claim the preview before touching the device: `begin_recording`
+        // runs on the dictation worker, so a hotkey Down between `start()`
+        // and the claim would start a dictation that the 3 s timer below
+        // then cancels out from under the user.
+        if !self.claim_preview() {
             return;
         }
-        if let Err(e) = lock(&self.recorder).start() {
+        let generation = self.preview_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        // Bind first so the guard is released at the `;`: an `if let` on the
+        // locked expression would hold `recorder` across `overlay.flash`,
+        // which round-trips to the main thread.
+        let started = lock(&self.recorder).start();
+        if let Err(e) = started {
+            *lock(&self.preview_active) = false;
             self.overlay
                 .flash(&format!("Mic error: {e}"), FLASH_MIC_ERROR);
             return;
         }
-        *lock(&self.preview_active) = true;
-        let generation = self.preview_generation.fetch_add(1, Ordering::SeqCst) + 1;
         self.overlay.show_listening(self.level_provider());
         let weak = Arc::downgrade(self);
         std::thread::spawn(move || {
@@ -572,20 +621,25 @@ impl App {
     // MARK: recording flow
 
     pub fn begin_recording(self: &Arc<Self>) {
-        if !self.state_is(State::Idle) || *lock(&self.preview_active) {
+        if !self.claim_recording() {
             return;
         }
         if self.engine().is_none() {
+            self.set_state(State::Idle);
             self.overlay
                 .flash("Voice is still setting up", FLASH_SETTING_UP);
             return;
         }
-        if let Err(e) = lock(&self.recorder).start() {
+        // Bind first so the guard is released at the `;`: an `if let` on the
+        // locked expression would hold `recorder` across `overlay.flash`,
+        // which round-trips to the main thread.
+        let started = lock(&self.recorder).start();
+        if let Err(e) = started {
+            self.set_state(State::Idle);
             self.overlay
                 .flash(&format!("Mic error: {e}"), FLASH_MIC_ERROR);
             return;
         }
-        self.set_state(State::Recording);
         tray::set_recording(&self.handle, true);
         // Show first: the sound is played by the overlay webview, which may
         // be throttled while its window is hidden.
@@ -717,7 +771,10 @@ impl App {
 
     pub fn shutdown(&self) {
         lock(&self.hotkey_tx).take();
-        if let Some(engine) = lock(&self.engine).take() {
+        // Drop the guard before `stop()` (kill + wait): the whisper supervisor
+        // thread may be in `refresh_ui` waiting for `engine`.
+        let engine = lock(&self.engine).take();
+        if let Some(engine) = engine {
             engine.stop();
         }
     }

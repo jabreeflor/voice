@@ -39,6 +39,8 @@ objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMedia
 block2 = "0.6"
 # Windows microphone consent (platform/windows.rs).
 winreg = "0.55"
+# macOS only: the overlay pins its NSWindow above full-screen Spaces.
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder"] }
 
 [profile.release]
 strip = true
