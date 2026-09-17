@@ -6,6 +6,7 @@
 //! - `history-changed`  (no payload)         a dictation was added
 //! - `snippets-changed` (no payload)         snippets.json changed (app or voicectl)
 //! - `dictation-landed` (no payload)         a dictation was pasted (onboarding step 4)
+//! - `window-visible`   (bool, per window)    main/onboarding shown or hidden: start/stop UI timers
 //! - `overlay`, `level`, `sound`             see overlay.rs
 //!
 //! Sync commands run on the main thread. Each one takes at most one `App`

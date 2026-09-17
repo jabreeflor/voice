@@ -416,6 +416,16 @@ impl App {
             log::warn!("show {label}: {e}");
         }
         let _ = window.set_focus();
+        self.emit_window_visible(label, true);
+    }
+
+    /// ui/app.js and ui/onboarding.js stop and restart their refresh/poll
+    /// intervals on this event, the way the Swift windows started their
+    /// timers in `show()` and invalidated them in `windowWillClose`.
+    fn emit_window_visible(&self, label: &str, visible: bool) {
+        if let Err(e) = self.handle.emit_to(label, "window-visible", visible) {
+            log::warn!("window-visible {label}: {e}");
+        }
     }
 
     pub fn show_main_window(&self) {
@@ -470,6 +480,7 @@ impl App {
                 log::warn!("hide {label}: {e}");
             }
         }
+        self.emit_window_visible(label, false);
         self.apply_activation_policy();
         if label == ONBOARDING_WINDOW {
             self.refresh_ui();
