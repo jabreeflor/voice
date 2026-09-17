@@ -154,6 +154,18 @@ fn out_of_range_samples_are_clamped_not_wrapped() {
     assert_eq!(i16_at(&d, 50), -32767);
 }
 
+/// A NaN sample clamps to NaN, and Rust's `as i16` saturating cast turns that
+/// into 0 (silence); ±infinity clamp to ±1 like any other out-of-range value.
+/// This is a deliberate divergence from Swift, where `Int16(NaN)` traps: a bad
+/// audio buffer must never take the app down mid-dictation.
+#[test]
+fn non_finite_samples_do_not_panic() {
+    let d = wav_data(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY]);
+    assert_eq!(i16_at(&d, 44), 0);
+    assert_eq!(i16_at(&d, 46), 32767);
+    assert_eq!(i16_at(&d, 48), -32767);
+}
+
 /// Swift's `Int16(x * 32767)` truncates toward zero, so ±0.5 must land on
 /// ±16383, never round away to ±16384.
 #[test]

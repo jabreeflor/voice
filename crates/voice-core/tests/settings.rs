@@ -4,6 +4,9 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 
 use serde_json::{json, Value};
 use tempfile::{tempdir, TempDir};
@@ -216,9 +219,10 @@ fn set_creates_missing_parent_directory() {
     assert_eq!(Settings::in_dir(&nested).get_bool("onboarded"), Some(true));
 }
 
-/// Writes go to a temp file that is renamed over `settings.json`, so a reader
-/// never sees a torn file. After the rename nothing else may be left in the
-/// directory, or every launch would accumulate junk next to the settings.
+/// Writes go to a temp file that is renamed over `settings.json`. After the
+/// rename nothing else may be left in the directory, or every launch would
+/// accumulate junk next to the settings. (Whether a concurrent reader sees a
+/// torn file is checked separately in `concurrent_writers_never_tear_the_file`.)
 #[test]
 fn atomic_write_leaves_no_temp_file_behind() {
     let (dir, s) = fresh();
@@ -239,4 +243,74 @@ fn file_on_disk_is_a_json_object_with_the_swift_key_names() {
     let v: Value = serde_json::from_slice(&raw).expect("valid json");
     assert_eq!(v["trailingSpace"], json!(true));
     assert_eq!(v["modelFile"], json!("ggml-base.en.bin"));
+}
+
+// Thread safety
+
+/// The spec requires `Settings` to be `Send + Sync` so one handle can sit
+/// behind an `Arc` shared by the hotkey thread, the engine and the UI.
+#[test]
+fn settings_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Settings>();
+}
+
+/// Several threads hammering one shared handle while another thread keeps
+/// reading the file from disk: every read must parse as JSON (the temp file +
+/// rename must never expose a half-written `settings.json`), and every key
+/// written must survive a reload once the writers are done.
+#[test]
+fn concurrent_writers_never_tear_the_file() {
+    const WRITERS: usize = 4;
+    const ROUNDS: i64 = 50;
+
+    let (dir, s) = fresh();
+    let s = Arc::new(s);
+    let path = dir.path().join("settings.json");
+    let done = Arc::new(AtomicBool::new(false));
+
+    let reader = {
+        let path = path.clone();
+        let done = Arc::clone(&done);
+        thread::spawn(move || {
+            let mut reads = 0usize;
+            while !done.load(Ordering::Acquire) {
+                // The file may not exist before the first rename lands; only
+                // a file that exists but does not parse counts as torn.
+                if let Ok(bytes) = fs::read(&path) {
+                    serde_json::from_slice::<Value>(&bytes)
+                        .unwrap_or_else(|e| panic!("torn settings.json: {e}"));
+                    reads += 1;
+                }
+            }
+            reads
+        })
+    };
+
+    let writers: Vec<_> = (0..WRITERS)
+        .map(|w| {
+            let s = Arc::clone(&s);
+            thread::spawn(move || {
+                for i in 0..ROUNDS {
+                    s.set(&format!("writer{w}"), i);
+                }
+            })
+        })
+        .collect();
+    for w in writers {
+        w.join().expect("writer thread");
+    }
+    done.store(true, Ordering::Release);
+    let reads = reader.join().expect("reader thread");
+    assert!(reads > 0, "reader never observed the file");
+
+    let again = Settings::in_dir(dir.path());
+    for w in 0..WRITERS {
+        assert_eq!(
+            again.get_i64(&format!("writer{w}")),
+            Some(ROUNDS - 1),
+            "writer{w}'s last value must survive a reload"
+        );
+    }
+    assert_eq!(stray_files(dir.path()), Vec::<String>::new());
 }
