@@ -189,10 +189,22 @@
     listen('snippets-changed', () => { if (current === 'snippets') renderSnippets(); });
     // Edits made by voicectl (or by hand) are picked up by the backend on each
     // read, so a 1 s timer keeps the visible tab in sync with the file, the
-    // same way the AppKit window did.
-    refreshTimer = setInterval(refresh, 1000);
+    // same way the AppKit window did. Like that window's timer it only runs
+    // while the window is showing: the backend emits `window-visible` on
+    // show/hide (Tauri hides rather than destroys the window on close).
+    listen('window-visible', (e) => setPolling(Boolean(e.payload)));
+    setPolling(true);
     select('dictations');
   }
+  function setPolling(on) {
+    if (on && !refreshTimer) {
+      refreshTimer = setInterval(refresh, 1000);
+      refresh();
+    } else if (!on && refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+  }
   init();
-  window.addEventListener('beforeunload', () => clearInterval(refreshTimer));
+  window.addEventListener('beforeunload', () => setPolling(false));
 })();

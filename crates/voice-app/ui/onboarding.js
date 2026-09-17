@@ -89,10 +89,26 @@
     renderHotkeys();
     // A dictation that landed while step 4 is showing unlocks Continue.
     listen('dictation-landed', () => { if (step === 4) $('try-next').disabled = false; });
-    pollTimer = setInterval(poll, 800);
-    poll();
+    // The permission poll runs only while the window is showing, and the
+    // wizard restarts from step 1 each time it is shown ("Setup Assistant…"
+    // replays the flow), mirroring OnboardingWindow.show / windowWillClose.
+    listen('window-visible', (e) => {
+      const visible = Boolean(e.payload);
+      setPolling(visible);
+      if (visible) goTo(1);
+    });
+    setPolling(true);
     goTo(1);
   }
+  function setPolling(on) {
+    if (on && !pollTimer) {
+      pollTimer = setInterval(poll, 800);
+      poll();
+    } else if (!on && pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
   init();
-  window.addEventListener('beforeunload', () => clearInterval(pollTimer));
+  window.addEventListener('beforeunload', () => setPolling(false));
 })();
