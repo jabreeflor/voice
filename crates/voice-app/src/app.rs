@@ -824,13 +824,17 @@ impl App {
 
     // MARK: menu actions
 
+    /// Tray menu handlers run on the main thread; `paste::copy_text` can
+    /// block (X11 selection, the clipboard mutex held by an in-flight paste),
+    /// so only the lookup happens here and the write goes to a worker, the
+    /// way `commands::copy_text` does.
     pub fn copy_last(&self) {
         let last = lock(&self.history)
             .entries()
             .first()
             .map(|e| e.text.clone());
         if let Some(text) = last {
-            copy_text(&text);
+            std::thread::spawn(move || copy_text(&text));
         }
     }
 

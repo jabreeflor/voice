@@ -65,6 +65,15 @@ pub struct SnippetDto {
     pub text: String,
 }
 
+/// `stamp` is `SnippetStore::stamp()` after the reload: ui/app.js skips its
+/// DOM rebuild while it is unchanged (the Swift window's `lastSnippetStamp`
+/// guard), so the 1 s poll does not drop hover/focus on the list.
+#[derive(Serialize, Clone, Debug)]
+pub struct SnippetsDto {
+    pub stamp: u64,
+    pub snippets: Vec<SnippetDto>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct HotkeyOptionDto {
     /// raw value, e.g. "rightOption"
@@ -162,19 +171,22 @@ pub fn get_dictations(app: State<'_, Arc<App>>) -> DictationsDto {
 }
 
 #[tauri::command]
-pub fn get_snippets(app: State<'_, Arc<App>>) -> Vec<SnippetDto> {
+pub fn get_snippets(app: State<'_, Arc<App>>) -> SnippetsDto {
     // voicectl (or a text editor) may have rewritten snippets.json since the
     // last read; the file is the source of truth.
     let mut snippets = app.snippets.lock().unwrap_or_else(|e| e.into_inner());
     snippets.reload_if_changed();
-    snippets
-        .snippets()
-        .iter()
-        .map(|s| SnippetDto {
-            trigger: s.trigger.clone(),
-            text: s.text.clone(),
-        })
-        .collect()
+    SnippetsDto {
+        stamp: snippets.stamp(),
+        snippets: snippets
+            .snippets()
+            .iter()
+            .map(|s| SnippetDto {
+                trigger: s.trigger.clone(),
+                text: s.text.clone(),
+            })
+            .collect(),
+    }
 }
 
 #[tauri::command]
@@ -390,5 +402,33 @@ mod tests {
         keys.sort_unstable();
         assert_eq!(keys, ["text", "time"]);
         assert_eq!(object["text"], "copy me");
+    }
+
+    /// The DOM half of LedgerRowTests.swift (`testRowHasNoCopyButton`,
+    /// `testRowIsExposedAsAButtonForAccessibility`,
+    /// `testCopyWritesTheDictationToThePasteboard`, `testAccessibilityPressCopies`)
+    /// has no JS test runner here, so the contract is pinned against the
+    /// source of `ledgerRow` in ui/app.js: the row is one `<button>` labelled
+    /// "Copy dictation" with no nested button, its click reaches `copy_text`,
+    /// and the copy fires the confetti burst and hint pop the AppKit row plays.
+    #[test]
+    fn ledger_row_source_is_a_single_copy_button_with_confetti() {
+        let js = include_str!("../ui/app.js");
+        let start = js.find("function ledgerRow(").expect("ledgerRow defined");
+        let body = &js[start..];
+        let end = body[1..]
+            .find("\n  function ")
+            .map(|i| i + 1)
+            .unwrap_or(body.len());
+        let body = &body[..end];
+        assert_eq!(body.matches("createElement('button')").count(), 1);
+        assert!(body.contains("setAttribute('aria-label', 'Copy dictation')"));
+        assert!(body.contains("invoke('copy_text', { text: entry.text })"));
+        assert!(body.contains("burstConfetti("));
+        assert!(body.contains("popHint("));
+        // The CSS half: the pop keyframe and the confetti bit rule exist.
+        let css = include_str!("../ui/app.css");
+        assert!(css.contains("@keyframes hint-pop"));
+        assert!(css.contains(".confetti i"));
     }
 }

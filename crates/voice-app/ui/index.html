@@ -8,14 +8,16 @@
 </head>
 <body>
 
-<div class="topbar" data-tauri-drag-region>
-  <div class="brand" data-tauri-drag-region>
+<!-- "deep": the whole bar drags, including the wordmark's children; the
+     tab/gear buttons still block the drag (clickable elements do). -->
+<div class="topbar" data-tauri-drag-region="deep">
+  <div class="brand">
     <div class="cap"><div class="wave"><b></b><b></b><b></b><b></b></div></div>
     <span>Voice</span>
   </div>
   <button class="tab active" data-view="dictations">Dictations</button>
   <button class="tab" data-view="snippets">Snippets</button>
-  <div class="top-spacer" data-tauri-drag-region></div>
+  <div class="top-spacer"></div>
   <button class="gear" data-view="settings" title="Settings" aria-label="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
   </button>

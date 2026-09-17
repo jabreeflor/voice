@@ -17,8 +17,10 @@ body { background: var(--bg); font-family: var(--sans); color: var(--ink);
 button, select, input, textarea { font-family: var(--sans); color: inherit; }
 button { cursor: pointer; }
 input, textarea { user-select: text; cursor: text; }
-/* The window is a Tauri drag region only where nothing interactive sits. */
+/* Drag regions are "deep" (whole subtree); Tauri's drag script still refuses
+   to drag from buttons, inputs and other clickable elements inside them. */
 [data-tauri-drag-region] { -webkit-app-region: drag; }
+button, input, select, textarea { -webkit-app-region: no-drag; }
 
 .sticker { background: var(--panel); border-radius: 20px; }
 .sticker-lav { background: var(--accent-tint); border-radius: 20px; }
@@ -99,6 +101,17 @@ body.macos .topbar { padding-left: 92px; }
   opacity: 0; font: 600 11px var(--sans); color: var(--soft); transition: opacity .12s; }
 .lrow:hover .hint, .lrow:focus-visible .hint { opacity: 1; }
 .lrow.copied .hint { opacity: 1; color: var(--green); }
+/* LedgerRow.popCopiedHint: 0.86 → 1.12 → 1 over 0.28 s. */
+.lrow .hint.pop { animation: hint-pop .28s ease-out; }
+@keyframes hint-pop {
+  0%   { transform: translateY(-50%) scale(.86); }
+  40%  { transform: translateY(-50%) scale(1.12); }
+  100% { transform: translateY(-50%) scale(1); }
+}
+/* GreenConfetti: a 0-size anchor at the hint's centre; app.js animates the bits. */
+.lrow .confetti { position: absolute; top: 50%; width: 0; height: 0; overflow: visible;
+                  pointer-events: none; }
+.lrow .confetti i { position: absolute; left: 0; top: 0; display: block; }
 
 /* snippets */
 .snip-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
@@ -116,7 +129,7 @@ body.macos .topbar { padding-left: 92px; }
            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .slist { padding: 4px 0; }
 .srow { display: flex; align-items: center; gap: 12px; padding: 11px 20px; position: relative; }
-.srow + .srow, .snew.visible + .srow, .sempty + .srow { border-top: 1px solid var(--line); }
+.srow + .srow { border-top: 1px solid var(--line); }
 .srow .t { font: 600 13px var(--sans); background: var(--bg);
            border: 1px solid var(--line); padding: 5px 14px; border-radius: 14px; flex: none; }
 .srow .arrow { font: 600 13px var(--sans); color: var(--faint); flex: none; }

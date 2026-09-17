@@ -107,7 +107,10 @@
     // Rust side, so every show after the first starts at step 1 with fresh
     // state; the listener goes up before the visibility query so a show in
     // between is not missed.
-    listen('window-visible', (e) => setPolling(Boolean(e.payload)));
+    // Targeted at this window's label: `emit_to` also reaches `Any`-target
+    // listeners, so a default `listen` would follow the main window too.
+    listen('window-visible', (e) => setPolling(Boolean(e.payload)),
+      { target: getCurrentWindow().label });
     const visible = await getCurrentWindow().isVisible().catch(() => true);
     setPolling(visible);
     goTo(1);
