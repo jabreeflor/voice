@@ -11,8 +11,6 @@
 //! `Enigo::new` fails and the text stays on the clipboard for a manual ⌘V.
 //! Nothing here panics: every failure is logged and the function returns.
 
-#![allow(dead_code)]
-
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;

@@ -2,6 +2,7 @@
 (() => {
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
+  const { getCurrentWindow } = window.__TAURI__.window;
   const $ = (id) => document.getElementById(id);
 
   let step = 1;
@@ -15,6 +16,7 @@
     $('stepno').textContent = '0' + n + ' / 05';
     $('progress').style.width = (n * 20) + '%';
     $('back').classList.toggle('visible', n > 1);
+    if (n === 2) poll();
     if (n === 4) $('try-text').focus();
     if (n === 5) renderDone();
   }
@@ -37,17 +39,17 @@
   }
 
   // Polled every 0.8 s while step 2 is showing, like the AppKit window: the
-  // OS grants land outside the app, so there is no event to wait for.
+  // OS grants land outside the app, so there is no event to wait for. The
+  // Accessibility card is macOS-only (the hook needs no grant elsewhere);
+  // the microphone card goes away where the OS has no per-app consent.
   async function poll() {
     if (step !== 2) return;
     const p = await invoke('permission_state');
-    const micCard = $('perm-mic');
-    const axCard = $('perm-ax');
     const micApplies = p.mic !== 'not_applicable';
     const axApplies = settings.platform === 'macos';
-    micCard.classList.toggle('hidden', !micApplies);
-    axCard.classList.toggle('hidden', !axApplies);
-    $('perm-none').style.display = micApplies || axApplies ? 'none' : 'block';
+    $('perm-mic').classList.toggle('hidden', !micApplies);
+    $('perm-ax').classList.toggle('hidden', !axApplies);
+    $('perm-none').hidden = micApplies || axApplies;
     if (micApplies && p.mic === 'granted') markGranted($('mic-btn'));
     if (axApplies && p.hotkeys_running) markGranted($('ax-btn'));
     const micOk = !micApplies || p.mic === 'granted';
@@ -60,8 +62,11 @@
     const row = $('hk-row');
     row.textContent = '';
     settings.hotkeys.forEach((hk, i) => {
+      const selected = hk.id === settings.hotkey;
       const b = document.createElement('button');
-      b.className = 'hk' + (hk.id === settings.hotkey ? ' sel' : '');
+      b.className = 'hk' + (selected ? ' sel' : '');
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', selected ? 'true' : 'false');
       b.textContent = hk.short_label;
       const small = document.createElement('small');
       small.textContent = i === 0 ? 'recommended' : 'alternative';
@@ -86,18 +91,25 @@
   async function init() {
     settings = await invoke('get_settings');
     document.body.classList.add(settings.platform);
+    if (settings.platform === 'macos') {
+      $('intro-text').textContent = 'Voice turns speech into text in any app on your Mac. It runs entirely on this computer — no accounts, no subscriptions, and nothing you say ever leaves your machine.';
+    } else if (settings.platform === 'windows') {
+      // Desktop apps get no consent prompt on Windows; the button opens the
+      // Microphone privacy page instead (platform/windows.rs).
+      $('mic-btn').textContent = 'Open Settings';
+    }
     renderHotkeys();
     // A dictation that landed while step 4 is showing unlocks Continue.
     listen('dictation-landed', () => { if (step === 4) $('try-next').disabled = false; });
-    // The permission poll runs only while the window is showing, and the
-    // wizard restarts from step 1 each time it is shown ("Setup Assistant…"
-    // replays the flow), mirroring OnboardingWindow.show / windowWillClose.
-    listen('window-visible', (e) => {
-      const visible = Boolean(e.payload);
-      setPolling(visible);
-      if (visible) goTo(1);
-    });
-    setPolling(true);
+    // The permission poll runs only while the window is showing, like the
+    // AppKit timer started in show() and invalidated in windowWillClose.
+    // Replaying the wizard ("Setup Assistant…") reloads this page from the
+    // Rust side, so every show after the first starts at step 1 with fresh
+    // state; the listener goes up before the visibility query so a show in
+    // between is not missed.
+    listen('window-visible', (e) => setPolling(Boolean(e.payload)));
+    const visible = await getCurrentWindow().isVisible().catch(() => true);
+    setPolling(visible);
     goTo(1);
   }
   function setPolling(on) {

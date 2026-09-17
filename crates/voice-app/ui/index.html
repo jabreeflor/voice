@@ -17,7 +17,7 @@
   <button class="tab" data-view="snippets">Snippets</button>
   <div class="top-spacer" data-tauri-drag-region></div>
   <button class="gear" data-view="settings" title="Settings" aria-label="Settings">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
   </button>
 </div>
 
@@ -30,7 +30,7 @@
       <div class="statchip sticker" style="--c:var(--green)"><span class="n" id="stat-wpm">—</span><span class="l">words per minute</span></div>
       <div class="statchip sticker"><span class="n" id="stat-latency">—</span><span class="l">average latency</span></div>
       <div class="livecap">
-        <div class="wave animated"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+        <div class="wave animated" aria-hidden="true"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
         <span>Hold <kbd id="live-hotkey">Right ⌥</kbd> anywhere</span>
       </div>
     </div>
@@ -52,8 +52,8 @@
     </div>
     <div class="slist sticker" id="slist">
       <div class="snew" id="snew">
-        <input class="trig" placeholder="trigger" id="new-trig" spellcheck="false">
-        <input class="body" placeholder="Text to insert…" id="new-body">
+        <input class="trig" placeholder="trigger" aria-label="Trigger" id="new-trig" spellcheck="false">
+        <input class="body" placeholder="Text to insert…" aria-label="Text to insert" id="new-body">
         <button class="cap-btn" style="padding:8px 18px" id="save-snippet">Save</button>
       </div>
       <div id="snippet-rows"></div>
@@ -64,19 +64,23 @@
   <div class="view" id="view-settings">
     <h1>Settings</h1>
     <div class="status">
-      <span class="dot" id="status-dot"></span>
+      <span class="dot" id="status-dot" aria-hidden="true"></span>
       <span id="status-text"></span>
       <button class="cap-btn lav fix" id="fix-accessibility">Open Settings…</button>
     </div>
     <div class="set-card sticker">
-      <div class="set-row"><span>Talk key</span><select id="hotkey-select"></select></div>
-      <div class="set-row"><span>Sound effects</span><button class="switch" id="sounds-switch" role="switch" aria-checked="true"><i></i></button></div>
-      <div class="set-row"><span>Start at login</span><button class="switch" id="login-switch" role="switch" aria-checked="false"><i></i></button></div>
+      <div class="set-row"><span>Talk key</span><select id="hotkey-select" aria-label="Talk key"></select></div>
+      <div class="set-row"><span>Sound effects</span><button class="switch" id="sounds-switch" role="switch" aria-checked="true" aria-label="Sound effects"><i></i></button></div>
+      <div class="set-row"><span>Start at login</span><button class="switch" id="login-switch" role="switch" aria-checked="false" aria-label="Start at login"><i></i></button></div>
       <div class="set-row"><span>Microphone check</span><button class="cap-btn lav" style="padding:8px 16px; font-size:12px" id="mic-test">Run 3-second test</button></div>
     </div>
-    <p class="footnote">Everything runs on this computer — audio, transcription, history. Nothing leaves your machine.</p>
+    <p class="footnote" id="footnote">Everything runs on this computer — audio, transcription, history. Nothing leaves your machine.</p>
   </div>
 </div>
+
+<!-- Screen-reader announcement for the ledger row copy (the AppKit row posted
+     an accessibility announcement); visually hidden. -->
+<div class="sr-only" id="sr-live" aria-live="polite"></div>
 
 <script src="app.js"></script>
 </body>

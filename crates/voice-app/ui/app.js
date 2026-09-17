@@ -3,10 +3,12 @@
 (() => {
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
+  const { getCurrentWindow } = window.__TAURI__.window;
 
   const $ = (id) => document.getElementById(id);
   let current = 'dictations';
   let refreshTimer = null;
+  let rowSerial = 0;
 
   // ── tabs ──────────────────────────────────────────────────────────────
   function select(view) {
@@ -53,7 +55,9 @@
     }
   }
 
-  // The row itself is the button: clicking anywhere copies the dictation.
+  // The row itself is the button, labelled "Copy dictation" with the text as
+  // its description and no nested Copy button — the contract LedgerRowTests
+  // pins for the AppKit row. Clicking anywhere copies the dictation.
   function ledgerRow(entry) {
     const row = document.createElement('button');
     row.className = 'lrow';
@@ -62,18 +66,28 @@
     const time = document.createElement('time');
     time.textContent = entry.time;
     const p = document.createElement('p');
+    p.id = 'dictation-' + (rowSerial++);
     p.textContent = entry.text;
+    row.setAttribute('aria-describedby', p.id);
     const hint = document.createElement('span');
     hint.className = 'hint';
+    hint.setAttribute('aria-hidden', 'true');
     hint.textContent = 'Click to copy';
     row.append(time, p, hint);
     row.addEventListener('click', async () => {
       await invoke('copy_text', { text: entry.text });
       hint.textContent = 'Copied';
       row.classList.add('copied');
-      setTimeout(() => { row.classList.remove('copied'); hint.textContent = 'Click to copy'; }, 1200);
+      announce('Copied');
+      setTimeout(() => { row.classList.remove('copied'); hint.textContent = 'Click to copy'; }, 1400);
     });
     return row;
+  }
+
+  function announce(text) {
+    const live = $('sr-live');
+    live.textContent = '';
+    live.textContent = text;
   }
 
   // ── snippets ──────────────────────────────────────────────────────────
@@ -104,6 +118,7 @@
       del.className = 'del';
       del.textContent = '✕';
       del.title = 'Delete snippet';
+      del.setAttribute('aria-label', `Delete snippet “${s.trigger}”`);
       del.addEventListener('click', async () => {
         await invoke('remove_snippet', { index });
         renderSnippets();
@@ -169,6 +184,8 @@
     catch (err) { setSwitch(e.currentTarget, !on); console.error(err); }
   });
   $('mic-test').addEventListener('click', () => invoke('preview_mic'));
+  // Same as the onboarding "Open Settings" button: make sure Voice is listed
+  // in the Accessibility pane, then open it.
   $('fix-accessibility').addEventListener('click', async () => {
     await invoke('request_accessibility');
     await invoke('open_accessibility_settings');
@@ -184,6 +201,9 @@
   async function init() {
     const settings = await invoke('get_settings');
     document.body.classList.add(settings.platform);
+    if (settings.platform === 'macos') {
+      $('footnote').textContent = 'Everything runs on this Mac — audio, transcription, history. Nothing leaves your computer.';
+    }
     listen('status-changed', () => { if (current === 'settings') renderSettings(); });
     listen('history-changed', () => { if (current === 'dictations') renderDictations(); });
     listen('snippets-changed', () => { if (current === 'snippets') renderSnippets(); });
@@ -191,9 +211,12 @@
     // read, so a 1 s timer keeps the visible tab in sync with the file, the
     // same way the AppKit window did. Like that window's timer it only runs
     // while the window is showing: the backend emits `window-visible` on
-    // show/hide (Tauri hides rather than destroys the window on close).
+    // show/hide (Tauri hides rather than destroys the window on close). The
+    // listener goes up before the visibility query so a show in between is
+    // not missed.
     listen('window-visible', (e) => setPolling(Boolean(e.payload)));
-    setPolling(true);
+    const visible = await getCurrentWindow().isVisible().catch(() => true);
+    setPolling(visible);
     select('dictations');
   }
   function setPolling(on) {

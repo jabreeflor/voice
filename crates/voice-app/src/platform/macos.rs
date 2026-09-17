@@ -133,10 +133,6 @@ pub fn global_hotkeys_supported() -> Result<(), String> {
     Ok(())
 }
 
-pub fn engine_install_hint() -> &'static str {
-    "brew install whisper-cpp"
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

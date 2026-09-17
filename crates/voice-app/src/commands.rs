@@ -11,9 +11,9 @@
 //!
 //! Sync commands run on the main thread. Each one takes at most one `App`
 //! mutex and releases it before calling anything that could wait on the
-//! main thread (see the lock rules in app.rs).
-
-#![allow(dead_code)]
+//! main thread (see the lock rules in app.rs). Argument names are single
+//! words, so Tauri's snake_case → camelCase conversion is the identity and
+//! ui/*.js passes them spelled exactly as declared here.
 
 use std::sync::Arc;
 
@@ -165,19 +165,16 @@ pub fn get_dictations(app: State<'_, Arc<App>>) -> DictationsDto {
 pub fn get_snippets(app: State<'_, Arc<App>>) -> Vec<SnippetDto> {
     // voicectl (or a text editor) may have rewritten snippets.json since the
     // last read; the file is the source of truth.
-    let list = {
-        let mut snippets = app.snippets.lock().unwrap_or_else(|e| e.into_inner());
-        snippets.reload_if_changed();
-        snippets
-            .snippets()
-            .iter()
-            .map(|s| SnippetDto {
-                trigger: s.trigger.clone(),
-                text: s.text.clone(),
-            })
-            .collect()
-    };
-    list
+    let mut snippets = app.snippets.lock().unwrap_or_else(|e| e.into_inner());
+    snippets.reload_if_changed();
+    snippets
+        .snippets()
+        .iter()
+        .map(|s| SnippetDto {
+            trigger: s.trigger.clone(),
+            text: s.text.clone(),
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -267,8 +264,7 @@ pub fn permission_state(app: State<'_, Arc<App>>) -> PermissionsDto {
 }
 
 #[tauri::command]
-pub fn request_mic(app: State<'_, Arc<App>>) {
-    let _ = app;
+pub fn request_mic() {
     platform::request_mic();
 }
 
@@ -293,9 +289,15 @@ pub fn finish_onboarding(app: State<'_, Arc<App>>) {
 /// labelled "Copy dictation" with no nested Copy button, and pressing it
 /// invokes this command with the entry's `text`. `dictations_dto_entries_
 /// carry_exactly_time_and_text` below pins the payload it consumes.
+///
+/// Async so it leaves the main thread: `paste::copy_text` can block on the
+/// X11 selection owner (up to arboard's 4 s timeout).
 #[tauri::command]
-pub fn copy_text(text: String) {
-    crate::paste::copy_text(&text);
+pub async fn copy_text(text: String) {
+    let copied = tauri::async_runtime::spawn_blocking(move || crate::paste::copy_text(&text)).await;
+    if let Err(e) = copied {
+        log::warn!("copy_text task: {e}");
+    }
 }
 
 /// Hands every command to the builder in one place.

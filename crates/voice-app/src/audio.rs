@@ -4,8 +4,6 @@
 //! device delivers to mono f32 at 16 kHz (the rate whisper.cpp expects) and
 //! accumulates samples until `stop()`.
 
-#![allow(dead_code)]
-
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};

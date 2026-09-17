@@ -31,8 +31,6 @@
 //!   close-request handler, so `status_info()` never has to ask the window
 //!   (which would be a main-thread round trip from the status callbacks).
 
-#![allow(dead_code)]
-
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -49,14 +47,13 @@ use voice_core::{
 
 use crate::audio::Recorder;
 use crate::hotkey::{HotkeyController, HotkeyEvent};
-use crate::overlay::Overlay;
+use crate::overlay::{Overlay, FLASH_DEFAULT};
 use crate::paste::{copy_text, paste_text};
 use crate::platform::{self, MicStatus};
 use crate::tray;
 
 pub const MAIN_WINDOW: &str = "main";
 pub const ONBOARDING_WINDOW: &str = "onboarding";
-pub const OVERLAY_WINDOW: &str = "overlay";
 
 /// Taps shorter than this are ignored (an accidental brush of the key).
 const MIN_RECORDING: Duration = Duration::from_millis(350);
@@ -68,7 +65,6 @@ const MIN_SAMPLES: usize = 4000;
 const RELAUNCH_WINDOW_SECS: f64 = 600.0;
 const HOTKEY_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 const MIC_PREVIEW: Duration = Duration::from_secs(3);
-const FLASH_DEFAULT: Duration = Duration::from_millis(1100);
 const FLASH_SETTING_UP: Duration = Duration::from_millis(1400);
 const FLASH_MIC_ERROR: Duration = Duration::from_secs(2);
 const FLASH_ENGINE_ERROR: Duration = Duration::from_millis(2200);
@@ -322,13 +318,28 @@ impl App {
     /// retry timer while Accessibility is missing), then show onboarding or the
     /// main window depending on the `onboarded` setting.
     pub fn launch(self: &Arc<Self>) {
-        if self.settings.get_bool("onboarded").unwrap_or(false) {
+        let onboarded = self.settings.get_bool("onboarded").unwrap_or(false);
+        if onboarded {
             platform::request_mic();
-            self.ensure_event_tap(true);
+            // The system dialogs stay on the main thread, as in the Swift app.
+            // First run: the onboarding flow drives the prompts itself.
+            self.request_accessibility();
+        }
+        // `HotkeyController::start` blocks for its 300 ms grace window when
+        // the hook comes up; the window is about to show, so that wait must
+        // not sit on the main thread (see the `start` docs in hotkey.rs).
+        let app = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name("voice-hotkey-start".into())
+            .spawn(move || app.ensure_event_tap());
+        if let Err(e) = spawned {
+            // Windows and tray still work; the status line says the talk
+            // key is off.
+            log::error!("spawn hotkey start: {e}");
+        }
+        if onboarded {
             self.show_main_window();
         } else {
-            // First run: the onboarding flow drives permission prompts itself.
-            self.ensure_event_tap(false);
             self.show_onboarding();
         }
     }
@@ -393,9 +404,11 @@ impl App {
     /// macOS: a Dock icon only while a real window is up (LSUIElement-style
     /// accessory the rest of the time). No-op elsewhere.
     fn apply_activation_policy(&self) {
+        let visible = self.main_window_visible() || self.onboarding_visible();
+        #[cfg(not(target_os = "macos"))]
+        let _ = visible;
         #[cfg(target_os = "macos")]
         {
-            let visible = self.main_window_visible() || self.onboarding_visible();
             let policy = if visible {
                 tauri::ActivationPolicy::Regular
             } else {
@@ -453,7 +466,8 @@ impl App {
     }
 
     /// Dock icon click / relaunch while running
-    /// (`applicationShouldHandleReopen`).
+    /// (`applicationShouldHandleReopen`; `RunEvent::Reopen` is macOS-only).
+    #[cfg(target_os = "macos")]
     pub fn reopen(&self) {
         if self.onboarding_visible() || !self.settings.get_bool("onboarded").unwrap_or(false) {
             self.show_onboarding();
@@ -552,10 +566,9 @@ impl App {
         platform::request_accessibility();
     }
 
-    fn ensure_event_tap(self: &Arc<Self>, prompt: bool) {
-        if prompt {
-            self.request_accessibility();
-        }
+    /// Starts the hook, or a once-a-second retry until macOS lets it in.
+    /// Blocking (see `launch`); never call on the main thread.
+    fn ensure_event_tap(self: &Arc<Self>) {
         if self.hotkeys.start() {
             self.refresh_ui();
             return;

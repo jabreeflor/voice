@@ -37,7 +37,6 @@ fn main() {
             MacosLauncher::LaunchAgent,
             None,
         ))
-        .plugin(tauri_plugin_opener::init())
         .invoke_handler(commands::handler())
         .setup(|app| {
             // Menu-bar accessory until a window is shown (LSUIElement in the

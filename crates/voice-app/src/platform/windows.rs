@@ -77,9 +77,30 @@ pub fn consent_status(
         .unwrap_or(MicStatus::Undetermined)
 }
 
-/// Opening the capture device is what triggers the consent prompt on
-/// Windows, so there is nothing to request up front.
-pub fn request_mic() {}
+/// Desktop (non-packaged) apps never get a consent dialog on Windows: the
+/// answer is the Settings switches read by `mic_status`. So the onboarding
+/// "Open Settings" button deep-links to Privacy & security > Microphone, the
+/// only place the user can flip them.
+pub fn request_mic() {
+    // `start` is a cmd builtin; CREATE_NO_WINDOW keeps the helper console
+    // from flashing up. `""` is the window-title slot `start` would
+    // otherwise fill with the first quoted argument.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    match Command::new("cmd")
+        .args(["/c", "start", "", "ms-settings:privacy-microphone"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+    {
+        // Reap off the caller's thread so each click does not leave a
+        // zombie for the lifetime of the app.
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => log::warn!("could not open Microphone settings: {e}"),
+    }
+}
 
 /// Spawns a detached copy of this executable; the caller exits afterwards.
 /// Like the macOS path, the new instance starts about a second later so the
@@ -119,10 +140,6 @@ pub fn relaunch_self() {
 
 pub fn global_hotkeys_supported() -> Result<(), String> {
     Ok(())
-}
-
-pub fn engine_install_hint() -> &'static str {
-    "put whisper-server.exe next to Voice or on PATH"
 }
 
 #[cfg(test)]

@@ -78,10 +78,6 @@ pub fn check_session(
     Ok(())
 }
 
-pub fn engine_install_hint() -> &'static str {
-    "install whisper.cpp (whisper-server) and put it on PATH"
-}
-
 #[cfg(test)]
 mod tests {
     use super::{check_session, shell_quote};

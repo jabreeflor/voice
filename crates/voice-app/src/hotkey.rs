@@ -26,8 +26,6 @@
 //! callback may take its time (the OS hook callback itself never waits on
 //! it) but must still be `Send + Sync`.
 
-#![allow(dead_code)]
-
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex, Weak};
@@ -139,6 +137,7 @@ pub fn handle(
 
 /// The two CGEvent kinds the macOS tap subscribes to, reduced to plain values
 /// so the conversion rule can be unit-tested on any host.
+#[cfg(any(target_os = "macos", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TapEvent {
     /// `flagsChanged`: `keycode` is the modifier key that changed, `pressed`
@@ -150,11 +149,13 @@ pub enum TapEvent {
 }
 
 /// Virtual keycode of Escape on macOS.
+#[cfg(any(target_os = "macos", test))]
 const MAC_ESCAPE: i64 = 53;
 
 /// Maps a macOS tap event onto the rdev vocabulary `handle` speaks, so both
 /// backends share one state machine. Modifier changes other than the hotkey's
 /// own key are dropped here, exactly as the Swift tap ignored them.
+#[cfg(any(target_os = "macos", test))]
 pub fn tap_to_event(ev: TapEvent, hotkey: Hotkey) -> Option<EventType> {
     match ev {
         TapEvent::FlagsChanged { keycode, pressed } if keycode == hotkey.key_code() => {
@@ -296,6 +297,7 @@ impl Inner {
 
     /// Hook-thread entry for one CGEvent tap event (macOS). The hotkey is
     /// passed in because the caller already needed it to read the flag bit.
+    #[cfg(target_os = "macos")]
     fn on_tap(&self, ev: TapEvent, hotkey: Hotkey) -> bool {
         match tap_to_event(ev, hotkey) {
             Some(event) => self.dispatch(&event, hotkey),

@@ -43,6 +43,9 @@ input, textarea { user-select: text; cursor: text; }
 @keyframes bounce { 0%,100% { transform: scaleY(.5) } 50% { transform: scaleY(1.25) } }
 
 .section-header { font: 400 13px var(--sans); color: var(--soft); margin-bottom: 8px; }
+/* Present to assistive tech only (live announcements). */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
+           white-space: nowrap; }
 
 /* ══ MAIN WINDOW ══ */
 .topbar { height: 62px; flex: none; border-bottom: 1px solid var(--line);
@@ -86,6 +89,8 @@ body.macos .topbar { padding-left: 92px; }
 .lrow { display: flex; gap: 16px; padding: 13px 20px; align-items: baseline; width: 100%;
         position: relative; border: none; background: none; text-align: left; }
 .lrow:hover { background: var(--panel-deep); }
+/* A fresh copy holds the selected tint (Palette.accentTint) for 1.4 s. */
+.lrow.copied { background: var(--accent-tint); }
 .lrow + .lrow { border-top: 1px solid var(--line); }
 .lrow time { flex: none; width: 66px; font: 500 11.5px var(--sans); color: var(--faint); }
 .lrow p { font-size: 13.5px; line-height: 1.5; padding-right: 96px;
@@ -171,6 +176,7 @@ body.onboarding { align-items: center; justify-content: center; }
 .perm { width: 500px; max-width: 100%; padding: 14px 16px; margin-bottom: 14px;
         display: flex; align-items: center; gap: 14px; text-align: left; }
 .perm.hidden { display: none; }
+[hidden] { display: none !important; }
 .perm .glyph { width: 42px; height: 42px; border-radius: 50%; background: var(--accent-tint);
                display: flex; align-items: center; justify-content: center; flex: none; }
 .perm .glyph svg { width: 20px; height: 20px; }

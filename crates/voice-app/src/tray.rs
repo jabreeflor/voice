@@ -10,8 +10,6 @@
 //! lock rules in app.rs). `refresh` and `set_recording` read what they need
 //! from `App` first and only then touch the menu.
 
-#![allow(dead_code)]
-
 use std::sync::{Arc, OnceLock};
 
 use tauri::image::Image;

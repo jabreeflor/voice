@@ -1,16 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Windows may call the app's own commands, listen to its events and open external links.",
+  "description": "Windows may listen to the app's events, query their own visibility and drag themselves by their data-tauri-drag-region chrome. The app's own commands need no grant (no app manifest is declared); autostart is driven from Rust.",
   "windows": ["main", "onboarding", "overlay"],
   "permissions": [
     "core:default",
-    "core:window:allow-set-focus",
-    "core:window:allow-show",
-    "core:window:allow-hide",
-    "core:window:allow-close",
-    "core:webview:allow-internal-toggle-devtools",
-    "opener:default",
-    "autostart:default"
+    "core:window:allow-start-dragging"
   ]
 }

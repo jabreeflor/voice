@@ -18,8 +18,6 @@
 //! `DispatchWorkItem` juggling of the Swift version, without the races a
 //! generation counter leaves open).
 
-#![allow(dead_code)]
-
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
