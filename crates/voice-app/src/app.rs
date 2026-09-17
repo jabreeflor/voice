@@ -34,7 +34,7 @@
 #![allow(dead_code)]
 
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -101,6 +101,11 @@ pub struct App {
     pub state: Mutex<State>,
     pub preview_active: Mutex<bool>,
     pub setup_progress: Mutex<Option<f64>>,
+    /// Last whole percent the status line was refreshed for (-1 = none yet).
+    /// The download callback fires once per read (~10^4 times for base.en)
+    /// and every `refresh_ui` is several main-thread round trips, but the
+    /// status copy only changes per percent, so refresh only on that edge.
+    setup_percent: AtomicI64,
     pub setup_failed: Mutex<bool>,
     pub overlay: Overlay,
     pub tray_items: Mutex<Option<TrayItems>>,
@@ -226,6 +231,7 @@ impl App {
             state: Mutex::new(State::Idle),
             preview_active: Mutex::new(false),
             setup_progress: Mutex::new(None),
+            setup_percent: AtomicI64::new(-1),
             setup_failed: Mutex::new(false),
             tray_items: Mutex::new(None),
             main_visible: AtomicBool::new(false),
@@ -280,13 +286,17 @@ impl App {
             app.downloader.set_on_progress(Box::new(move |_, p| {
                 if let Some(app) = weak.upgrade() {
                     *lock(&app.setup_progress) = Some(p);
-                    app.refresh_ui();
+                    let pct = (p * 100.0) as i64;
+                    if app.setup_percent.swap(pct, Ordering::SeqCst) != pct {
+                        app.refresh_ui();
+                    }
                 }
             }));
             let weak = Arc::downgrade(&app);
             app.downloader.set_on_finished(Box::new(move |_, path| {
                 if let Some(app) = weak.upgrade() {
                     *lock(&app.setup_progress) = None;
+                    app.setup_percent.store(-1, Ordering::SeqCst);
                     match path {
                         Some(model) => app.start_engine(model),
                         None => *lock(&app.setup_failed) = true,
@@ -300,6 +310,7 @@ impl App {
             Some(model) => app.start_engine(model),
             None => {
                 *lock(&app.setup_progress) = Some(0.0);
+                app.setup_percent.store(-1, Ordering::SeqCst);
                 app.downloader.download(ModelCatalog::default_spec());
             }
         }
@@ -396,18 +407,6 @@ impl App {
         }
     }
 
-    /// Tells `label`'s webview whether its window is on screen. The windows
-    /// are hidden, never destroyed, so `beforeunload` never fires and the
-    /// page's own timers would otherwise run for the life of the process;
-    /// ui/app.js and ui/onboarding.js stop and restart their refresh/poll
-    /// intervals on this event, the way the Swift windows started their
-    /// timers in `show()` and invalidated them in `windowWillClose`.
-    fn emit_window_visible(&self, label: &str, visible: bool) {
-        if let Err(e) = self.handle.emit_to(label, "window-visible", visible) {
-            log::warn!("window-visible {label}: {e}");
-        }
-    }
-
     fn show_window(&self, label: &str) {
         let Some(window) = self.handle.get_webview_window(label) else {
             log::error!("window {label} missing");
@@ -417,7 +416,6 @@ impl App {
             log::warn!("show {label}: {e}");
         }
         let _ = window.set_focus();
-        self.emit_window_visible(label, true);
     }
 
     pub fn show_main_window(&self) {
@@ -472,7 +470,6 @@ impl App {
                 log::warn!("hide {label}: {e}");
             }
         }
-        self.emit_window_visible(label, false);
         self.apply_activation_policy();
         if label == ONBOARDING_WINDOW {
             self.refresh_ui();
@@ -622,14 +619,9 @@ impl App {
                 if app.preview_generation.load(Ordering::SeqCst) != generation {
                     return;
                 }
-                {
-                    let mut active = lock(&app.preview_active);
-                    if !*active {
-                        return;
-                    }
-                    *active = false;
+                if !app.release_preview() {
+                    return;
                 }
-                lock(&app.recorder).cancel();
                 app.overlay.hide();
             });
         if let Err(e) = timer {
@@ -638,10 +630,29 @@ impl App {
             // session (and a panic would land on the main thread, inside a
             // sync command).
             log::error!("spawn mic preview: {e}");
-            *lock(&self.preview_active) = false;
-            lock(&self.recorder).cancel();
+            self.release_preview();
             self.overlay.hide();
         }
+    }
+
+    /// Ends a mic preview: clears the flag and cancels the recorder in one
+    /// critical section under `state` (documented order `state` →
+    /// `preview_active` → `recorder`). Done as two separate locks, a
+    /// `claim_recording` on the dictation worker could slip in between them
+    /// and have its freshly started capture cancelled out from under it.
+    /// Returns false if no preview was active. Does not touch the overlay:
+    /// `hide()` is a channel send, so callers do it after the guard is gone.
+    fn release_preview(&self) -> bool {
+        let _state = lock(&self.state);
+        {
+            let mut active = lock(&self.preview_active);
+            if !*active {
+                return false;
+            }
+            *active = false;
+        }
+        lock(&self.recorder).cancel();
+        true
     }
 
     // MARK: recording flow
