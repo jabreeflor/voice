@@ -17,14 +17,16 @@
 //! - Linux/X11: `rdev::listen` (XRecord; cannot swallow Escape; Wayland
 //!   unsupported).
 //!
-//! The hook runs on its own thread; events are delivered through the callback
-//! from that thread — the receiver must be `Send + Sync` and must not block.
+//! The hook runs on its own thread. Events are queued from there and
+//! delivered through the callback on a separate dispatch thread, so the
+//! callback may take its time (the OS hook callback itself never waits on
+//! it) but must still be `Send + Sync`.
 
 #![allow(dead_code)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
+use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::time::Duration;
 
@@ -58,9 +60,15 @@ pub struct HookState {
 }
 
 /// Modifier keys as rdev reports them. The Swift tap only cancelled on
-/// `.keyDown`; modifiers arrive as `.flagsChanged` there and never cancel.
-/// rdev (Windows/Linux) reports both as `KeyPress`, so the distinction has
-/// to be made here or pressing Shift while talking would kill the dictation.
+/// `.keyDown`; modifiers (and the lock keys, which are `flagsChanged` too)
+/// arrive as `.flagsChanged` there and never cancel. rdev (Windows/Linux)
+/// reports both as `KeyPress`, so the distinction has to be made here or
+/// pressing Shift while talking would kill the dictation.
+///
+/// The right Win/Super key has no name in rdev's Windows/Linux tables and
+/// arrives as `Unknown(<raw code>)` — the same value `rdev_key` returns for
+/// `Hotkey::RightCommand` — so it is matched through that mapping rather
+/// than a literal.
 fn is_modifier(key: &Key) -> bool {
     matches!(
         key,
@@ -74,7 +82,10 @@ fn is_modifier(key: &Key) -> bool {
             | Key::MetaRight
             | Key::Function
             | Key::CapsLock
-    )
+            | Key::NumLock
+            | Key::ScrollLock
+            | Key::Pause
+    ) || *key == HotkeyController::rdev_key(Hotkey::RightCommand)
 }
 
 /// Applies one raw key event to the state machine and returns the event to
@@ -167,6 +178,10 @@ struct Inner {
     current_hotkey: HotkeyFn,
     is_active: ActiveFn,
     on_event: Mutex<Option<EventFn>>,
+    /// Queue from the hook thread to the dispatch thread. Unbounded, so a
+    /// send never waits on the app; dropping the controller drops this end
+    /// and lets the dispatch thread exit.
+    queue: Mutex<Option<Sender<HotkeyEvent>>>,
     state: Mutex<HookState>,
     running: AtomicBool,
     /// Report channel of the hook thread that `start` considered successful.
@@ -183,10 +198,16 @@ struct Inner {
 }
 
 impl Inner {
-    /// Runs the state machine for one event and delivers the outcome. Returns
-    /// whether the OS event should be swallowed. Never blocks: the mutexes
-    /// are only held by the hook thread for a few instructions and the
-    /// callback is documented as non-blocking.
+    /// Runs the state machine for one event and queues the outcome for the
+    /// dispatch thread. Returns whether the OS event should be swallowed.
+    ///
+    /// This runs inside the OS hook callback (the CGEvent tap callback on
+    /// macOS, `WH_KEYBOARD_LL` on Windows), where the WindowServer / the
+    /// system drops the hook after a few hundred milliseconds of silence —
+    /// and the keystroke that tripped it with it. The Swift tap deferred
+    /// everything with `DispatchQueue.main.async` for that reason; here the
+    /// app callback is never invoked from this thread at all, only a channel
+    /// send happens. The mutexes are only ever held for a few instructions.
     fn dispatch(&self, event: &EventType, hotkey: Hotkey) -> bool {
         let active = (self.is_active)();
         let (out, swallow) = match self.state.lock() {
@@ -194,12 +215,23 @@ impl Inner {
             Err(_) => (None, false),
         };
         if let Some(ev) = out {
-            let cb = self.on_event.lock().ok().and_then(|g| g.clone());
-            if let Some(cb) = cb {
-                cb(ev);
+            if let Ok(q) = self.queue.lock() {
+                if let Some(tx) = q.as_ref() {
+                    // A send only fails once the dispatch thread is gone,
+                    // i.e. the controller is being torn down.
+                    let _ = tx.send(ev);
+                }
             }
         }
         swallow
+    }
+
+    /// Delivers one queued event to the app callback (dispatch thread only).
+    fn deliver(&self, ev: HotkeyEvent) {
+        let cb = self.on_event.lock().ok().and_then(|g| g.clone());
+        if let Some(cb) = cb {
+            cb(ev);
+        }
     }
 
     /// Hook-thread entry for one rdev event (Windows/Linux).
@@ -247,18 +279,34 @@ impl HotkeyController {
     /// takes effect without restarting the hook. `is_active` reports whether a
     /// recording is in progress (drives the cancel-on-other-key rule).
     pub fn new(current_hotkey: HotkeyFn, is_active: ActiveFn) -> HotkeyController {
-        HotkeyController {
-            inner: Arc::new(Inner {
-                current_hotkey,
-                is_active,
-                on_event: Mutex::new(None),
-                state: Mutex::new(HookState::default()),
-                running: AtomicBool::new(false),
-                watch: Mutex::new(None),
-                start_lock: Mutex::new(()),
-                last_failure: Mutex::new(None),
-            }),
-        }
+        let (tx, rx) = mpsc::channel::<HotkeyEvent>();
+        let inner = Arc::new(Inner {
+            current_hotkey,
+            is_active,
+            on_event: Mutex::new(None),
+            queue: Mutex::new(Some(tx)),
+            state: Mutex::new(HookState::default()),
+            running: AtomicBool::new(false),
+            watch: Mutex::new(None),
+            start_lock: Mutex::new(()),
+            last_failure: Mutex::new(None),
+        });
+        // The dispatch thread holds only a weak reference: the sender lives
+        // in `Inner`, so a strong one would keep the channel open forever and
+        // the thread could never observe the controller going away.
+        let weak: Weak<Inner> = Arc::downgrade(&inner);
+        thread::Builder::new()
+            .name("voice-hotkey-dispatch".into())
+            .spawn(move || {
+                while let Ok(ev) = rx.recv() {
+                    let Some(inner) = weak.upgrade() else {
+                        break;
+                    };
+                    inner.deliver(ev);
+                }
+            })
+            .ok();
+        HotkeyController { inner }
     }
 
     pub fn set_on_event(&self, f: EventFn) {
@@ -308,10 +356,16 @@ impl HotkeyController {
 
         match rx.recv_timeout(START_GRACE) {
             Err(RecvTimeoutError::Timeout) => {
-                self.inner.running.store(true, Ordering::SeqCst);
+                // Publish the receiver *before* flipping `running`:
+                // `tap_running` does not take `start_lock`, and it reads
+                // `running == true` with no receiver as "the hook died",
+                // which would reset the controller underneath us and leave
+                // this hook unwatched (and a second one spawned by the
+                // app's retry).
                 if let Ok(mut w) = self.inner.watch.lock() {
                     *w = Some(rx);
                 }
+                self.inner.running.store(true, Ordering::SeqCst);
                 if let Ok(mut last) = self.inner.last_failure.lock() {
                     *last = None;
                 }
@@ -645,7 +699,12 @@ mod tests {
             Key::ControlLeft,
             Key::Alt,
             Key::MetaLeft,
+            // Right Win/Super: `Unknown(92)` / `Unknown(134)` off macOS.
+            cmd(),
             Key::CapsLock,
+            Key::NumLock,
+            Key::ScrollLock,
+            Key::Pause,
         ] {
             assert_eq!(
                 handle(&mut s, &press(key), Hotkey::RightOption, true),
@@ -759,6 +818,27 @@ mod tests {
         assert_eq!(
             handle(&mut s, &other, hk, true),
             (Some(HotkeyEvent::Cancel), false)
+        );
+    }
+
+    // The app callback runs on the dispatch thread, never on the thread that
+    // fed the event in (the OS hook thread in production).
+    #[test]
+    fn events_are_delivered_off_the_hook_thread() {
+        let c = HotkeyController::new(Arc::new(|| Hotkey::RightOption), Arc::new(|| false));
+        let (tx, rx) = mpsc::channel();
+        c.set_on_event(Arc::new(move |ev| {
+            let _ = tx.send((ev, thread::current().name().map(str::to_string)));
+        }));
+        let swallow = c.inner.dispatch(&press(Key::AltGr), Hotkey::RightOption);
+        assert!(!swallow);
+        let (ev, name) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(ev, HotkeyEvent::Down);
+        assert_eq!(name.as_deref(), Some("voice-hotkey-dispatch"));
+        c.inner.dispatch(&release(Key::AltGr), Hotkey::RightOption);
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(5)).unwrap().0,
+            HotkeyEvent::Up
         );
     }
 

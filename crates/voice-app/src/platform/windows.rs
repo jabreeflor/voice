@@ -19,19 +19,25 @@ pub fn request_accessibility() {}
 pub fn open_accessibility_settings() {}
 
 /// Microphone consent for a desktop (non-packaged) app is the per-app entry
-/// under `ConsentStore\microphone\NonPackaged\<exe path>` combined with the
-/// global "Let apps access your microphone" switch: either one set to Deny
-/// blocks capture. The per-app key is written when the user answers the
-/// consent prompt (or flips the app in Settings); until then only the global
-/// switch exists.
+/// under `ConsentStore\microphone\NonPackaged\<exe path>` combined with two
+/// group switches: `NonPackaged` itself ("Let desktop apps access your
+/// microphone") and the global "Let apps access your microphone" one. Any of
+/// the three set to Deny blocks capture. The per-app key is written when the
+/// user answers the consent prompt (or flips the app in Settings); until
+/// then only the switches exist.
 pub fn mic_status() -> MicStatus {
     const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone";
     let global = consent_value(KEY);
+    let non_packaged = consent_value(&format!(r"{KEY}\NonPackaged"));
     let per_app = std::env::current_exe()
         .ok()
         .map(|exe| format!(r"{KEY}\NonPackaged\{}", per_app_key(&exe.to_string_lossy())))
         .and_then(|k| consent_value(&k));
-    consent_status(per_app.as_deref(), global.as_deref())
+    consent_status(
+        per_app.as_deref(),
+        non_packaged.as_deref(),
+        global.as_deref(),
+    )
 }
 
 fn consent_value(key: &str) -> Option<String> {
@@ -47,20 +53,28 @@ pub fn per_app_key(exe_path: &str) -> String {
     exe_path.replace('\\', "#")
 }
 
-/// `per_app` wins when it has an answer (it is the value the consent prompt
-/// writes), except that a global Deny blocks every app regardless.
-pub fn consent_status(per_app: Option<&str>, global: Option<&str>) -> MicStatus {
+/// Any Deny wins (each switch blocks everything beneath it). Otherwise the
+/// most specific answer counts: `per_app` (the value the consent prompt
+/// writes), then the desktop-apps switch, then the global one.
+pub fn consent_status(
+    per_app: Option<&str>,
+    non_packaged: Option<&str>,
+    global: Option<&str>,
+) -> MicStatus {
     let parse = |v: Option<&str>| match v.map(str::trim) {
         Some(v) if v.eq_ignore_ascii_case("Allow") => Some(MicStatus::Granted),
         Some(v) if v.eq_ignore_ascii_case("Deny") => Some(MicStatus::Denied),
         _ => None,
     };
-    match (parse(per_app), parse(global)) {
-        (_, Some(MicStatus::Denied)) | (Some(MicStatus::Denied), _) => MicStatus::Denied,
-        (Some(app), _) => app,
-        (None, Some(global)) => global,
-        (None, None) => MicStatus::Undetermined,
+    let levels = [parse(per_app), parse(non_packaged), parse(global)];
+    if levels.contains(&Some(MicStatus::Denied)) {
+        return MicStatus::Denied;
     }
+    levels
+        .into_iter()
+        .flatten()
+        .next()
+        .unwrap_or(MicStatus::Undetermined)
 }
 
 /// Opening the capture device is what triggers the consent prompt on
@@ -68,6 +82,9 @@ pub fn consent_status(per_app: Option<&str>, global: Option<&str>) -> MicStatus 
 pub fn request_mic() {}
 
 /// Spawns a detached copy of this executable; the caller exits afterwards.
+/// Like the macOS path, the new instance starts about a second later
+/// (`timeout` has no sub-second resolution) so the old one has released the
+/// tray icon, settings.json and port 8178 first.
 pub fn relaunch_self() {
     // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: no inherited console, not in
     // our job/ctrl-c group, so the child survives our exit.
@@ -77,7 +94,15 @@ pub fn relaunch_self() {
         log::warn!("relaunch: current_exe unavailable");
         return;
     };
-    if let Err(e) = Command::new(exe)
+    // `start ""`: the first quoted argument is the window title, so the
+    // quoted path needs an empty one in front of it.
+    let script = format!(
+        "timeout /t 1 /nobreak >nul & start \"\" \"{}\"",
+        exe.to_string_lossy()
+    );
+    if let Err(e) = Command::new("cmd")
+        .arg("/c")
+        .raw_arg(script)
         .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
         .spawn()
     {
@@ -99,15 +124,18 @@ mod tests {
 
     #[test]
     fn consent_value_maps_to_status() {
-        assert_eq!(consent_status(None, Some("Allow")), MicStatus::Granted);
-        assert_eq!(consent_status(None, Some("Deny")), MicStatus::Denied);
         assert_eq!(
-            consent_status(None, Some("Prompt")),
+            consent_status(None, None, Some("Allow")),
+            MicStatus::Granted
+        );
+        assert_eq!(consent_status(None, None, Some("Deny")), MicStatus::Denied);
+        assert_eq!(
+            consent_status(None, None, Some("Prompt")),
             MicStatus::Undetermined
         );
-        assert_eq!(consent_status(None, None), MicStatus::Undetermined);
+        assert_eq!(consent_status(None, None, None), MicStatus::Undetermined);
         assert_eq!(
-            consent_status(Some("Allow"), Some("Allow")),
+            consent_status(Some("Allow"), Some("Allow"), Some("Allow")),
             MicStatus::Granted
         );
     }
@@ -117,14 +145,32 @@ mod tests {
     #[test]
     fn per_app_deny_overrides_global_allow() {
         assert_eq!(
-            consent_status(Some("Deny"), Some("Allow")),
+            consent_status(Some("Deny"), None, Some("Allow")),
             MicStatus::Denied
         );
         assert_eq!(
-            consent_status(Some("Allow"), Some("Deny")),
+            consent_status(Some("Allow"), None, Some("Deny")),
             MicStatus::Denied
         );
-        assert_eq!(consent_status(Some("Deny"), None), MicStatus::Denied);
+        assert_eq!(consent_status(Some("Deny"), None, None), MicStatus::Denied);
+    }
+
+    // "Let desktop apps access your microphone" off blocks capture even with
+    // the global switch on and the app individually allowed.
+    #[test]
+    fn non_packaged_deny_overrides_global_allow() {
+        assert_eq!(
+            consent_status(None, Some("Deny"), Some("Allow")),
+            MicStatus::Denied
+        );
+        assert_eq!(
+            consent_status(Some("Allow"), Some("Deny"), Some("Allow")),
+            MicStatus::Denied
+        );
+        assert_eq!(
+            consent_status(None, Some("Allow"), Some("Prompt")),
+            MicStatus::Granted
+        );
     }
 
     #[test]
