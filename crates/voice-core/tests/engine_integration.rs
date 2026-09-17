@@ -20,6 +20,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, OnceLock};
