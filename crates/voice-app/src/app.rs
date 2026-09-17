@@ -396,6 +396,18 @@ impl App {
         }
     }
 
+    /// Tells `label`'s webview whether its window is on screen. The windows
+    /// are hidden, never destroyed, so `beforeunload` never fires and the
+    /// page's own timers would otherwise run for the life of the process;
+    /// ui/app.js and ui/onboarding.js stop and restart their refresh/poll
+    /// intervals on this event, the way the Swift windows started their
+    /// timers in `show()` and invalidated them in `windowWillClose`.
+    fn emit_window_visible(&self, label: &str, visible: bool) {
+        if let Err(e) = self.handle.emit_to(label, "window-visible", visible) {
+            log::warn!("window-visible {label}: {e}");
+        }
+    }
+
     fn show_window(&self, label: &str) {
         let Some(window) = self.handle.get_webview_window(label) else {
             log::error!("window {label} missing");
@@ -405,6 +417,7 @@ impl App {
             log::warn!("show {label}: {e}");
         }
         let _ = window.set_focus();
+        self.emit_window_visible(label, true);
     }
 
     pub fn show_main_window(&self) {
@@ -459,6 +472,7 @@ impl App {
                 log::warn!("hide {label}: {e}");
             }
         }
+        self.emit_window_visible(label, false);
         self.apply_activation_policy();
         if label == ONBOARDING_WINDOW {
             self.refresh_ui();
@@ -600,22 +614,34 @@ impl App {
         }
         self.overlay.show_listening(self.level_provider());
         let weak = Arc::downgrade(self);
-        std::thread::spawn(move || {
-            std::thread::sleep(MIC_PREVIEW);
-            let Some(app) = weak.upgrade() else { return };
-            if app.preview_generation.load(Ordering::SeqCst) != generation {
-                return;
-            }
-            {
-                let mut active = lock(&app.preview_active);
-                if !*active {
+        let timer = std::thread::Builder::new()
+            .name("voice-mic-preview".into())
+            .spawn(move || {
+                std::thread::sleep(MIC_PREVIEW);
+                let Some(app) = weak.upgrade() else { return };
+                if app.preview_generation.load(Ordering::SeqCst) != generation {
                     return;
                 }
-                *active = false;
-            }
-            lock(&app.recorder).cancel();
-            app.overlay.hide();
-        });
+                {
+                    let mut active = lock(&app.preview_active);
+                    if !*active {
+                        return;
+                    }
+                    *active = false;
+                }
+                lock(&app.recorder).cancel();
+                app.overlay.hide();
+            });
+        if let Err(e) = timer {
+            // Unwind the claim here, or `preview_active` stays true and
+            // `claim_recording` refuses every hold for the rest of the
+            // session (and a panic would land on the main thread, inside a
+            // sync command).
+            log::error!("spawn mic preview: {e}");
+            *lock(&self.preview_active) = false;
+            lock(&self.recorder).cancel();
+            self.overlay.hide();
+        }
     }
 
     // MARK: recording flow
@@ -642,7 +668,8 @@ impl App {
         }
         tray::set_recording(&self.handle, true);
         // Show first: the sound is played by the overlay webview, which may
-        // be throttled while its window is hidden.
+        // be throttled while its window is hidden. Both go through the
+        // overlay worker's queue, so the webview sees them in this order.
         self.overlay.show_listening(self.level_provider());
         if Config::sounds_enabled(&self.settings) {
             self.overlay.play_sound("start");
@@ -682,14 +709,23 @@ impl App {
         let spawned = std::thread::Builder::new()
             .name("voice-transcribe".into())
             .spawn(move || {
-                let result = engine.transcribe(&wav);
-                app.set_state(State::Idle);
-                match result {
-                    Err(error) => {
-                        app.overlay
-                            .flash(&format!("Error: {error}"), FLASH_ENGINE_ERROR);
+                // Same guard as the dictation worker: a panic here (paste
+                // goes through third-party clipboard/keystroke code) would
+                // otherwise leave the state machine in Transcribing forever.
+                let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    let result = engine.transcribe(&wav);
+                    app.set_state(State::Idle);
+                    match result {
+                        Err(error) => {
+                            app.overlay
+                                .flash(&format!("Error: {error}"), FLASH_ENGINE_ERROR);
+                        }
+                        Ok(raw) => app.deliver(raw, duration.as_secs_f64(), sent_at),
                     }
-                    Ok(raw) => app.deliver(raw, duration.as_secs_f64(), sent_at),
+                }));
+                if outcome.is_err() {
+                    log::error!("transcription thread panicked; resetting");
+                    app.recover_from_panic();
                 }
             });
         if let Err(e) = spawned {

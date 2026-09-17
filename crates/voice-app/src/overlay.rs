@@ -11,7 +11,7 @@
 //! - event `sound`    payload `{ "name": "start" | "done" }` (played by the overlay webview)
 //!
 //! Every window change goes through one worker thread fed by a channel:
-//! show/hide/flash only send a command, and the worker owns the level loop,
+//! show/hide/flash/sound only send a command, and the worker owns the level loop,
 //! the deferred hide after a flash and the fade-out before `hide()`. A
 //! newer command simply arrives before the pending timeout and replaces it,
 //! so a flash can never hide a listening pill that started after it (the
@@ -66,6 +66,10 @@ enum Command {
         level: Option<LevelProvider>,
     },
     Hide,
+    /// Emitted from the worker so a sound queued after a `Show` reaches the
+    /// webview after that window is on screen (a direct emit from the caller
+    /// could overtake the worker).
+    Sound(String),
 }
 
 /// What the worker does while no command is pending.
@@ -187,13 +191,9 @@ impl Overlay {
         self.send(Command::Hide);
     }
 
+    /// Queues `name` behind any pending show/hide; see `Command::Sound`.
     pub fn play_sound(&self, name: &str) {
-        let payload = SoundPayload {
-            name: name.to_string(),
-        };
-        if let Err(e) = self.handle.emit_to(WINDOW, "sound", payload) {
-            log::warn!("sound event: {e}");
-        }
+        self.send(Command::Sound(name.to_string()));
     }
 }
 
@@ -219,16 +219,17 @@ impl Worker {
                 }
             };
             match received {
-                Ok(command) => pending = self.apply(command),
+                Ok(command) => pending = self.apply(command, pending),
                 Err(RecvTimeoutError::Disconnected) => return,
                 Err(RecvTimeoutError::Timeout) => pending = self.tick(pending),
             }
         }
     }
 
-    /// A command always replaces whatever was pending: a show cancels a
-    /// deferred hide, a hide stops the level loop.
-    fn apply(&self, command: Command) -> Pending {
+    /// A show or hide always replaces whatever was pending: a show cancels a
+    /// deferred hide, a hide stops the level loop. A sound is emitted in
+    /// place and leaves the pending work untouched.
+    fn apply(&self, command: Command, pending: Pending) -> Pending {
         match command {
             Command::Show {
                 mode,
@@ -244,6 +245,13 @@ impl Worker {
                 }
             }
             Command::Hide => self.begin_hide(),
+            Command::Sound(name) => {
+                let payload = SoundPayload { name };
+                if let Err(e) = self.handle.emit_to(WINDOW, "sound", payload) {
+                    log::warn!("sound event: {e}");
+                }
+                pending
+            }
         }
     }
 
