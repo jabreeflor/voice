@@ -28,6 +28,7 @@
 
 #![allow(dead_code)]
 
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -100,6 +101,9 @@ pub struct App {
     pub tray_items: Mutex<Option<TrayItems>>,
     main_visible: AtomicBool,
     onboarding_visible: AtomicBool,
+    /// Set once the onboarding page has been shown, so later shows can
+    /// reload it (the Swift wizard restarted at step 1 on every `show()`).
+    onboarding_shown: AtomicBool,
     /// True while the 1 s hotkey retry thread is alive (one at a time).
     hotkey_retry_running: AtomicBool,
     /// Bumped per mic preview so a stale 3 s timer cannot stop a newer one.
@@ -221,6 +225,7 @@ impl App {
             tray_items: Mutex::new(None),
             main_visible: AtomicBool::new(false),
             onboarding_visible: AtomicBool::new(false),
+            onboarding_shown: AtomicBool::new(false),
             hotkey_retry_running: AtomicBool::new(false),
             preview_generation: AtomicU64::new(0),
             hotkey_tx: Mutex::new(Some(tx)),
@@ -245,10 +250,16 @@ impl App {
                 .spawn(move || {
                     for event in rx {
                         let Some(app) = weak.upgrade() else { break };
-                        match event {
+                        // One bad event must not end the loop: hold-to-talk
+                        // would be dead for the rest of the session.
+                        let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| match event {
                             HotkeyEvent::Down => app.begin_recording(),
                             HotkeyEvent::Up => app.end_recording(),
                             HotkeyEvent::Cancel => app.cancel_recording(),
+                        }));
+                        if outcome.is_err() {
+                            log::error!("dictation worker: {event:?} panicked; resetting");
+                            app.recover_from_panic();
                         }
                     }
                 })
@@ -353,7 +364,7 @@ impl App {
 
     /// Refresh tray menu titles and notify open windows (`status-changed`).
     pub fn refresh_ui(&self) {
-        tray::refresh(&self.handle, self);
+        tray::refresh(self);
         let _ = self.handle.emit("status-changed", ());
     }
 
@@ -396,8 +407,29 @@ impl App {
     pub fn show_onboarding(&self) {
         self.onboarding_visible.store(true, Ordering::SeqCst);
         self.apply_activation_policy();
+        // The window is hidden, never destroyed, so onboarding.js would
+        // resume wherever it was left (the "done" step after a finished
+        // run). Reload it so `init()` starts at step 1 like the Swift
+        // `OnboardingWindow.show()`; the first show is still loading.
+        if self.onboarding_shown.swap(true, Ordering::SeqCst) {
+            if let Some(window) = self.handle.get_webview_window(ONBOARDING_WINDOW) {
+                if let Err(e) = window.eval("location.reload()") {
+                    log::warn!("onboarding reload: {e}");
+                }
+            }
+        }
         self.show_window(ONBOARDING_WINDOW);
         self.refresh_ui();
+    }
+
+    /// Dock icon click / relaunch while running
+    /// (`applicationShouldHandleReopen`).
+    pub fn reopen(&self) {
+        if self.onboarding_visible() || !self.settings.get_bool("onboarded").unwrap_or(false) {
+            self.show_onboarding();
+        } else {
+            self.show_main_window();
+        }
     }
 
     /// The close-box handler for `main` / `onboarding`: the window is hidden,
@@ -555,10 +587,12 @@ impl App {
         }
         self.set_state(State::Recording);
         tray::set_recording(&self.handle, true);
+        // Show first: the sound is played by the overlay webview, which may
+        // be throttled while its window is hidden.
+        self.overlay.show_listening(self.level_provider());
         if Config::sounds_enabled(&self.settings) {
             self.overlay.play_sound("start");
         }
-        self.overlay.show_listening(self.level_provider());
     }
 
     pub fn end_recording(self: &Arc<Self>) {
@@ -591,7 +625,7 @@ impl App {
         };
 
         let app = Arc::clone(self);
-        std::thread::Builder::new()
+        let spawned = std::thread::Builder::new()
             .name("voice-transcribe".into())
             .spawn(move || {
                 let result = engine.transcribe(&wav);
@@ -603,8 +637,24 @@ impl App {
                     }
                     Ok(raw) => app.deliver(raw, duration.as_secs_f64(), sent_at),
                 }
-            })
-            .expect("spawn transcription");
+            });
+        if let Err(e) = spawned {
+            // Do not strand the state machine in Transcribing (and never
+            // panic on the dictation worker).
+            log::error!("spawn transcription: {e}");
+            self.set_state(State::Idle);
+            self.overlay
+                .flash(&format!("Error: {e}"), FLASH_ENGINE_ERROR);
+        }
+    }
+
+    /// After a panic in begin/end/cancel: drop whatever was recording and go
+    /// back to Idle so the next hold works.
+    fn recover_from_panic(&self) {
+        lock(&self.recorder).cancel();
+        self.set_state(State::Idle);
+        tray::set_recording(&self.handle, false);
+        self.overlay.hide();
     }
 
     /// Everything after a successful transcription: cleanup, snippets,

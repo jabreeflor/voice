@@ -110,13 +110,12 @@ pub fn build(handle: &AppHandle, app: Arc<App>) -> tauri::Result<()> {
     });
     builder.build(handle)?;
 
-    refresh(handle, &app);
+    refresh(&app);
     Ok(())
 }
 
 /// Updates the title/status items and the Copy Last enabled state.
-pub fn refresh(handle: &AppHandle, app: &App) {
-    let _ = handle;
+pub fn refresh(app: &App) {
     let title = title_text(&Config::hotkey(&app.settings).label());
     let status = app.status_info().text;
     let has_history = !app

@@ -47,6 +47,7 @@ fn main() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let state = App::new(app.handle().clone());
+            state.overlay.configure_window();
             app.manage(state.clone());
             tray::build(app.handle(), state.clone())?;
             state.launch();
@@ -79,6 +80,15 @@ fn main() {
         RunEvent::Exit => {
             if let Some(app) = handle.try_state::<Arc<App>>() {
                 app.shutdown();
+            }
+        }
+        // Dock icon click / second launch: `applicationShouldHandleReopen` in
+        // the Swift app (bring back onboarding if it is up or never finished,
+        // otherwise the main window).
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => {
+            if let Some(app) = handle.try_state::<Arc<App>>() {
+                app.reopen();
             }
         }
         _ => {}

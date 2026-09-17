@@ -80,6 +80,17 @@ impl Overlay {
         }
     }
 
+    /// Lets clicks fall through the pill to whatever is underneath (the
+    /// Swift panel set `ignoresMouseEvents`). Not a WindowConfig key in
+    /// tauri-utils 2.9, so it is applied once from the setup hook.
+    pub fn configure_window(&self) {
+        if let Some(window) = self.window() {
+            if let Err(e) = window.set_ignore_cursor_events(true) {
+                log::warn!("overlay ignore cursor: {e}");
+            }
+        }
+    }
+
     fn bump(&self) -> u64 {
         let mut g = self.generation.lock().unwrap_or_else(|e| e.into_inner());
         *g += 1;
@@ -90,12 +101,44 @@ impl Overlay {
         *generation.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Claims the window for a deferred hide, atomically: returns false when
+    /// a newer show has bumped the generation since `generation` was issued.
+    /// Checking and bumping under one lock is what stops a flash timer from
+    /// hiding a listening pill that started between the two steps.
+    fn claim_hide(generation: &Mutex<u64>, expected: u64) -> bool {
+        let mut g = generation.lock().unwrap_or_else(|e| e.into_inner());
+        if *g != expected {
+            return false;
+        }
+        *g += 1;
+        true
+    }
+
+    fn hide_window(handle: &AppHandle) {
+        if let Some(window) = handle.get_webview_window(WINDOW) {
+            if let Err(e) = window.hide() {
+                log::warn!("overlay hide: {e}");
+            }
+        }
+    }
+
+    fn spawn(name: &str, body: impl FnOnce() + Send + 'static) {
+        if let Err(e) = std::thread::Builder::new().name(name.into()).spawn(body) {
+            // Runs on the dictation worker; a panic here would end hold-to-talk
+            // for the rest of the session, so log and carry on.
+            log::error!("spawn {name}: {e}");
+        }
+    }
+
     fn window(&self) -> Option<tauri::WebviewWindow> {
         self.handle.get_webview_window(WINDOW)
     }
 
     fn position(&self, window: &tauri::WebviewWindow) {
-        let Ok(Some(monitor)) = self.handle.primary_monitor() else {
+        // Ask the window, not the AppHandle: the window getter marshals to
+        // the main thread, whereas `AppHandle::primary_monitor` reads
+        // `NSScreen.screens` on the calling (worker) thread.
+        let Ok(Some(monitor)) = window.primary_monitor() else {
             return;
         };
         let scale = monitor.scale_factor();
@@ -159,16 +202,13 @@ impl Overlay {
         let generation = self.show("listening", "", Duration::ZERO);
         let handle = self.handle.clone();
         let gen_cell = self.generation.clone();
-        std::thread::Builder::new()
-            .name("voice-overlay-level".into())
-            .spawn(move || {
-                while Self::current(&gen_cell) == generation {
-                    let value = level_provider();
-                    let _ = handle.emit_to(WINDOW, "level", LevelPayload { value });
-                    std::thread::sleep(LEVEL_INTERVAL);
-                }
-            })
-            .expect("spawn overlay level thread");
+        Self::spawn("voice-overlay-level", move || {
+            while Self::current(&gen_cell) == generation {
+                let value = level_provider();
+                let _ = handle.emit_to(WINDOW, "level", LevelPayload { value });
+                std::thread::sleep(LEVEL_INTERVAL);
+            }
+        });
     }
 
     pub fn show_processing(&self) {
@@ -180,32 +220,29 @@ impl Overlay {
         let generation = self.show("flash", message, duration);
         let handle = self.handle.clone();
         let gen_cell = self.generation.clone();
-        std::thread::Builder::new()
-            .name("voice-overlay-flash".into())
-            .spawn(move || {
-                std::thread::sleep(duration);
-                // A newer show (or an explicit hide) since we were scheduled
-                // owns the window now; leave it alone.
-                if Self::current(&gen_cell) != generation {
-                    return;
-                }
-                Overlay {
-                    handle,
-                    generation: gen_cell,
-                }
-                .hide();
-            })
-            .expect("spawn overlay flash thread");
+        Self::spawn("voice-overlay-flash", move || {
+            std::thread::sleep(duration);
+            // A newer show (or an explicit hide) since we were scheduled owns
+            // the window now; leave it alone.
+            if !Self::claim_hide(&gen_cell, generation) {
+                return;
+            }
+            let payload = OverlayPayload {
+                mode: "hidden",
+                message: String::new(),
+                duration_ms: 0,
+            };
+            if let Err(e) = handle.emit_to(WINDOW, "overlay", payload) {
+                log::warn!("overlay event: {e}");
+            }
+            Self::hide_window(&handle);
+        });
     }
 
     pub fn hide(&self) {
         self.bump();
         self.emit_overlay("hidden", "", Duration::ZERO);
-        if let Some(window) = self.window() {
-            if let Err(e) = window.hide() {
-                log::warn!("overlay hide: {e}");
-            }
-        }
+        Self::hide_window(&self.handle);
     }
 
     pub fn play_sound(&self, name: &str) {
