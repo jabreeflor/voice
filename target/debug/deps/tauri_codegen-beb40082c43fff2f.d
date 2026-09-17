@@ -1,0 +1,12 @@
+/home/user/voice/target/debug/deps/tauri_codegen-beb40082c43fff2f.d: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/context.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/embedded_assets.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/image.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/vendor/mod.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/vendor/blake3_reference.rs
+
+/home/user/voice/target/debug/deps/libtauri_codegen-beb40082c43fff2f.rlib: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/context.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/embedded_assets.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/image.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/vendor/mod.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/vendor/blake3_reference.rs
+
+/home/user/voice/target/debug/deps/libtauri_codegen-beb40082c43fff2f.rmeta: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/context.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/embedded_assets.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/image.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/vendor/mod.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/vendor/blake3_reference.rs
+
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/lib.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/context.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/embedded_assets.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/image.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/vendor/mod.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-codegen-2.6.3/src/vendor/blake3_reference.rs:

@@ -1,0 +1,19 @@
+[package]
+name = "voice-core"
+description = "Pure logic for voice: config, stores, whisper engine client, transcript cleanup, voicectl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+dirs.workspace = true
+ureq.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = ["crates/voice-core", "crates/voicectl", "crates/voice-app"]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/jabreeflor/voice"
+
+# Single source of dependency versions for every crate in the workspace.
+[workspace.dependencies]
+voice-core = { path = "crates/voice-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+dirs = "7"
+ureq = { version = "3", features = ["json"] }
+chrono = "0.4"
+tempfile = "3"
+thiserror = "2"
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri-build = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-opener = "2"
+cpal = "0.18"
+rubato = "0.16"
+rdev = { version = "0.5", features = ["unstable_grab"] }
+arboard = "3"
+enigo = "0.6"
+log = "0.4"
+env_logger = "0.11"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

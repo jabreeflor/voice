@@ -1,0 +1,44 @@
+Couldn't find libevdev from pkgconfig (
+pkg-config exited with status code 1
+> PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 pkg-config --libs --cflags libevdev
+
+pkg-config output:
+  Package libevdev was not found in the pkg-config search path.
+  Perhaps you should add the directory containing `libevdev.pc'
+  to the PKG_CONFIG_PATH environment variable
+  Package 'libevdev', required by 'virtual:world', not found
+
+The system library `libevdev` required by crate `evdev-sys` was not found.
+The file `libevdev.pc` needs to be installed and the PKG_CONFIG_PATH environment variable must contain its parent directory.
+The PKG_CONFIG_PATH environment variable is not set.
+
+HINT: if you have installed the library, try setting PKG_CONFIG_PATH to the directory containing `libevdev.pc`.
+), compiling it from source...
+fatal: not a git repository (or any of the parent directories): .git
+autoreconf: export WARNINGS=
+autoreconf: Entering directory '.'
+autoreconf: configure.ac: not using Gettext
+autoreconf: running: aclocal --force -I m4 ${ACLOCAL_FLAGS}
+autoreconf: configure.ac: tracing
+autoreconf: configure.ac: creating directory build-aux
+autoreconf: running: libtoolize --copy --force
+autoreconf: configure.ac: not using Intltool
+autoreconf: configure.ac: not using Gtkdoc
+autoreconf: running: aclocal --force -I m4 ${ACLOCAL_FLAGS}
+autoreconf: running: /usr/bin/autoconf --force
+configure.ac:32: warning: The macro `AC_PROG_CC_C99' is obsolete.
+configure.ac:32: You should run autoupdate.
+./lib/autoconf/c.m4:1659: AC_PROG_CC_C99 is expanded from...
+configure.ac:32: the top level
+autoreconf: running: /usr/bin/autoheader --force
+autoreconf: running: automake --add-missing --copy --force-missing
+configure.ac:19: installing 'build-aux/compile'
+configure.ac:36: installing 'build-aux/config.guess'
+configure.ac:36: installing 'build-aux/config.sub'
+configure.ac:21: installing 'build-aux/install-sh'
+configure.ac:21: installing 'build-aux/missing'
+libevdev/Makefile.am: installing 'build-aux/depcomp'
+parallel-tests: installing 'build-aux/test-driver'
+autoreconf: Leaving directory '.'
+configure: WARNING: check not found - skipping building unit tests
+configure: WARNING: doxygen not found - required for documentation

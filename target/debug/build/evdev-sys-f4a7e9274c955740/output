@@ -1,0 +1,296 @@
+cargo:rerun-if-env-changed=LIBEVDEV_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=PKG_CONFIG_x86_64-unknown-linux-gnu
+cargo:rerun-if-env-changed=PKG_CONFIG_x86_64_unknown_linux_gnu
+cargo:rerun-if-env-changed=HOST_PKG_CONFIG
+cargo:rerun-if-env-changed=PKG_CONFIG
+cargo:rerun-if-env-changed=LIBEVDEV_STATIC
+cargo:rerun-if-env-changed=LIBEVDEV_DYNAMIC
+cargo:rerun-if-env-changed=PKG_CONFIG_ALL_STATIC
+cargo:rerun-if-env-changed=PKG_CONFIG_ALL_DYNAMIC
+cargo:rerun-if-env-changed=PKG_CONFIG_PATH_x86_64-unknown-linux-gnu
+cargo:rerun-if-env-changed=PKG_CONFIG_PATH_x86_64_unknown_linux_gnu
+cargo:rerun-if-env-changed=HOST_PKG_CONFIG_PATH
+cargo:rerun-if-env-changed=PKG_CONFIG_PATH
+cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_x86_64-unknown-linux-gnu
+cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR_x86_64_unknown_linux_gnu
+cargo:rerun-if-env-changed=HOST_PKG_CONFIG_LIBDIR
+cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR
+cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_x86_64-unknown-linux-gnu
+cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR_x86_64_unknown_linux_gnu
+cargo:rerun-if-env-changed=HOST_PKG_CONFIG_SYSROOT_DIR
+cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR
+running: "git" "submodule" "update" "--init" "--depth" "1"
+running: cd "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/evdev-sys-0.2.6" && "cp" "-r" "/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/evdev-sys-0.2.6/libevdev/" "/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out"
+cargo:rustc-link-search=/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib
+cargo:root=/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out
+cargo:include=/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/include
+cargo:rerun-if-changed=libevdev
+cargo:rustc-link-lib=static=evdev
+cargo:rerun-if-env-changed=CC_x86_64-unknown-linux-gnu
+CC_x86_64-unknown-linux-gnu = None
+cargo:rerun-if-env-changed=CC_x86_64_unknown_linux_gnu
+CC_x86_64_unknown_linux_gnu = None
+cargo:rerun-if-env-changed=HOST_CC
+HOST_CC = None
+cargo:rerun-if-env-changed=CC
+CC = None
+cargo:rerun-if-env-changed=CC_ENABLE_DEBUG_OUTPUT
+cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS
+CRATE_CC_NO_DEFAULTS = None
+cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS
+CRATE_CC_NO_DEFAULTS = None
+cargo:rerun-if-env-changed=CFLAGS
+CFLAGS = None
+cargo:rerun-if-env-changed=HOST_CFLAGS
+HOST_CFLAGS = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64_unknown_linux_gnu
+CFLAGS_x86_64_unknown_linux_gnu = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64-unknown-linux-gnu
+CFLAGS_x86_64-unknown-linux-gnu = None
+cargo:rerun-if-env-changed=CFLAGS
+CFLAGS = None
+cargo:rerun-if-env-changed=HOST_CFLAGS
+HOST_CFLAGS = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64_unknown_linux_gnu
+CFLAGS_x86_64_unknown_linux_gnu = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64-unknown-linux-gnu
+CFLAGS_x86_64-unknown-linux-gnu = None
+running: cd "/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/build" && CC="cc" CFLAGS="-O0 -ffunction-sections -fdata-sections -fPIC -g -gdwarf-4 -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -m64 -Wall -Wextra " "sh" "/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/libevdev/autogen.sh" "--host=x86_64-unknown-linux-gnu" "--target=x86_64-unknown-linux-gnu" "--prefix=/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out"
+libtoolize: putting auxiliary files in AC_CONFIG_AUX_DIR, 'build-aux'.
+libtoolize: copying file 'build-aux/ltmain.sh'
+libtoolize: putting macros in AC_CONFIG_MACRO_DIRS, 'm4'.
+libtoolize: copying file 'm4/libtool.m4'
+libtoolize: copying file 'm4/ltoptions.m4'
+libtoolize: copying file 'm4/ltsugar.m4'
+libtoolize: copying file 'm4/ltversion.m4'
+libtoolize: copying file 'm4/lt~obsolete.m4'
+checking for x86_64-unknown-linux-gnu-gcc... cc
+checking whether the C compiler works... yes
+checking for C compiler default output file name... a.out
+checking for suffix of executables... 
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether the compiler supports GNU C... yes
+checking whether cc accepts -g... yes
+checking for cc option to enable C11 features... none needed
+checking whether cc understands -c and -o together... yes
+checking for stdio.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for strings.h... yes
+checking for sys/stat.h... yes
+checking for sys/types.h... yes
+checking for unistd.h... yes
+checking for wchar.h... yes
+checking for minix/config.h... no
+checking whether it is safe to define __EXTENSIONS__... yes
+checking whether _XOPEN_SOURCE should be defined... no
+checking for a BSD-compatible install... /usr/bin/install -c
+checking whether build environment is sane... yes
+checking for a race-free mkdir -p... /usr/bin/mkdir -p
+checking for gawk... no
+checking for mawk... mawk
+checking whether make sets $(MAKE)... yes
+checking whether make supports the include directive... yes (GNU style)
+checking whether make supports nested variables... yes
+checking dependency style of cc... gcc3
+checking whether make supports nested variables... (cached) yes
+checking build system type... x86_64-pc-linux-gnu
+checking host system type... x86_64-unknown-linux-gnu
+checking how to print strings... printf
+checking for a sed that does not truncate output... /usr/bin/sed
+checking for grep that handles long lines and -e... /usr/bin/grep
+checking for egrep... /usr/bin/grep -E
+checking for fgrep... /usr/bin/grep -F
+checking for ld used by cc... /usr/bin/ld
+checking if the linker (/usr/bin/ld) is GNU ld... yes
+checking for BSD- or MS-compatible name lister (nm)... no
+checking for x86_64-unknown-linux-gnu-dumpbin... no
+checking for x86_64-unknown-linux-gnu-link... no
+checking for dumpbin... no
+checking for link... link -dump
+checking the name lister (nm) interface... BSD nm
+checking whether ln -s works... yes
+checking the maximum length of command line arguments... 1572864
+checking how to convert x86_64-pc-linux-gnu file names to x86_64-unknown-linux-gnu format... func_convert_file_noop
+checking how to convert x86_64-pc-linux-gnu file names to toolchain format... func_convert_file_noop
+checking for /usr/bin/ld option to reload object files... -r
+checking for x86_64-unknown-linux-gnu-file... no
+checking for file... file
+checking for x86_64-unknown-linux-gnu-objdump... no
+checking for objdump... objdump
+checking how to recognize dependent libraries... pass_all
+checking for x86_64-unknown-linux-gnu-dlltool... no
+checking for dlltool... no
+checking how to associate runtime and link libraries... printf %s\n
+checking for x86_64-unknown-linux-gnu-ar... no
+checking for ar... ar
+checking for archiver @FILE support... @
+checking for x86_64-unknown-linux-gnu-strip... no
+checking for strip... strip
+checking for x86_64-unknown-linux-gnu-ranlib... no
+checking for ranlib... ranlib
+checking command to parse nm output from cc object... ok
+checking for sysroot... no
+checking for a working dd... /usr/bin/dd
+checking how to truncate binary pipes... /usr/bin/dd bs=4096 count=1
+checking for x86_64-unknown-linux-gnu-mt... no
+checking for mt... no
+checking if : is a manifest tool... no
+checking for dlfcn.h... yes
+checking for objdir... .libs
+checking if cc supports -fno-rtti -fno-exceptions... no
+checking for cc option to produce PIC... -fPIC -DPIC
+checking if cc PIC flag -fPIC -DPIC works... yes
+checking if cc static flag -static works... yes
+checking if cc supports -c -o file.o... yes
+checking if cc supports -c -o file.o... (cached) yes
+checking whether the cc linker (/usr/bin/ld -m elf_x86_64) supports shared libraries... yes
+checking whether -lc should be explicitly linked in... no
+checking dynamic linker characteristics... GNU/Linux ld.so
+checking how to hardcode library paths into programs... immediate
+checking whether stripping libraries is possible... yes
+checking if libtool supports shared libraries... yes
+checking whether to build shared libraries... yes
+checking whether to build static libraries... yes
+checking for ld used by cc... (cached) /usr/bin/ld
+checking if the linker (/usr/bin/ld) is GNU ld... (cached) yes
+checking if cc supports flag -Wl,--as-needed in envvar LDFLAGS... yes
+checking if cc supports flag -Wl,--gc-sections in envvar LDFLAGS... yes
+checking if cc supports flag -Wl,-z,relro in envvar LDFLAGS... yes
+checking if cc supports flag -Wl,-z,now in envvar LDFLAGS... yes
+checking for round in -lm... yes
+checking for x86_64-unknown-linux-gnu-pkg-config... no
+checking for pkg-config... /usr/bin/pkg-config
+checking pkg-config is at least version 0.9.0... yes
+checking for check >= 0.9.9... no
+checking if cc supports flag -Wall in envvar CFLAGS... yes
+checking if cc supports flag -Wextra in envvar CFLAGS... yes
+checking if cc supports flag -Wno-unused-parameter in envvar CFLAGS... yes
+checking if cc supports flag -Wstrict-prototypes in envvar CFLAGS... yes
+checking if cc supports flag -Wmissing-prototypes in envvar CFLAGS... yes
+checking if cc supports flag -fvisibility=hidden in envvar CFLAGS... yes
+checking if cc supports flag -pipe in envvar CFLAGS... yes
+checking if cc supports flag -fno-strict-aliasing in envvar CFLAGS... yes
+checking if cc supports flag -ffunction-sections in envvar CFLAGS... yes
+checking if cc supports flag -fdata-sections in envvar CFLAGS... yes
+checking if cc supports flag -fno-strict-aliasing in envvar CFLAGS... (cached) yes
+checking if cc supports flag -fdiagnostics-show-option in envvar CFLAGS... yes
+checking if cc supports flag -fno-common in envvar CFLAGS... yes
+checking for doxygen... no
+checking whether to build with gcov... no
+checking whether to build with coverity support... no
+checking for a Python interpreter with version >= 2.6... python
+checking for python... /usr/local/bin/python
+checking for python version... 3.11
+checking for python platform... linux
+checking for GNU default python prefix... ${prefix}
+checking for GNU default python exec_prefix... ${exec_prefix}
+checking for python script directory (pythondir)... ${PYTHON_PREFIX}/lib/python3.11/site-packages
+checking for python extension module directory (pyexecdir)... ${PYTHON_EXEC_PREFIX}/lib/python3.11/site-packages
+checking for nm... /usr/bin/nm
+checking that generated files are newer than configure... done
+configure: creating ./config.status
+config.status: creating Makefile
+config.status: creating libevdev/Makefile
+config.status: creating doc/Makefile
+config.status: creating doc/libevdev.doxygen
+config.status: creating doc/libevdev.man
+config.status: creating tools/Makefile
+config.status: creating test/Makefile
+config.status: creating libevdev.pc
+config.status: creating config.h
+config.status: executing depfiles commands
+config.status: executing libtool commands
+
+	       Prefix				/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out
+	       Libdir				${exec_prefix}/lib
+
+	       Build documentation		no
+	       Enable unit-tests		no
+	       Enable profiling			no
+	       Enable coverity support		no
+	       Static library symbol check	yes
+	       
+running: cd "/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/build" && "make" "-j4"
+make --no-print-directory all-recursive
+Making all in doc
+make[2]: Nothing to be done for 'all'.
+Making all in libevdev
+/usr/local/bin/python /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/libevdev/libevdev/make-event-names.py /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/libevdev/include/linux/linux/input.h /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/libevdev/include/linux/linux/input-event-codes.h  > event-names.h
+make  all-am
+  CC       libevdev-uinput.lo
+  CC       libevdev.lo
+  CC       libevdev-names.lo
+  CCLD     libevdev.la
+Making all in tools
+  CC       touchpad-edge-detector.o
+  CC       mouse-dpi-tool.o
+  CC       libevdev-tweak-device.o
+  CC       libevdev-events.o
+  CC       libevdev-list-codes.o
+  CCLD     libevdev-tweak-device
+  CCLD     libevdev-events
+  CCLD     touchpad-edge-detector
+  CCLD     mouse-dpi-tool
+  CCLD     libevdev-list-codes
+Making all in test
+  CC       test_compile_pedantic-test-compile-pedantic.o
+  CC       test_link-test-link.o
+  CC       test_static_link-test-link.o
+  CCLD     test-compile-pedantic
+  CCLD     test-static-link
+  CCLD     test-link
+running: cd "/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/build" && "make" "install"
+Making install in doc
+make[2]: Nothing to be done for 'install-exec-am'.
+ /usr/bin/mkdir -p '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/share/man/man3'
+ /usr/bin/install -c -m 644 'libevdev.man' '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/share/man/man3/libevdev.3'
+Making install in libevdev
+make  install-am
+ /usr/bin/mkdir -p '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib'
+ /bin/bash ../libtool   --mode=install /usr/bin/install -c   libevdev.la '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib'
+libtool: install: /usr/bin/install -c .libs/libevdev.so.2.3.0 /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib/libevdev.so.2.3.0
+libtool: install: (cd /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib && { ln -s -f libevdev.so.2.3.0 libevdev.so.2 || { rm -f libevdev.so.2 && ln -s libevdev.so.2.3.0 libevdev.so.2; }; })
+libtool: install: (cd /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib && { ln -s -f libevdev.so.2.3.0 libevdev.so || { rm -f libevdev.so && ln -s libevdev.so.2.3.0 libevdev.so; }; })
+libtool: install: /usr/bin/install -c .libs/libevdev.lai /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib/libevdev.la
+libtool: install: /usr/bin/install -c .libs/libevdev.a /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib/libevdev.a
+libtool: install: chmod 644 /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib/libevdev.a
+libtool: install: ranlib /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib/libevdev.a
+libtool: finish: PATH="/root/.local/bin:/root/.cargo/bin:/usr/local/go/bin:/opt/node22/bin:/opt/maven/bin:/opt/gradle/bin:/opt/rbenv/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/sbin" ldconfig -n /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib
+----------------------------------------------------------------------
+Libraries have been installed in:
+   /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib
+
+If you ever happen to want to link against installed libraries
+in a given directory, LIBDIR, you must either use libtool, and
+specify the full pathname of the library, or use the '-LLIBDIR'
+flag during linking and do at least one of the following:
+   - add LIBDIR to the 'LD_LIBRARY_PATH' environment variable
+     during execution
+   - add LIBDIR to the 'LD_RUN_PATH' environment variable
+     during linking
+   - use the '-Wl,-rpath -Wl,LIBDIR' linker flag
+   - have your system administrator add LIBDIR to '/etc/ld.so.conf'
+
+See any operating system documentation about shared libraries for
+more information, such as the ld(1) and ld.so(8) manual pages.
+----------------------------------------------------------------------
+ /usr/bin/mkdir -p '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/include/libevdev-1.0/libevdev'
+ /usr/bin/install -c -m 644 /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/libevdev/libevdev/libevdev.h /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/libevdev/libevdev/libevdev-uinput.h '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/include/libevdev-1.0/libevdev'
+Making install in tools
+ /usr/bin/mkdir -p '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/bin'
+  /bin/bash ../libtool   --mode=install /usr/bin/install -c touchpad-edge-detector mouse-dpi-tool libevdev-tweak-device '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/bin'
+libtool: install: /usr/bin/install -c .libs/touchpad-edge-detector /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/bin/touchpad-edge-detector
+libtool: install: /usr/bin/install -c .libs/mouse-dpi-tool /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/bin/mouse-dpi-tool
+libtool: install: /usr/bin/install -c .libs/libevdev-tweak-device /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/bin/libevdev-tweak-device
+ /usr/bin/mkdir -p '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/share/man/man1'
+ /usr/bin/install -c -m 644 /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/libevdev/tools/libevdev-tweak-device.1 /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/libevdev/tools/mouse-dpi-tool.1 /home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/libevdev/tools/touchpad-edge-detector.1 '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/share/man/man1'
+Making install in test
+make[2]: Nothing to be done for 'install-exec-am'.
+make[2]: Nothing to be done for 'install-data-am'.
+make[2]: Nothing to be done for 'install-exec-am'.
+ /usr/bin/mkdir -p '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib/pkgconfig'
+ /usr/bin/install -c -m 644 libevdev.pc '/home/user/voice/target/debug/build/evdev-sys-f4a7e9274c955740/out/lib/pkgconfig'

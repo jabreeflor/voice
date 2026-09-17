@@ -1,0 +1,37 @@
+[package]
+name = "voice-app"
+description = "voice — local hold-to-talk dictation (tray app)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# The binary is `Voice` on disk (bundle executable name); the crate stays voice-app.
+[[bin]]
+name = "voice"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+voice-core.workspace = true
+tauri.workspace = true
+tauri-plugin-autostart.workspace = true
+tauri-plugin-opener.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+cpal.workspace = true
+rubato.workspace = true
+rdev.workspace = true
+arboard.workspace = true
+enigo.workspace = true
+log.workspace = true
+env_logger.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Accessibility (AXIsProcessTrusted*) and microphone (AVCaptureDevice) checks.
+core-foundation = "0.10"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat"] }
