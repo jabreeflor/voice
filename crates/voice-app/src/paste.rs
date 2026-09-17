@@ -67,7 +67,13 @@ pub fn paste_text(text: &str) {
         }
         None => return,
     };
-    send_paste_shortcut();
+    let sent = send_paste_shortcut();
+    if !sent {
+        // Restoring now would wipe the dictation before the user can paste
+        // it by hand; keep it on the clipboard instead of losing it.
+        log::warn!("paste keystroke not sent; transcript left on the clipboard for a manual paste");
+        return;
+    }
 
     // The restore runs on the shared handle, which stays alive for the whole
     // process, so the pasted text is still being served while the target app
@@ -92,8 +98,10 @@ pub fn copy_text(text: &str) {
 }
 
 /// ⌘V on macOS, Ctrl+V elsewhere, as an explicit down/up sequence so the
-/// modifier is held while V is pressed and released.
-fn send_paste_shortcut() {
+/// modifier is held while V is pressed and released. `false` when no
+/// keystroke reached the system (no Accessibility grant, no X connection,
+/// or a failure mid-sequence), so the caller knows the paste did not happen.
+fn send_paste_shortcut() -> bool {
     let settings = Settings {
         // The app drives the Accessibility prompt itself (onboarding /
         // status); enigo must not pop a second system dialog mid-paste.
@@ -104,7 +112,7 @@ fn send_paste_shortcut() {
         Ok(e) => e,
         Err(e) => {
             log::error!("cannot synthesize paste keystroke: {e}");
-            return;
+            return false;
         }
     };
     let modifier = if cfg!(target_os = "macos") {
@@ -123,7 +131,8 @@ fn send_paste_shortcut() {
             log::error!("paste keystroke failed at {key:?} {direction:?}: {e}");
             // `release_keys_when_dropped` (default true) lets go of any
             // modifier still held when `enigo` drops here.
-            return;
+            return false;
         }
     }
+    true
 }

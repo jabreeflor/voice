@@ -273,13 +273,6 @@ where
     );
 }
 
-fn rms(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
-}
-
 /// Fast attack, slow decay — identical to the Swift `_level` update.
 fn next_level(rms: f32, previous: f32) -> f32 {
     (rms * 9.0).min(1.0).max(previous * 0.82)
@@ -404,6 +397,10 @@ impl RateConverter {
 mod tests {
     use super::*;
 
+    fn rms(samples: &[f32]) -> f32 {
+        (samples.iter().map(|s| s * s).sum::<f32>() / samples.len().max(1) as f32).sqrt()
+    }
+
     fn mono<T>(interleaved: &[T], channels: usize) -> Vec<f32>
     where
         T: SizedSample,
@@ -467,9 +464,39 @@ mod tests {
     }
 
     #[test]
-    fn rms_of_known_signal() {
-        assert_eq!(rms(&[]), 0.0);
-        assert!((rms(&[0.5, -0.5, 0.5, -0.5]) - 0.5).abs() < 1e-6);
+    fn level_updates_once_per_block_across_device_buffers() {
+        // The decay must be tied to LEVEL_BLOCK frames of audio, not to the
+        // device buffer size, so a 128-frame backend (small ALSA/CoreAudio
+        // periods) decays at the same rate as Swift's 4096-frame tap.
+        let shared = Shared::new(1, None);
+        let square: Vec<f32> = (0..128)
+            .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
+            .collect();
+        for _ in 0..10 {
+            shared.ingest(&square);
+        }
+        // 1280 frames: still inside the first block, nothing published yet.
+        assert_eq!(shared.level(), 0.0);
+        shared.ingest(&square);
+        // 1408 frames: the block completed at 1365 with rms 0.5 → clamped to 1.0.
+        assert_eq!(shared.level(), 1.0);
+
+        // Silence: exactly one 0.82 decay per completed block, regardless of
+        // how many 128-frame buffers it took to fill it.
+        let silence = vec![0.0f32; 128];
+        let mut steps = Vec::new();
+        let mut last = shared.level();
+        while steps.len() < 3 {
+            shared.ingest(&silence);
+            let now = shared.level();
+            if now != last {
+                steps.push(now);
+                last = now;
+            }
+        }
+        for (got, want) in steps.iter().zip([0.82f32, 0.6724, 0.551368]) {
+            assert!((got - want).abs() < 1e-5, "steps {steps:?}");
+        }
     }
 
     #[test]
