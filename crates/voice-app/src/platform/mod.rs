@@ -52,6 +52,6 @@ impl MicStatus {
 // pub fn open_accessibility_settings();         // macOS Privacy & Security > Accessibility pane; best-effort elsewhere
 // pub fn mic_status() -> MicStatus;             // macOS AVCaptureDevice authorization; Windows consent registry; Linux NotApplicable
 // pub fn request_mic();                         // macOS AVCaptureDevice.requestAccess; no-op elsewhere (opening the device prompts)
-// pub fn relaunch_self();                       // macOS: `sh -c 'sleep 0.7; open -n <bundle>'`; others: spawn current exe after the same ~1 s delay
+// pub fn relaunch_self();                       // macOS: `sh -c 'sleep 0.7; open -n <bundle>'`; Linux: `sh -c 'sleep 0.7; exec <exe>'`; Windows: `cmd /c waitfor /t 1 ... & start <exe>` (~1 s; must not rely on a console)
 // pub fn global_hotkeys_supported() -> Result<(), String>;  // Linux: Err on Wayland-only sessions
 // pub fn engine_install_hint() -> &'static str; // "brew install whisper-cpp" etc.

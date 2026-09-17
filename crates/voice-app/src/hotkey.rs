@@ -179,8 +179,12 @@ struct Inner {
     is_active: ActiveFn,
     on_event: Mutex<Option<EventFn>>,
     /// Queue from the hook thread to the dispatch thread. Unbounded, so a
-    /// send never waits on the app; dropping the controller drops this end
-    /// and lets the dispatch thread exit.
+    /// send never waits on the app. `Inner` itself is pinned for the process
+    /// lifetime once a hook is up (the hook thread never returns), so this
+    /// sender is not dropped with the controller by accident: `Drop` for
+    /// `HotkeyController` takes it out explicitly, which closes the channel,
+    /// ends the dispatch thread and stops late events reaching a torn-down
+    /// app.
     queue: Mutex<Option<Sender<HotkeyEvent>>>,
     state: Mutex<HookState>,
     running: AtomicBool,
@@ -217,8 +221,9 @@ impl Inner {
         if let Some(ev) = out {
             if let Ok(q) = self.queue.lock() {
                 if let Some(tx) = q.as_ref() {
-                    // A send only fails once the dispatch thread is gone,
-                    // i.e. the controller is being torn down.
+                    // A send only fails once the dispatch thread is gone;
+                    // by then the controller has been dropped and nobody
+                    // wants the event.
                     let _ = tx.send(ev);
                 }
             }
@@ -274,6 +279,20 @@ pub struct HotkeyController {
     inner: Arc<Inner>,
 }
 
+/// The hook thread keeps a strong `Arc<Inner>` and never returns, so the
+/// event channel inside `Inner` would otherwise stay open after the
+/// controller is gone and the dispatch thread would keep invoking the stored
+/// callback on an app that has been torn down. Closing the sender here ends
+/// the dispatch thread; the hook itself keeps running (it cannot be stopped
+/// from outside the OS run loop) but its events now go nowhere.
+impl Drop for HotkeyController {
+    fn drop(&mut self) {
+        if let Ok(mut q) = self.inner.queue.lock() {
+            *q = None;
+        }
+    }
+}
+
 impl HotkeyController {
     /// `current_hotkey` is consulted on every event so changing the setting
     /// takes effect without restarting the hook. `is_active` reports whether a
@@ -291,9 +310,10 @@ impl HotkeyController {
             start_lock: Mutex::new(()),
             last_failure: Mutex::new(None),
         });
-        // The dispatch thread holds only a weak reference: the sender lives
-        // in `Inner`, so a strong one would keep the channel open forever and
-        // the thread could never observe the controller going away.
+        // The dispatch thread holds only a weak reference so that it never
+        // keeps `Inner` alive on its own. It exits when the channel closes,
+        // which `Drop` for `HotkeyController` does explicitly; the `Arc` is
+        // otherwise pinned by the hook thread for the rest of the process.
         let weak: Weak<Inner> = Arc::downgrade(&inner);
         thread::Builder::new()
             .name("voice-hotkey-dispatch".into())
@@ -321,6 +341,14 @@ impl HotkeyController {
     /// retries once a second, and a second caller waits for the first and
     /// then sees the hook it installed.
     ///
+    /// **This call blocks the calling thread for up to `START_GRACE`
+    /// (300 ms) whenever the hook actually comes up** (an immediate refusal
+    /// returns at once, and so does the already-running case). The Swift
+    /// `startTap()` returned immediately; this one cannot, see below. Call it
+    /// off the UI thread — `tauri::async_runtime::spawn_blocking` from the
+    /// setup hook and from the once-a-second Accessibility retry timer —
+    /// rather than directly on the Tauri main thread.
+    ///
     /// The hook entry points block the calling thread inside the OS run loop
     /// for as long as the hook lives, and only return (with `Err`) when the
     /// hook could not be installed. So the thread reports its result over a
@@ -330,13 +358,25 @@ impl HotkeyController {
     /// `tap_running` keeps polling the channel and corrects that on the next
     /// status refresh, and the app's retry timer then calls `start` again.
     pub fn start(&self) -> bool {
-        let _serial = self.inner.start_lock.lock();
-        if self.tap_running() {
-            return true;
-        }
+        // Checked before anything is spawned (a Wayland session never gets a
+        // hook thread); it is a stateless environment read, so it needs no
+        // serialisation with `start_lock`.
         if let Err(reason) = crate::platform::global_hotkeys_supported() {
             self.inner.warn_once("hotkey hook unavailable", &reason);
             return false;
+        }
+        self.start_with(run_hook)
+    }
+
+    /// `start` with the hook entry point injected, so the lifecycle rules
+    /// (grace window, silence-means-success, late death, idempotence) can be
+    /// tested without an OS hook or any dependence on the host's session.
+    /// `run` must behave like `run_hook`: block for as long as the hook
+    /// lives, return `Err` if it could not be installed.
+    fn start_with(&self, run: fn(Arc<Inner>) -> Result<(), String>) -> bool {
+        let _serial = self.inner.start_lock.lock();
+        if self.tap_running() {
+            return true;
         }
 
         let (tx, rx) = mpsc::channel::<Result<(), String>>();
@@ -348,7 +388,7 @@ impl HotkeyController {
         thread::Builder::new()
             .name("voice-hotkey-hook".into())
             .spawn(move || {
-                let result = run_hook(inner);
+                let result = run(inner);
                 // The receiver may be gone if the controller was dropped.
                 let _ = tx.send(result);
             })
@@ -570,6 +610,8 @@ fn run_hook(inner: Arc<Inner>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
+    use std::time::Instant;
 
     fn press(key: Key) -> EventType {
         EventType::KeyPress(key)
@@ -846,5 +888,127 @@ mod tests {
     fn controller_reports_not_running_before_start() {
         let c = HotkeyController::new(Arc::new(|| Hotkey::RightOption), Arc::new(|| false));
         assert!(!c.tap_running());
+    }
+
+    // ---- start / tap_running lifecycle, with the OS hook replaced by a fake.
+
+    fn controller() -> HotkeyController {
+        HotkeyController::new(Arc::new(|| Hotkey::RightOption), Arc::new(|| false))
+    }
+
+    fn hook_refuses(_: Arc<Inner>) -> Result<(), String> {
+        Err("no grant".to_string())
+    }
+
+    /// Counts how many hook threads were ever started with this entry point.
+    /// Only `repeated_start_spawns_one_hook` uses it, so the count is exact
+    /// even though tests run in parallel.
+    static PARKED_HOOKS: AtomicUsize = AtomicUsize::new(0);
+
+    fn hook_parks_forever(_: Arc<Inner>) -> Result<(), String> {
+        PARKED_HOOKS.fetch_add(1, Ordering::SeqCst);
+        loop {
+            thread::park();
+        }
+    }
+
+    fn hook_ends_after_grace(_: Arc<Inner>) -> Result<(), String> {
+        thread::sleep(START_GRACE * 2);
+        Ok(())
+    }
+
+    fn hook_dies_after_grace(_: Arc<Inner>) -> Result<(), String> {
+        thread::sleep(START_GRACE * 2);
+        Err("tap disabled".to_string())
+    }
+
+    /// Polls `tap_running` the way the app's status refresh does.
+    fn wait_until_stopped(c: &HotkeyController) -> bool {
+        for _ in 0..100 {
+            if !c.tap_running() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    // An OS refusal (no Accessibility, no X11) is reported at once: `start`
+    // must not sit out the grace period when the answer is already known.
+    #[test]
+    fn immediate_refusal_fails_fast() {
+        let c = controller();
+        let t = Instant::now();
+        assert!(!c.start_with(hook_refuses));
+        assert!(t.elapsed() < START_GRACE, "start waited {:?}", t.elapsed());
+        assert!(!c.tap_running());
+    }
+
+    // The hook entry points never return on success, so silence for
+    // START_GRACE is the success signal — and the cost is that `start`
+    // blocks for that long. A second `start` sees the live hook and must not
+    // install another one (two hooks would fight over the OS hook slot).
+    #[test]
+    fn repeated_start_spawns_one_hook() {
+        let c = controller();
+        let t = Instant::now();
+        assert!(c.start_with(hook_parks_forever));
+        assert!(t.elapsed() >= START_GRACE);
+        assert!(c.tap_running());
+        let t = Instant::now();
+        assert!(c.start_with(hook_parks_forever));
+        assert!(t.elapsed() < START_GRACE, "second start waited the grace");
+        assert!(c.tap_running());
+        assert_eq!(PARKED_HOOKS.load(Ordering::SeqCst), 1);
+    }
+
+    // A hook whose run loop ends after the grace period was reported as up;
+    // the next status poll must notice, reset the held state (the key is not
+    // really down any more from the app's point of view) and let `start` try
+    // again.
+    #[test]
+    fn hook_ending_after_grace_is_detected_by_tap_running() {
+        let c = controller();
+        assert!(c.start_with(hook_ends_after_grace));
+        assert!(c.tap_running());
+        c.inner.state.lock().unwrap().held = true;
+        assert!(wait_until_stopped(&c), "hook death never observed");
+        assert!(!c.tap_running());
+        assert_eq!(*c.inner.state.lock().unwrap(), HookState::default());
+        // The controller is startable again, not wedged on the dead watch.
+        assert!(!c.start_with(hook_refuses));
+    }
+
+    #[test]
+    fn hook_failing_after_grace_is_detected_by_tap_running() {
+        let c = controller();
+        assert!(c.start_with(hook_dies_after_grace));
+        assert!(c.tap_running());
+        assert!(wait_until_stopped(&c), "hook death never observed");
+        assert!(!c.inner.running.load(Ordering::SeqCst));
+        assert!(c.inner.watch.lock().unwrap().is_none());
+    }
+
+    // The hook thread pins `Inner` for the process lifetime, so the channel
+    // would never close on its own; `Drop` has to close it, or events keep
+    // reaching the callback after the app has torn the controller down.
+    #[test]
+    fn dropping_the_controller_closes_the_event_queue() {
+        let c = controller();
+        let (tx, rx) = mpsc::channel();
+        c.set_on_event(Arc::new(move |ev| {
+            let _ = tx.send(ev);
+        }));
+        // Stand in for the hook thread's strong reference.
+        let pinned = Arc::clone(&c.inner);
+        drop(c);
+        assert!(pinned.queue.lock().unwrap().is_none());
+        // A late event from the (still running) hook is dropped, not
+        // delivered, and does not panic.
+        assert!(!pinned.dispatch(&press(Key::AltGr), Hotkey::RightOption));
+        assert!(matches!(
+            rx.recv_timeout(Duration::from_millis(200)),
+            Err(RecvTimeoutError::Timeout) | Err(RecvTimeoutError::Disconnected)
+        ));
     }
 }

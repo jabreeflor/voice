@@ -82,9 +82,16 @@ pub fn consent_status(
 pub fn request_mic() {}
 
 /// Spawns a detached copy of this executable; the caller exits afterwards.
-/// Like the macOS path, the new instance starts about a second later
-/// (`timeout` has no sub-second resolution) so the old one has released the
-/// tray icon, settings.json and port 8178 first.
+/// Like the macOS path, the new instance starts about a second later so the
+/// old one has released the tray icon, settings.json and port 8178 first.
+///
+/// The delay is `waitfor /t 1`, not `timeout /t 1`: the child runs detached
+/// from a GUI process, so it has no console and its stdin is not a console
+/// handle. `timeout.exe` refuses to run in that situation ("Input redirection
+/// is not supported") and exits at once, which would launch the new instance
+/// with no pause at all. `waitfor` never touches stdin; it sleeps until the
+/// timeout and exits with errorlevel 1, which `&` ignores. (Its resolution is
+/// whole seconds, hence ~1 s rather than macOS's 0.7 s.)
 pub fn relaunch_self() {
     // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: no inherited console, not in
     // our job/ctrl-c group, so the child survives our exit.
@@ -97,7 +104,7 @@ pub fn relaunch_self() {
     // `start ""`: the first quoted argument is the window title, so the
     // quoted path needs an empty one in front of it.
     let script = format!(
-        "timeout /t 1 /nobreak >nul & start \"\" \"{}\"",
+        "waitfor /t 1 VoiceRelaunch >nul 2>&1 & start \"\" \"{}\"",
         exe.to_string_lossy()
     );
     if let Err(e) = Command::new("cmd")
