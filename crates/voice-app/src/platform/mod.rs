@@ -10,16 +10,19 @@
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
+#[allow(unused_imports)]
 pub use macos::*;
 
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
+#[allow(unused_imports)]
 pub use windows::*;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 mod linux;
 #[cfg(all(unix, not(target_os = "macos")))]
+#[allow(unused_imports)]
 pub use linux::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

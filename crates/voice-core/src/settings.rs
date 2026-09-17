@@ -115,8 +115,13 @@ impl Settings {
         let Ok(bytes) = serde_json::to_vec_pretty(&Value::Object(map.clone())) else {
             return;
         };
-        let tmp = dir.join(format!(".settings-{}.tmp", std::process::id()));
-        if fs::write(&tmp, bytes).is_ok() && fs::rename(&tmp, &self.path).is_err() {
+        // The temp name carries the pid and a per-process counter so two
+        // handles on the same file (or two writes racing in one process)
+        // never overwrite each other's half-written temp file.
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = dir.join(format!(".settings-{}-{}.tmp", std::process::id(), seq));
+        if fs::write(&tmp, bytes).is_err() || fs::rename(&tmp, &self.path).is_err() {
             let _ = fs::remove_file(&tmp);
         }
     }
