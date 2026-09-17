@@ -287,6 +287,7 @@ impl Inner {
     /// and a slow callback there is what trips the OS hook timeout. Nothing
     /// below `handle` cares about non-key events, so bail before touching
     /// the settings lock or the app's `is_active` callback.
+    #[cfg(not(target_os = "macos"))]
     fn on_raw(&self, event: &EventType) -> bool {
         if !matches!(event, EventType::KeyPress(_) | EventType::KeyRelease(_)) {
             return false;

@@ -50,6 +50,7 @@ impl MicStatus {
 // pub fn request_accessibility();               // macOS AXIsProcessTrustedWithOptions(prompt); no-op elsewhere
 // pub fn open_accessibility_settings();         // macOS Privacy & Security > Accessibility pane; best-effort elsewhere
 // pub fn mic_status() -> MicStatus;             // macOS AVCaptureDevice authorization; Windows consent registry; Linux NotApplicable
-// pub fn request_mic();                         // macOS AVCaptureDevice.requestAccess; Windows opens the Microphone privacy page (desktop apps get no prompt); Linux no-op
+// pub fn request_mic();                         // macOS AVCaptureDevice.requestAccess (silent after the first answer); Windows/Linux no-op. Safe to call on every launch.
+// pub fn open_microphone_settings();           // Windows only: Privacy & security > Microphone page (desktop apps get no prompt, so the onboarding button opens this instead). Callers gate on cfg(target_os = "windows").
 // pub fn relaunch_self();                       // macOS: `sh -c 'sleep 0.7; open -n <bundle>'`; Linux: `sh -c 'sleep 0.7; exec <exe>'`; Windows: `cmd /c waitfor /t 1 ... & start <exe>` (~1 s; must not rely on a console)
 // pub fn global_hotkeys_supported() -> Result<(), String>;  // Linux: Err on Wayland-only sessions

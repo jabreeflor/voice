@@ -78,10 +78,14 @@ pub fn consent_status(
 }
 
 /// Desktop (non-packaged) apps never get a consent dialog on Windows: the
-/// answer is the Settings switches read by `mic_status`. So the onboarding
-/// "Open Settings" button deep-links to Privacy & security > Microphone, the
-/// only place the user can flip them.
-pub fn request_mic() {
+/// answer is the Settings switches read by `mic_status`, so there is nothing
+/// to prompt. Deliberately silent — `App::launch` calls this on every start.
+pub fn request_mic() {}
+
+/// Deep link to Privacy & security > Microphone, the only place the user can
+/// flip the consent switches. Only the onboarding "Open Settings" button
+/// reaches this (via the `request_mic` command), never a launch.
+pub fn open_microphone_settings() {
     // `start` is a cmd builtin; CREATE_NO_WINDOW keeps the helper console
     // from flashing up. `""` is the window-title slot `start` would
     // otherwise fill with the first quoted argument.

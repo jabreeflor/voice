@@ -291,9 +291,15 @@ pub fn permission_state(app: State<'_, Arc<App>>) -> PermissionsDto {
     }
 }
 
+/// The onboarding "Allow" / "Open Settings" button. Windows desktop apps
+/// never get a consent prompt (`mic_status` reads the Settings switches), so
+/// there the click opens the Microphone privacy page instead. `App::launch`
+/// calls only the silent `platform::request_mic`, never this.
 #[tauri::command]
 pub fn request_mic() {
     platform::request_mic();
+    #[cfg(target_os = "windows")]
+    platform::open_microphone_settings();
 }
 
 #[tauri::command]

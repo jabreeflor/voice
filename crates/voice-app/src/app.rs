@@ -321,6 +321,10 @@ impl App {
     pub fn launch(self: &Arc<Self>) {
         let onboarded = self.settings.get_bool("onboarded").unwrap_or(false);
         if onboarded {
+            // Silent on every platform: macOS prompts only while
+            // NotDetermined (AVCaptureDevice.requestAccess), Windows and
+            // Linux are no-ops. The Settings deep link lives behind the
+            // onboarding button (`commands::request_mic`), not here.
             platform::request_mic();
             // The system dialogs stay on the main thread, as in the Swift app.
             // First run: the onboarding flow drives the prompts itself.

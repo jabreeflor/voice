@@ -83,8 +83,10 @@
     // Like LedgerRow.copyToClipboard: 1.4 s accent tint, the hint pops and
     // green confetti bursts out of it. A second click restarts the hold.
     let copiedReset = null;
-    row.addEventListener('click', async () => {
-      await invoke('copy_text', { text: entry.text });
+    // The feedback paints first: `copy_text` blocks on the clipboard mutex
+    // (and X11 selection ownership on Linux), so waiting on the IPC would
+    // leave the click looking dead for a moment.
+    row.addEventListener('click', () => {
       hint.textContent = 'Copied';
       row.classList.add('copied');
       popHint(hint);
@@ -95,6 +97,7 @@
         row.classList.remove('copied');
         hint.textContent = 'Click to copy';
       }, 1400);
+      invoke('copy_text', { text: entry.text }).catch((err) => console.error(err));
     });
     return row;
   }
