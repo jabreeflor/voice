@@ -293,11 +293,13 @@
     // same way the AppKit window did. Like that window's timer it only runs
     // while the window is showing: the backend emits `window-visible` on
     // show/hide (Tauri hides rather than destroys the window on close). The
-    // listener goes up before the visibility query so a show in between is
-    // not missed. The target is this window's label: `emit_to` is delivered
-    // to every `Any`-target listener regardless of label, so a default
-    // `listen` would also react to the onboarding window's show/hide.
-    listen('window-visible', (e) => setPolling(Boolean(e.payload)),
+    // registration is awaited before the visibility query so a show that
+    // lands between the two IPC round trips is not missed (`listen` only
+    // resolves once the listener is registered). The target is this
+    // window's label: `emit_to` is delivered to every `Any`-target listener
+    // regardless of label, so a default `listen` would also react to the
+    // onboarding window's show/hide.
+    await listen('window-visible', (e) => setPolling(Boolean(e.payload)),
       { target: getCurrentWindow().label });
     const shown = await getCurrentWindow().isVisible().catch(() => true);
     setPolling(shown);

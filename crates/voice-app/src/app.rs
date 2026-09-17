@@ -168,6 +168,11 @@ pub fn status_inputs(s: &StatusSnapshot) -> StatusInputs {
 }
 
 /// "Typed: <first 24 chars>…" — the overlay confirmation after a paste.
+///
+/// Counted in Unicode scalars (`char`), not grapheme clusters as Swift's
+/// `String.count` does, so decomposed accents or ZWJ emoji may be cut at a
+/// slightly different point than the AppKit overlay; grapheme segmentation
+/// needs a table crate the app does not otherwise pull in.
 pub fn typed_flash(text: &str) -> String {
     let snippet = if text.chars().count() > TYPED_PREVIEW_CHARS {
         let head: String = text.chars().take(TYPED_PREVIEW_CHARS).collect();
@@ -867,7 +872,7 @@ mod tests {
     #[test]
     fn typed_flash_keeps_short_text_whole() {
         assert_eq!(typed_flash("hello world"), "Typed: hello world");
-        // Exactly 24 characters is not truncated (Swift: `count > 24`).
+        // Exactly 24 scalars is not truncated (`>`, not `>=`).
         let exact = "abcdefghijklmnopqrstuvwx";
         assert_eq!(exact.chars().count(), 24);
         assert_eq!(typed_flash(exact), format!("Typed: {exact}"));
@@ -877,8 +882,8 @@ mod tests {
     fn typed_flash_truncates_at_24_chars_with_ellipsis() {
         let long = "the quick brown fox jumps over the lazy dog";
         assert_eq!(typed_flash(long), "Typed: the quick brown fox jump…");
-        // Counted in characters, not bytes, so multi-byte text is not cut
-        // mid-character.
+        // Counted in scalars, not bytes, so multi-byte text is not cut
+        // mid-character (precomposed é is one scalar).
         let accented = "ééééééééééééééééééééééééé";
         assert_eq!(
             typed_flash(accented),

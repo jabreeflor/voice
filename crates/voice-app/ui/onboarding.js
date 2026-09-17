@@ -52,7 +52,13 @@
     $('perm-none').hidden = micApplies || axApplies;
     if (micApplies && p.mic === 'granted') markGranted($('mic-btn'));
     if (axApplies && p.hotkeys_running) markGranted($('ax-btn'));
-    const micOk = !micApplies || p.mic === 'granted';
+    // "Not denied" is enough to continue: on Windows the consent store has
+    // no entry for a desktop app until Settings is touched, so the status
+    // stays `undetermined` and there is no prompt that could ever move it
+    // to `granted`. The button still only turns green on a real Allow. On
+    // macOS `undetermined` only lasts while the prompt is up, and the poll
+    // re-runs every 0.8 s, so nothing is skipped there.
+    const micOk = !micApplies || p.mic !== 'denied';
     const axOk = !axApplies || p.hotkeys_running;
     $('perm-next').disabled = !(micOk && axOk);
   }
@@ -105,11 +111,12 @@
     // AppKit timer started in show() and invalidated in windowWillClose.
     // Replaying the wizard ("Setup Assistant…") reloads this page from the
     // Rust side, so every show after the first starts at step 1 with fresh
-    // state; the listener goes up before the visibility query so a show in
-    // between is not missed.
+    // state; the registration is awaited before the visibility query so a
+    // show that lands between the two IPC round trips is not missed
+    // (`listen` only resolves once the listener is registered).
     // Targeted at this window's label: `emit_to` also reaches `Any`-target
     // listeners, so a default `listen` would follow the main window too.
-    listen('window-visible', (e) => setPolling(Boolean(e.payload)),
+    await listen('window-visible', (e) => setPolling(Boolean(e.payload)),
       { target: getCurrentWindow().label });
     const visible = await getCurrentWindow().isVisible().catch(() => true);
     setPolling(visible);
