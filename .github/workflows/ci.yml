@@ -69,7 +69,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: whisper-cpp-bin
-          key: whisper-cpp-${{ runner.os }}-${{ env.WHISPER_CPP_TAG }}-static
+          key: whisper-cpp-${{ runner.os }}-${{ env.WHISPER_CPP_TAG }}-static-generic
 
       - name: Build whisper.cpp from source (Linux/Windows)
         if: runner.os != 'macOS' && steps.whisper-cache.outputs.cache-hit != 'true'
@@ -78,9 +78,13 @@ jobs:
           git clone --depth 1 --branch "$WHISPER_CPP_TAG" https://github.com/ggml-org/whisper.cpp.git whisper-cpp-src
           # Static libraries: only the bin/ directory is cached, so binaries that
           # link libwhisper.so/libggml.so out of the build tree would fail to
-          # start on the next run once the tree is gone.
+          # start on the next run once the tree is gone. GGML_NATIVE=OFF: the
+          # cached binary runs on whichever runner CPU the next job lands on,
+          # and a -march=native build from a different machine dies at model
+          # load with an illegal instruction.
           cmake -S whisper-cpp-src -B whisper-cpp-src/build -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+            -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF \
+            -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
           cmake --build whisper-cpp-src/build --config Release -j 4
           mkdir -p whisper-cpp-bin
           # Windows multi-config generators put binaries under bin/Release.
