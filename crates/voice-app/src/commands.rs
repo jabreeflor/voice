@@ -21,7 +21,7 @@ use chrono::{DateTime, Local, TimeZone};
 use serde::Serialize;
 use tauri::{Emitter, State};
 use tauri_plugin_autostart::ManagerExt;
-use voice_core::{Config, HistoryStore, Hotkey, StatusColor};
+use voice_core::{Config, HistoryStore, Hotkey, Settings, StatusColor};
 
 use crate::app::App;
 use crate::platform;
@@ -127,6 +127,22 @@ where
     dt.format("%-I:%M %p").to_string()
 }
 
+/// The hotkey every display surface should name: the configured value clamped
+/// to `Hotkey::available()`, the same fallback `HotkeyController` applies when
+/// hooking. `Config::hotkey` accepts any raw variant, so a settings.json synced
+/// from another platform can name a key this one cannot hook; showing that key
+/// in the Settings select, the onboarding tiles, the tray title or the status
+/// text would describe a hotkey nothing is listening for.
+pub fn effective_hotkey(settings: &Settings) -> Hotkey {
+    let configured = Config::hotkey(settings);
+    let available = Hotkey::available();
+    if available.contains(&configured) {
+        configured
+    } else {
+        available[0]
+    }
+}
+
 /// Builds the Dictations tab payload from a store (split out so it can be
 /// exercised against a throwaway `HistoryStore`).
 pub fn dictations_dto(history: &HistoryStore, hotkey: Hotkey) -> DictationsDto {
@@ -165,7 +181,7 @@ pub fn get_status(app: State<'_, Arc<App>>) -> StatusDto {
 
 #[tauri::command]
 pub fn get_dictations(app: State<'_, Arc<App>>) -> DictationsDto {
-    let hotkey = Config::hotkey(&app.settings);
+    let hotkey = effective_hotkey(&app.settings);
     let history = app.history.lock().unwrap_or_else(|e| e.into_inner());
     dictations_dto(&history, hotkey)
 }
@@ -218,7 +234,7 @@ pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
         false
     });
     SettingsDto {
-        hotkey: Config::hotkey(&app.settings).raw_value().to_string(),
+        hotkey: effective_hotkey(&app.settings).raw_value().to_string(),
         hotkeys: Hotkey::available()
             .into_iter()
             .map(|hk| HotkeyOptionDto {
@@ -354,6 +370,27 @@ mod tests {
         let tz = FixedOffset::east_opt(5 * 3600).unwrap();
         let dt = tz.with_ymd_and_hms(2025, 9, 15, 9, 30, 0).unwrap();
         assert_eq!(format_time(&dt), "9:30 AM");
+    }
+
+    // Every display surface goes through `effective_hotkey`, so a hotkey the
+    // platform cannot hook must clamp to the same default the hook uses
+    // (otherwise the Settings select renders empty and no onboarding tile
+    // is selected).
+    #[test]
+    fn effective_hotkey_clamps_to_available() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let settings = Settings::in_dir(dir.path());
+        let available = Hotkey::available();
+        let unavailable = Hotkey::ALL
+            .iter()
+            .copied()
+            .find(|hk| !available.contains(hk))
+            .expect("every platform lacks one variant");
+        Config::set_hotkey(&settings, unavailable);
+        assert_eq!(effective_hotkey(&settings), available[0]);
+        assert!(available.contains(&effective_hotkey(&settings)));
+        Config::set_hotkey(&settings, Hotkey::RightCommand);
+        assert_eq!(effective_hotkey(&settings), Hotkey::RightCommand);
     }
 
     #[test]

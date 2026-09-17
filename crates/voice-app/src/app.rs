@@ -46,6 +46,7 @@ use voice_core::{
 };
 
 use crate::audio::Recorder;
+use crate::commands::effective_hotkey;
 use crate::hotkey::{HotkeyController, HotkeyEvent};
 use crate::overlay::{Overlay, FLASH_DEFAULT};
 use crate::paste::{copy_text, paste_text};
@@ -385,7 +386,7 @@ impl App {
             setup_progress: *lock(&self.setup_progress),
             setup_failed: *lock(&self.setup_failed),
             engine,
-            hotkey: Config::hotkey(&self.settings),
+            hotkey: effective_hotkey(&self.settings),
         }
     }
 

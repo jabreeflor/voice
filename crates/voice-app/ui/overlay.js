@@ -72,12 +72,15 @@
   listen('overlay', (e) => {
     const { mode: next, message } = e.payload;
     mode = next;
-    pill.classList.toggle('flash', mode === 'flash');
     if (mode === 'hidden') {
+      // Keep the current face (text or bars) while the pill fades out; the
+      // `flash` class is swapped by the next show, as Overlay.hide() only
+      // animated alpha and left label/bars visibility alone.
       stopTicking();
       pill.classList.remove('show');
       return;
     }
+    pill.classList.toggle('flash', mode === 'flash');
     if (mode === 'flash') {
       stopTicking();
       label.textContent = message || '';

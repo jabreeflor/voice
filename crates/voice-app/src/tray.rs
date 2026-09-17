@@ -16,9 +16,9 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::AppHandle;
-use voice_core::Config;
 
 use crate::app::{App, TrayItems};
+use crate::commands::effective_hotkey;
 
 pub const TRAY_ID: &str = "voice-tray";
 
@@ -114,7 +114,7 @@ pub fn build(handle: &AppHandle, app: Arc<App>) -> tauri::Result<()> {
 
 /// Updates the title/status items and the Copy Last enabled state.
 pub fn refresh(app: &App) {
-    let title = title_text(&Config::hotkey(&app.settings).label());
+    let title = title_text(&effective_hotkey(&app.settings).label());
     let status = app.status_info().text;
     let has_history = !app
         .history

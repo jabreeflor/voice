@@ -140,8 +140,12 @@
 
   function announce(text) {
     const live = $('sr-live');
+    // Clear in one task and re-set in a later one: writing the same string
+    // twice in a row leaves the accessibility tree unchanged, and copying
+    // the same row twice must announce twice (Swift posted
+    // announcementRequested on every copy).
     live.textContent = '';
-    live.textContent = text;
+    setTimeout(() => { live.textContent = text; }, 50);
   }
 
   // ── snippets ──────────────────────────────────────────────────────────
