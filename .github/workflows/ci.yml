@@ -12,38 +12,87 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+  MODEL_FILE: ggml-base.en.bin
+  # SHA-256 from https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-base.en.bin
+  MODEL_SHA256: a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
+  # whisper.cpp tag built from source on Linux/Windows (Homebrew provides it on macOS).
+  WHISPER_CPP_TAG: v1.7.6
+
 jobs:
   test:
-    name: Build & test
-    runs-on: macos-15
-    timeout-minutes: 30
-
-    env:
-      MODEL_FILE: ggml-base.en.bin
-      # SHA-256 from https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-base.en.bin
-      MODEL_SHA256: a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
+    name: Build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show toolchain
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      # Tauri's Linux backend links against WebKitGTK; the hook/paste/audio
+      # crates need X11, ALSA and libxdo headers.
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
         run: |
-          swift --version
-          xcodebuild -version
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+            libasound2-dev libxdo-dev libxtst-dev libxkbcommon-dev libssl-dev pkg-config patchelf
 
       # whisper-server is what WhisperEngine spawns. The formula may already be
       # present in a warm image, so a failed install is only fatal if the binary
       # is still missing afterwards.
-      - name: Install whisper-cpp
+      - name: Install whisper-cpp (macOS)
+        if: runner.os == 'macOS'
         run: |
           brew install whisper-cpp || brew upgrade whisper-cpp || true
           if ! command -v whisper-server >/dev/null 2>&1; then
             echo "::error::whisper-server not on PATH after brew install"
             exit 1
           fi
-          whisper-server --help 2>&1 | head -3 || true
 
-      # Cached at the path Config.findModel() actually searches, so a cache hit
+      - name: Restore whisper.cpp build (Linux/Windows)
+        if: runner.os != 'macOS'
+        id: whisper-cache
+        uses: actions/cache@v4
+        with:
+          path: whisper-cpp-bin
+          key: whisper-cpp-${{ runner.os }}-${{ env.WHISPER_CPP_TAG }}
+
+      - name: Build whisper.cpp from source (Linux/Windows)
+        if: runner.os != 'macOS' && steps.whisper-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          git clone --depth 1 --branch "$WHISPER_CPP_TAG" https://github.com/ggml-org/whisper.cpp.git whisper-cpp-src
+          cmake -S whisper-cpp-src -B whisper-cpp-src/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+          cmake --build whisper-cpp-src/build --config Release -j 4
+          mkdir -p whisper-cpp-bin
+          # Windows multi-config generators put binaries under bin/Release.
+          for d in whisper-cpp-src/build/bin/Release whisper-cpp-src/build/bin; do
+            if [ -d "$d" ]; then cp "$d"/* whisper-cpp-bin/ 2>/dev/null || true; fi
+          done
+          ls whisper-cpp-bin
+
+      - name: Put whisper.cpp on PATH (Linux/Windows)
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          echo "$GITHUB_WORKSPACE/whisper-cpp-bin" >> "$GITHUB_PATH"
+          ls "$GITHUB_WORKSPACE/whisper-cpp-bin"
+
+      # Cached at the path Config::find_model actually searches, so a cache hit
       # needs no copy step. The digest in the key invalidates stale/wrong blobs.
       - name: Restore whisper model
         id: model-cache
@@ -56,49 +105,62 @@ jobs:
       # interrupted transfer can never be cached as a valid model.
       - name: Download whisper model
         if: steps.model-cache.outputs.cache-hit != 'true'
+        shell: bash
         run: |
           mkdir -p "$HOME/voice/models"
           curl -fL --retry 3 --retry-delay 5 \
             -o "$HOME/voice/models/$MODEL_FILE.part" \
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_FILE"
-          mv "$HOME/voice/models/$MODEL_FILE.part" \
-             "$HOME/voice/models/$MODEL_FILE"
+          mv "$HOME/voice/models/$MODEL_FILE.part" "$HOME/voice/models/$MODEL_FILE"
 
       - name: Verify model integrity
+        shell: bash
         run: |
           MODEL_PATH="$HOME/voice/models/$MODEL_FILE"
           if [ ! -f "$MODEL_PATH" ]; then
             echo "::error::Model file missing at $MODEL_PATH"
             exit 1
           fi
-          ACTUAL=$(shasum -a 256 "$MODEL_PATH" | awk '{print $1}')
+          if command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL=$(sha256sum "$MODEL_PATH" | awk '{print $1}')
+          else
+            ACTUAL=$(shasum -a 256 "$MODEL_PATH" | awk '{print $1}')
+          fi
           if [ "$ACTUAL" != "$MODEL_SHA256" ]; then
             echo "::error::Model SHA-256 mismatch: expected $MODEL_SHA256, got $ACTUAL"
             exit 1
           fi
           ls -lh "$MODEL_PATH"
 
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
       - name: Build
-        run: swift build --build-tests
+        run: cargo build --workspace --all-targets
 
       - name: Test
+        shell: bash
         run: |
           set -o pipefail
-          swift test 2>&1 | tee test-output.log
+          cargo test --workspace -- --nocapture 2>&1 | tee test-output.log
 
-      # Integration tests XCTSkip themselves when whisper-server or the model is
+      # Integration tests print "SKIPPED:" when whisper-server or the model is
       # missing. Everything above is meant to prevent that, so a skip here means
       # the environment regressed — fail the job rather than pass quietly.
       - name: Report skipped tests
         if: always()
+        shell: bash
         run: |
           if [ ! -f test-output.log ]; then
             echo "No test output — the test step did not run."
             exit 0
           fi
-          if grep -qi "skipped" test-output.log; then
+          if grep -q "SKIPPED" test-output.log; then
             echo "::error::Some tests were skipped on CI — see the list below."
-            grep -i "skipped" test-output.log
+            grep "SKIPPED" test-output.log
             exit 1
           else
             echo "No tests were skipped."
@@ -108,6 +170,53 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-output
+          name: test-output-${{ matrix.os }}
           path: test-output.log
           if-no-files-found: ignore
+
+  bundle:
+    name: Bundle app (${{ matrix.os }})
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+            libasound2-dev libxdo-dev libxtst-dev libxkbcommon-dev libssl-dev pkg-config patchelf
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build bundle
+        working-directory: crates/voice-app
+        run: cargo tauri build
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-${{ matrix.os }}
+          path: |
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.app/**
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.rpm
+            target/release/bundle/**/*.AppImage
+          if-no-files-found: warn
