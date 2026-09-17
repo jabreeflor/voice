@@ -44,7 +44,12 @@ const BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 /// surfaces as a clear failure instead of hanging the suite.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
-const FOX_PHRASE: &str = "The quick brown fox jumps over the lazy dog.";
+// jfk.wav is the public-domain recording whisper.cpp ships as its own sample
+// (samples/jfk.wav): a real human voice, so it pins that speech survives the
+// whole path. hello.wav is espeak-ng synthesis, which whisper transcribes
+// unreliably (CI runs read it as " the"), so it is only a smoke check.
+const JFK_PHRASE: &str = "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.";
+const JFK_KEYWORD: &str = "fellow americans";
 const SECOND_PHRASE: &str = "Hello world, this is a test of the voice engine.";
 
 /// Number of `test1..test5` functions below. Once that many have finished the
@@ -57,8 +62,8 @@ struct Booted {
     engine: WhisperEngine,
     boot_seconds: f64,
     model_path: PathBuf,
-    fox_wav: Vec<u8>,
-    fox_duration: f64,
+    speech_wav: Vec<u8>,
+    speech_duration: f64,
     second_wav: Vec<u8>,
 }
 
@@ -108,11 +113,11 @@ fn prepare_once() -> Result<Booted, String> {
         format!("no ggml model found in {}", dirs.join(", "))
     })?;
 
-    let fox_samples = fixture_samples("fox.wav")?;
-    let fox_duration = fox_samples.len() as f64 / 16_000.0;
-    let fox_wav = wav_data(&fox_samples);
+    let speech_samples = fixture_samples("jfk.wav")?;
+    let speech_duration = speech_samples.len() as f64 / 16_000.0;
+    let speech_wav = wav_data(&speech_samples);
     let second_wav = wav_data(&fixture_samples("hello.wav")?);
-    if fox_wav.len() <= 44 || second_wav.len() <= 44 {
+    if speech_wav.len() <= 44 || second_wav.len() <= 44 {
         return Err("speech fixtures came out empty".into());
     }
 
@@ -159,8 +164,8 @@ fn prepare_once() -> Result<Booted, String> {
         engine,
         boot_seconds,
         model_path: model,
-        fox_wav,
-        fox_duration,
+        speech_wav,
+        speech_duration,
         second_wav,
     };
     // `start()` kicks off an internal warm-up transcription. Run one more and
@@ -190,14 +195,14 @@ fn test1_server_boots_and_becomes_ready() {
         BOOT_TIMEOUT.as_secs()
     );
     log(&format!(
-        "booted {} on port {TEST_PORT} in {:.2}s (fox fixture: {} WAV bytes, {:.2}s)",
+        "booted {} on port {TEST_PORT} in {:.2}s (speech fixture: {} WAV bytes, {:.2}s)",
         b.model_path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy(),
         b.boot_seconds,
-        b.fox_wav.len(),
-        b.fox_duration
+        b.speech_wav.len(),
+        b.speech_duration
     ));
 }
 
@@ -206,18 +211,23 @@ fn test2_transcribes_speech_fixture() {
     let _done = Completion;
     let Some(b) = booted() else { return };
 
-    let raw = transcribe_sync(&b.engine, &b.fox_wav).expect("fox transcription");
-    log(&format!("fox transcript: {raw:?}"));
+    let raw = transcribe_sync(&b.engine, &b.speech_wav).expect("speech transcription");
+    log(&format!("speech transcript: {raw:?}"));
     assert!(
-        normalize(&raw).contains("quick brown fox"),
-        "expected 'quick brown fox' in transcript of {FOX_PHRASE:?}, got: {raw:?}"
+        normalize(&raw).contains(JFK_KEYWORD),
+        "expected {JFK_KEYWORD:?} in transcript of {JFK_PHRASE:?}, got: {raw:?}"
     );
 
+    // Synthetic voice: only require that the engine returns *some* words for
+    // it, and log what they were so a regression in the synthetic path is
+    // still visible in the CI log.
     let second = transcribe_sync(&b.engine, &b.second_wav).expect("second transcription");
-    log(&format!("second transcript: {second:?}"));
+    log(&format!(
+        "synthetic transcript ({SECOND_PHRASE:?}): {second:?}"
+    ));
     assert!(
-        normalize(&second).contains("hello world"),
-        "expected 'hello world' in transcript of {SECOND_PHRASE:?}, got: {second:?}"
+        !normalize(&second).is_empty(),
+        "synthetic speech fixture transcribed to nothing"
     );
 }
 
@@ -225,7 +235,7 @@ fn test2_transcribes_speech_fixture() {
 fn test3_clean_transcript_produces_usable_text() {
     let _done = Completion;
     let Some(b) = booted() else { return };
-    let raw = transcribe_sync(&b.engine, &b.fox_wav).expect("fox transcription");
+    let raw = transcribe_sync(&b.engine, &b.speech_wav).expect("speech transcription");
     let cleaned = clean_transcript(&raw);
 
     assert!(
@@ -254,7 +264,7 @@ fn test3_clean_transcript_produces_usable_text() {
         "clean_transcript left surrounding whitespace"
     );
     assert!(
-        normalize(&cleaned).contains("quick brown fox"),
+        normalize(&cleaned).contains(JFK_KEYWORD),
         "cleanup damaged the words: {cleaned:?}"
     );
     log(&format!("cleaned transcript: {cleaned:?}"));
@@ -265,7 +275,7 @@ fn test4_warm_transcription_meets_latency_budget() {
     let _done = Completion;
     let Some(b) = booted() else { return };
     assert!(
-        b.fox_duration > 1.5,
+        b.speech_duration > 1.5,
         "latency fixture should be a few seconds of speech"
     );
 
@@ -278,19 +288,19 @@ fn test4_warm_transcription_meets_latency_budget() {
     let mut elapsed = 0.0;
     for attempt in 1..=3 {
         let start = Instant::now();
-        let result = transcribe_sync(&b.engine, &b.fox_wav);
+        let result = transcribe_sync(&b.engine, &b.speech_wav);
         elapsed = start.elapsed().as_secs_f64();
         result.expect("transcription");
         log(&format!(
             "latency run {attempt}: {elapsed:.2}s for {:.2}s of audio ({:.2}x realtime)",
-            b.fox_duration,
-            b.fox_duration / elapsed.max(0.001)
+            b.speech_duration,
+            b.speech_duration / elapsed.max(0.001)
         ));
     }
     assert!(
         elapsed < budget,
         "warm transcription of {:.2}s of audio took {elapsed:.2}s, over the {budget:.2}s budget",
-        b.fox_duration
+        b.speech_duration
     );
 }
 
