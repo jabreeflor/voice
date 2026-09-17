@@ -195,6 +195,11 @@ fn expand_tilde_handles_bare_and_absent_tilde() {
 }
 
 // MARK: - find_model invariants
+//
+// These run against the real `models_dirs()`, which are usually empty on CI,
+// so they only pin invariants. The directory scan itself (preference walk,
+// dir-major precedence, sorted `ggml*.bin` fallback) is exercised against
+// temp directories by the unit tests at the bottom of src/config.rs.
 
 /// Whatever find_model returns must actually be on disk, or the engine is
 /// launched against a path that cannot be opened.
