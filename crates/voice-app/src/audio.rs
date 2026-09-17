@@ -23,6 +23,12 @@ const NO_INPUT: &str = "No microphone input (check mic permission).";
 /// multiple of this, so `RateConverter` buffers the remainder between calls.
 const RESAMPLE_CHUNK: usize = 1024;
 
+/// 16 kHz output frames per level update. Swift taps the input at 4096
+/// frames per buffer (~85 ms at 48 kHz) and applies the 0.82 decay once per
+/// buffer; cpal's default buffer is 480-1024 frames and varies by backend, so
+/// the decay is tied to this fixed amount of audio instead of the device.
+const LEVEL_BLOCK: usize = 4096 * Recorder::SAMPLE_RATE as usize / 48_000;
+
 /// State shared between the cpal callback thread and the app thread.
 struct Shared {
     samples: Mutex<Vec<f32>>,
@@ -40,7 +46,10 @@ impl Shared {
             pipeline: Mutex::new(Pipeline {
                 channels,
                 converter,
+                mono: Vec::new(),
                 scratch: Vec::new(),
+                level_sum: 0.0,
+                level_count: 0,
             }),
             level: AtomicU32::new(0.0f32.to_bits()),
         }
@@ -63,27 +72,51 @@ impl Shared {
         let Ok(mut pipeline) = self.pipeline.lock() else {
             return;
         };
-        let mono = mix_to_mono(interleaved, pipeline.channels);
-        let mut out = std::mem::take(&mut pipeline.scratch);
+        // Both buffers are reused across callbacks: no allocation on the
+        // audio thread once they have grown to the device buffer size.
+        let Pipeline {
+            channels,
+            converter,
+            mono,
+            scratch: out,
+            level_sum,
+            level_count,
+        } = &mut *pipeline;
+        mix_to_mono(interleaved, *channels, mono);
         out.clear();
-        match pipeline.converter.as_mut() {
-            Some(conv) => conv.push(&mono, &mut out),
-            None => out.extend_from_slice(&mono),
+        match converter.as_mut() {
+            Some(conv) => conv.push(mono, out),
+            None => out.extend_from_slice(mono),
         }
-        if !out.is_empty() {
-            self.set_level(next_level(rms(&out), self.level()));
-            if let Ok(mut samples) = self.samples.lock() {
-                samples.extend_from_slice(&out);
+        if out.is_empty() {
+            return;
+        }
+        for &s in out.iter() {
+            *level_sum += s * s;
+            *level_count += 1;
+            if *level_count == LEVEL_BLOCK {
+                let rms = (*level_sum / LEVEL_BLOCK as f32).sqrt();
+                self.set_level(next_level(rms, self.level()));
+                *level_sum = 0.0;
+                *level_count = 0;
             }
         }
-        pipeline.scratch = out;
+        if let Ok(mut samples) = self.samples.lock() {
+            samples.extend_from_slice(out);
+        }
     }
 }
 
 struct Pipeline {
     channels: usize,
     converter: Option<RateConverter>,
+    /// Reusable mono mix of the current device buffer.
+    mono: Vec<f32>,
+    /// Reusable 16 kHz output of the current device buffer.
     scratch: Vec<f32>,
+    /// Sum of squares and count of the partial `LEVEL_BLOCK` in progress.
+    level_sum: f32,
+    level_count: usize,
 }
 
 pub struct Recorder {
@@ -134,10 +167,23 @@ impl Recorder {
         let shared = Arc::new(Shared::new(channels, converter));
         let config = supported.config();
 
+        // Every PCM format cpal can deliver converts to f32 through
+        // `FromSample`; ALSA `hw:` devices and WASAPI mix formats commonly
+        // land on I24/I32, which AVAudioConverter accepted transparently.
+        // Only the DSD formats (not PCM) are left out.
         let stream = match supported.sample_format() {
             SampleFormat::F32 => build_stream::<f32>(&device, &config, &shared),
+            SampleFormat::F64 => build_stream::<f64>(&device, &config, &shared),
+            SampleFormat::I8 => build_stream::<i8>(&device, &config, &shared),
             SampleFormat::I16 => build_stream::<i16>(&device, &config, &shared),
+            SampleFormat::I24 => build_stream::<cpal::I24>(&device, &config, &shared),
+            SampleFormat::I32 => build_stream::<i32>(&device, &config, &shared),
+            SampleFormat::I64 => build_stream::<i64>(&device, &config, &shared),
+            SampleFormat::U8 => build_stream::<u8>(&device, &config, &shared),
             SampleFormat::U16 => build_stream::<u16>(&device, &config, &shared),
+            SampleFormat::U24 => build_stream::<cpal::U24>(&device, &config, &shared),
+            SampleFormat::U32 => build_stream::<u32>(&device, &config, &shared),
+            SampleFormat::U64 => build_stream::<u64>(&device, &config, &shared),
             other => Err(format!("Unsupported microphone sample format {other:?}.")),
         }?;
         stream.play().map_err(|e| e.to_string())?;
@@ -179,7 +225,7 @@ impl Recorder {
     }
 
     /// Smoothed input level 0..1: fast attack, slow decay
-    /// (`max(min(rms * 9, 1), level * 0.82)` per buffer).
+    /// (`max(min(rms * 9, 1), level * 0.82)` per `LEVEL_BLOCK` of audio).
     pub fn level(&self) -> f32 {
         self.shared.as_ref().map(|s| s.level()).unwrap_or(0.0)
     }
@@ -212,17 +258,19 @@ where
 
 // MARK: pure pieces (unit-tested; no device involved)
 
-/// Averages every frame's channels into one f32 sample.
-fn mix_to_mono<T>(interleaved: &[T], channels: usize) -> Vec<f32>
+/// Averages every frame's channels into one f32 sample, replacing `out`.
+fn mix_to_mono<T>(interleaved: &[T], channels: usize, out: &mut Vec<f32>)
 where
     T: SizedSample,
     f32: FromSample<T>,
 {
     let channels = channels.max(1);
-    interleaved
-        .chunks_exact(channels)
-        .map(|frame| frame.iter().map(|&s| f32::from_sample(s)).sum::<f32>() / channels as f32)
-        .collect()
+    out.clear();
+    out.extend(
+        interleaved
+            .chunks_exact(channels)
+            .map(|frame| frame.iter().map(|&s| f32::from_sample(s)).sum::<f32>() / channels as f32),
+    );
 }
 
 fn rms(samples: &[f32]) -> f32 {
@@ -239,13 +287,23 @@ fn next_level(rms: f32, previous: f32) -> f32 {
 
 /// Streaming device-rate → 16 kHz conversion. `SincFixedIn` needs exactly
 /// `RESAMPLE_CHUNK` input frames per call, so partial buffers wait in
-/// `pending` until enough arrive; `flush` zero-pads the tail at the end.
+/// `pending` until enough arrive; `flush` zero-pads the tail at the end and
+/// drains the filter's group delay so the last word is not clipped.
 struct RateConverter {
     resampler: SincFixedIn<f32>,
     /// Output frames per input frame (16 000 / device rate).
     ratio: f64,
     pending: Vec<f32>,
     out: Vec<Vec<f32>>,
+    /// Frames consumed from `pending` and frames produced so far. The sinc
+    /// filter is centred, so the output lags the input by ~sinc_len/2
+    /// input frames (rubato drops that lead-in from the first chunk); the
+    /// difference between `in_frames * ratio` and `out_frames` is what is
+    /// still inside the filter at the end.
+    in_frames: usize,
+    out_frames: usize,
+    /// `flush` is once per recording; a second call must not emit more.
+    flushed: bool,
 }
 
 impl RateConverter {
@@ -265,6 +323,9 @@ impl RateConverter {
             ratio,
             pending: Vec::with_capacity(RESAMPLE_CHUNK * 2),
             out,
+            in_frames: 0,
+            out_frames: 0,
+            flushed: false,
         })
     }
 
@@ -278,32 +339,63 @@ impl RateConverter {
                 .resampler
                 .process_into_buffer(&input, &mut self.out, None)
             {
-                Ok((_, written)) => into.extend_from_slice(&self.out[0][..written]),
+                Ok((_, written)) => {
+                    into.extend_from_slice(&self.out[0][..written]);
+                    self.out_frames += written;
+                }
                 Err(e) => log::warn!("resample failed: {e}"),
             }
+            self.in_frames += chunk;
             offset += chunk;
         }
         self.pending.drain(..offset);
     }
 
-    /// Pushes out the buffered remainder (zero-padded) and the filter delay.
+    /// Pushes out the buffered remainder (zero-padded) and the frames still
+    /// held back by the filter delay (~22 at 48 kHz, ~132 at 8 kHz). Runs
+    /// even when nothing is pending: the delayed frames only come out once
+    /// zeros are pushed through, and skipping them clips the last word.
     fn flush(&mut self, into: &mut Vec<f32>) {
-        if self.pending.is_empty() {
+        if self.flushed {
             return;
         }
+        self.flushed = true;
         let tail = std::mem::take(&mut self.pending);
-        let input = [tail.as_slice()];
-        match self
-            .resampler
-            .process_partial_into_buffer(Some(&input), &mut self.out, None)
-        {
-            Ok((_, written)) => {
-                // Only the part that corresponds to real input; the rest is
-                // the zero padding rendered through the filter.
-                let keep = ((tail.len() as f64 * self.ratio).round() as usize).min(written);
-                into.extend_from_slice(&self.out[0][..keep]);
+        let total = ((self.in_frames + tail.len()) as f64 * self.ratio).round() as usize;
+        let mut needed = total.saturating_sub(self.out_frames);
+        // The first call carries the real tail; later ones feed zeros only.
+        // Each partial call is padded to a full chunk, so one extra call is
+        // enough when tail + delay exceed the chunk. An empty tail must go in
+        // as `None`: rubato treats an empty channel slice as inactive.
+        let mut tail = (!tail.is_empty()).then_some(tail);
+        while needed > 0 {
+            let result = match tail.take() {
+                Some(tail) => {
+                    let input = [tail.as_slice()];
+                    self.resampler
+                        .process_partial_into_buffer(Some(&input), &mut self.out, None)
+                }
+                None => self.resampler.process_partial_into_buffer(
+                    None::<&[&[f32]]>,
+                    &mut self.out,
+                    None,
+                ),
+            };
+            match result {
+                Ok((_, 0)) => break,
+                Ok((_, written)) => {
+                    // Only the part that corresponds to real input; the rest
+                    // is zero padding rendered through the filter.
+                    let keep = written.min(needed);
+                    into.extend_from_slice(&self.out[0][..keep]);
+                    self.out_frames += keep;
+                    needed -= keep;
+                }
+                Err(e) => {
+                    log::warn!("resample flush failed: {e}");
+                    break;
+                }
             }
-            Err(e) => log::warn!("resample flush failed: {e}"),
         }
     }
 }
@@ -312,28 +404,55 @@ impl RateConverter {
 mod tests {
     use super::*;
 
+    fn mono<T>(interleaved: &[T], channels: usize) -> Vec<f32>
+    where
+        T: SizedSample,
+        f32: FromSample<T>,
+    {
+        // Pre-filled so the test also pins that `out` is replaced, not appended.
+        let mut out = vec![9.0; 3];
+        mix_to_mono(interleaved, channels, &mut out);
+        out
+    }
+
     #[test]
     fn mono_mix_averages_channels() {
         let stereo = [0.5f32, -0.5, 1.0, 0.0, 0.25, 0.75];
-        assert_eq!(mix_to_mono(&stereo, 2), vec![0.0, 0.5, 0.5]);
+        assert_eq!(mono(&stereo, 2), vec![0.0, 0.5, 0.5]);
         // Mono passes through unchanged; a trailing partial frame is dropped.
-        assert_eq!(mix_to_mono(&[0.1f32, 0.2, 0.3], 1), vec![0.1, 0.2, 0.3]);
-        assert_eq!(mix_to_mono(&[1.0f32, 1.0, 1.0], 2), vec![1.0]);
+        assert_eq!(mono(&[0.1f32, 0.2, 0.3], 1), vec![0.1, 0.2, 0.3]);
+        assert_eq!(mono(&[1.0f32, 1.0, 1.0], 2), vec![1.0]);
     }
 
     #[test]
     fn mono_mix_converts_integer_formats() {
         // cpal integer samples scale to [-1, 1] before mixing.
         let i16s = [i16::MAX, 0, i16::MIN, i16::MIN];
-        let mixed = mix_to_mono(&i16s, 2);
+        let mixed = mono(&i16s, 2);
         assert!((mixed[0] - 0.5).abs() < 1e-4, "{mixed:?}");
         assert!((mixed[1] + 1.0).abs() < 1e-4, "{mixed:?}");
         let u16s = [u16::MAX, 32768u16];
-        let mixed = mix_to_mono(&u16s, 1);
+        let mixed = mono(&u16s, 1);
         assert!(
             (mixed[0] - 1.0).abs() < 1e-3 && mixed[1].abs() < 1e-4,
             "{mixed:?}"
         );
+        // 24-bit devices (ALSA hw:, WASAPI mix formats) are dispatched too.
+        let i24s = [
+            cpal::I24::new(0).unwrap(),
+            cpal::I24::new((1 << 23) - 1).unwrap(),
+        ];
+        let mixed = mono(&i24s, 1);
+        assert!(
+            mixed[0].abs() < 1e-6 && (mixed[1] - 1.0).abs() < 1e-3,
+            "{mixed:?}"
+        );
+    }
+
+    #[test]
+    fn level_block_is_swift_buffer_at_16k() {
+        // 4096 frames at 48 kHz (Swift's tap buffer, ~85 ms) resampled to 16 kHz.
+        assert_eq!(LEVEL_BLOCK, 1365);
     }
 
     #[test]
@@ -369,13 +488,11 @@ mod tests {
         }
         conv.flush(&mut out);
 
+        // The flush drains the filter delay, so the count is exact to
+        // within rounding of the partial last chunk.
         let expected = Recorder::SAMPLE_RATE as usize;
         let diff = out.len().abs_diff(expected);
-        assert!(
-            diff <= 64,
-            "got {} samples, expected ~{expected}",
-            out.len()
-        );
+        assert!(diff <= 2, "got {} samples, expected ~{expected}", out.len());
 
         // Skip the filter transient at both ends before measuring.
         let mid = &out[1000..out.len() - 1000];
@@ -391,9 +508,50 @@ mod tests {
         conv.push(&vec![0.25f32; 441], &mut out);
         assert!(out.is_empty());
         conv.flush(&mut out);
-        assert!(out.len().abs_diff(160) <= 4, "got {}", out.len());
-        // Flushing again with nothing pending is a no-op.
+        assert!(out.len().abs_diff(160) <= 2, "got {}", out.len());
+        // Flushing again is a no-op.
         conv.flush(&mut out);
-        assert!(out.len().abs_diff(160) <= 4);
+        assert!(out.len().abs_diff(160) <= 2);
+    }
+
+    #[test]
+    fn flush_drains_filter_delay_at_low_rates() {
+        // At 8 kHz the sinc group delay is ~128 output frames; a recording
+        // whose length is an exact multiple of the chunk (nothing pending)
+        // used to lose all of them. Half a second of DC must come back whole
+        // and at full amplitude right up to the end.
+        let from = 8_000u32;
+        let mut conv = RateConverter::new(from).expect("resampler");
+        let mut out = Vec::new();
+        conv.push(&vec![0.5f32; RESAMPLE_CHUNK * 4], &mut out);
+        let before_flush = out.len();
+        conv.flush(&mut out);
+        let expected = RESAMPLE_CHUNK * 4 * 2;
+        assert!(out.len() > before_flush, "flush emitted nothing");
+        assert!(
+            out.len().abs_diff(expected) <= 2,
+            "got {} samples, expected ~{expected}",
+            out.len()
+        );
+        let last = out[out.len() - 1];
+        assert!((last - 0.5).abs() < 0.05, "tail sample {last}");
+    }
+
+    #[test]
+    fn flush_also_covers_tail_longer_than_chunk_minus_delay() {
+        // tail + delay exceeds one padded chunk, so flush needs a second
+        // zero-only call to drain everything.
+        let from = 48_000u32;
+        let mut conv = RateConverter::new(from).expect("resampler");
+        let mut out = Vec::new();
+        let frames = RESAMPLE_CHUNK * 2 + RESAMPLE_CHUNK - 8;
+        conv.push(&vec![0.5f32; frames], &mut out);
+        conv.flush(&mut out);
+        let expected = frames / 3;
+        assert!(
+            out.len().abs_diff(expected) <= 2,
+            "got {} samples, expected ~{expected}",
+            out.len()
+        );
     }
 }
