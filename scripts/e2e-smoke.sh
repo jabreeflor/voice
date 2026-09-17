@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # leaves it under the cargo target dir. Prefer the root copy (it also carries
 # voicectl and the keychain signature that keeps TCC grants).
 APP="$REPO_ROOT/Voice.app"
-[ -x "$APP/Contents/MacOS/Voice" ] \
+[ -x "$APP/Contents/MacOS/voice" ] \
     || APP="${CARGO_TARGET_DIR:-$REPO_ROOT/target}/release/bundle/macos/Voice.app"
 PORT=8178
 
@@ -57,7 +57,7 @@ step "Preflight"
 
 PREFLIGHT_OK=1
 
-if [ -x "$APP/Contents/MacOS/Voice" ]; then
+if [ -x "$APP/Contents/MacOS/voice" ]; then
     info "Voice.app: $APP"
 else
     fail "Voice.app not built. Run ./build.sh (or 'cargo tauri build' in crates/voice-app) first."
@@ -118,7 +118,7 @@ fi
 # ---------------------------------------------------------------------------
 step "Starting Voice.app"
 
-if pgrep -f "Voice.app/Contents/MacOS/Voice" >/dev/null 2>&1; then
+if pgrep -f "Voice.app/Contents/MacOS/voice" >/dev/null 2>&1; then
     info "Already running — leaving it alone."
 else
     open "$APP"

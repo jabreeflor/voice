@@ -34,14 +34,14 @@ actual transcription. Pick whichever route suits you.
 ### Prebuilt bundles
 
 Every push to `main` builds installers on the [CI workflow](https://github.com/jabreeflor/voice/actions/workflows/ci.yml)
-(`Bundle app` jobs, artifacts named `voice-<os>`), and tagged versions are
-attached to [Releases](https://github.com/jabreeflor/voice/releases):
+(`Bundle app` jobs, artifacts named `voice-<os>`; download them from the
+workflow run's summary page):
 
 | OS | Bundle | Notes |
 |---|---|---|
 | macOS | `Voice_x.y.z_aarch64.dmg` / `Voice.app` | Not notarized: right-click → Open the first time, or `xattr -dr com.apple.quarantine /Applications/Voice.app`. |
 | Windows | `Voice_x.y.z_x64-setup.exe` / `.msi` | Unsigned: SmartScreen shows "More info → Run anyway". |
-| Linux | `voice_x.y.z_amd64.deb` / `.AppImage` | `.deb` needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`); the AppImage is self-contained. |
+| Linux | `Voice_x.y.z_amd64.deb` / `.AppImage` | `.deb` needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`); the AppImage is self-contained. |
 
 Then install whisper.cpp for your OS (next section) and launch Voice.
 
@@ -125,7 +125,8 @@ install -m 755 whisper.cpp/build/bin/whisper-server ~/.local/bin/
 Download a `whisper-bin-x64.zip` from the
 [whisper.cpp releases](https://github.com/ggml-org/whisper.cpp/releases)
 (or build it with CMake) and put `whisper-server.exe` — with the DLLs that
-come in the same zip — either next to `Voice.exe`, in
+come in the same zip — either next to `voice.exe` (the installed Voice
+executable), in
 `%LOCALAPPDATA%\voice\bin`, or anywhere on `PATH`.
 
 </details>
@@ -188,9 +189,13 @@ pin one, set `"modelFile": "ggml-small.en.bin"` in `settings.json` (see
 [Where things live](#-where-things-live)), or force a path for one run:
 
 ```sh
-VOICE_MODEL=~/path/to/model.bin open /Applications/Voice.app     # macOS
-VOICE_MODEL=~/path/to/model.bin voice                            # Linux
+open --env VOICE_MODEL=~/path/to/model.bin /Applications/Voice.app   # macOS
+VOICE_MODEL=~/path/to/model.bin voice                                # Linux
 ```
+
+(`open` launches apps through launchd, which does not inherit the shell's
+environment, hence `--env`; running
+`/Applications/Voice.app/Contents/MacOS/voice` directly works too.)
 
 ## ⚙️ Tray menu and window
 

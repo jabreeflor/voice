@@ -128,7 +128,9 @@ if [ "$OS" = "Darwin" ]; then
     bold "Installing to $DEST..."
     # Quit a running copy so the bundle can be replaced cleanly.
     osascript -e 'tell application "Voice" to quit' >/dev/null 2>&1 || true
-    pkill -x Voice 2>/dev/null || true
+    # The bundle executable is Contents/MacOS/voice (the cargo bin name);
+    # pkill -x matches case-sensitively.
+    pkill -x voice 2>/dev/null || true
     rm -rf "$DEST"
     cp -R "$WORKDIR/voice/$APP" "$DEST"
     CLI_SRC="$DEST/Contents/MacOS/voicectl"
@@ -138,7 +140,9 @@ else
     (cd "$WORKDIR/voice/crates/voice-app" && cargo tauri build)
     # The Linux bundles do not carry voicectl; it is a separate package.
     (cd "$WORKDIR/voice" && cargo build --release -p voicectl)
-    BUNDLE="$WORKDIR/voice/target/release/bundle"
+    # Mirror build.sh: honour a caller's CARGO_TARGET_DIR.
+    TARGET="${CARGO_TARGET_DIR:-$WORKDIR/voice/target}"
+    BUNDLE="$TARGET/release/bundle"
 
     pkill -x voice 2>/dev/null || true
 
@@ -159,7 +163,7 @@ else
 
     # voicectl is copied (not linked) because the build tree is deleted on exit.
     mkdir -p "$HOME/.local/bin"
-    install -m 755 "$WORKDIR/voice/target/release/voicectl" "$HOME/.local/bin/voicectl"
+    install -m 755 "$TARGET/release/voicectl" "$HOME/.local/bin/voicectl"
     CLI_SRC="$HOME/.local/bin/voicectl"
 
     # Detach from this terminal so closing it does not take the app down.

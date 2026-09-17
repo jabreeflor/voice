@@ -148,7 +148,7 @@ new commands in `tests/cli.rs`.
 
 | Tier | What | Where |
 | --- | --- | --- |
-| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,cli}.rs` plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection) | CI `cargo test --workspace` |
+| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,cli,download}.rs` plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection) | CI `cargo test --workspace` |
 | 2 | Real `whisper-server` + fixture audio: `tests/engine_integration.rs` `test1..test5` | CI `cargo test --workspace` |
 | 3 | `compute_status` decision table: `tests/status.rs` | CI `cargo test --workspace` |
 | 4 | Full GUI dictation | `scripts/e2e-smoke.sh` only (macOS) |
@@ -182,8 +182,10 @@ Rules:
   `cargo clippy -p voice-app --all-targets --target x86_64-pc-windows-gnu -- -D warnings`.
 - Confirm any crate API against its source under `~/.cargo/registry/src/*/`
   before using it.
-- Product name is **voice**; the bundle is `Voice` (`Voice.app`,
-  `Voice.exe`, Linux binary `voice`), the crates stay `voice-core`,
+- Product name is **voice**; the bundle is `Voice` (`Voice.app`, the
+  `Voice_x.y.z_*` installers), the executable inside every bundle is the
+  cargo bin name `voice` (`Contents/MacOS/voice`, `voice.exe`, Linux
+  `voice`), the crates stay `voice-core`,
   `voicectl`, `voice-app`. Bundle id `com.local.voice`. Models live in
   `~/voice/models` (fallback `~/.voice/models`), override with `VOICE_MODEL`.
 - Default model is `ggml-base.en.bin` (fast enough for hold-to-talk).
