@@ -14,7 +14,12 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ./build.sh copies the bundle to the repo root; a plain `cargo tauri build`
+# leaves it under the cargo target dir. Prefer the root copy (it also carries
+# voicectl and the keychain signature that keeps TCC grants).
 APP="$REPO_ROOT/Voice.app"
+[ -x "$APP/Contents/MacOS/voice" ] \
+    || APP="${CARGO_TARGET_DIR:-$REPO_ROOT/target}/release/bundle/macos/Voice.app"
 PORT=8178
 
 # Short, phonetically distinct, and unlikely to appear in a stray transcription.
@@ -52,10 +57,10 @@ step "Preflight"
 
 PREFLIGHT_OK=1
 
-if [ -x "$APP/Contents/MacOS/Voice" ]; then
+if [ -x "$APP/Contents/MacOS/voice" ]; then
     info "Voice.app: $APP"
 else
-    fail "Voice.app not built. Run ./build.sh first."
+    fail "Voice.app not built. Run ./build.sh (or 'cargo tauri build' in crates/voice-app) first."
     PREFLIGHT_OK=0
 fi
 
@@ -113,7 +118,7 @@ fi
 # ---------------------------------------------------------------------------
 step "Starting Voice.app"
 
-if pgrep -f "Voice.app/Contents/MacOS/Voice" >/dev/null 2>&1; then
+if pgrep -f "Voice.app/Contents/MacOS/voice" >/dev/null 2>&1; then
     info "Already running — leaving it alone."
 else
     open "$APP"
@@ -135,7 +140,7 @@ done
 
 if [ "$ENGINE_UP" -eq 0 ]; then
     fail "Engine never came up on port $PORT after 90s."
-    info "Check the Voice menu bar item for its status text."
+    info "Check the Voice tray menu (or the Settings tab) for its status text."
     exit 1
 fi
 
@@ -166,9 +171,10 @@ sleep 1
 # ---------------------------------------------------------------------------
 step "Dictating: \"$PHRASE\""
 
-# Right-Option is keycode 61. The app's event tap listens for .flagsChanged
-# with .maskAlternate set (press) and cleared (release), so a plain keyDown is
-# not enough — the event type has to be rewritten to flagsChanged.
+# Right-Option is keycode 61. The app's CGEvent tap (hotkey.rs) listens for
+# .flagsChanged with .maskAlternate set (press) and cleared (release), so a
+# plain keyDown is not enough — the event type has to be rewritten to
+# flagsChanged. The snippet needs the Xcode Command Line Tools for `swift`.
 #
 # `say` runs synchronously between press and release, which is what makes the
 # hold last as long as the speech. The recording is only as good as what the

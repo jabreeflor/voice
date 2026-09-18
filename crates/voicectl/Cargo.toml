@@ -1,0 +1,14 @@
+[package]
+name = "voicectl"
+description = "Command-line snippet editor for voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "voicectl"
+path = "src/main.rs"
+
+[dependencies]
+voice-core.workspace = true

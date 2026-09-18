@@ -1,4 +1,4 @@
-# Build output
+# build.sh copies the bundled app here for install.sh / e2e-smoke.sh
 Voice.app/
 
 # Whisper models — downloaded on first run, too big for git
@@ -6,4 +6,12 @@ models/
 
 # macOS
 .DS_Store
-.build*/
+
+# Rust build output, Tauri's generated schemas, agent worktrees
+target/
+crates/voice-app/gen/
+.claude/worktrees/
+
+# whisper.cpp built from source by CI (Linux/Windows jobs)
+whisper-cpp-src/
+whisper-cpp-bin/

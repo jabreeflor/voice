@@ -1,0 +1,49 @@
+[package]
+name = "voice-app"
+description = "voice — local hold-to-talk dictation (tray app)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# The binary is `Voice` on disk (bundle executable name); the crate stays voice-app.
+[[bin]]
+name = "voice"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+voice-core.workspace = true
+tauri.workspace = true
+tauri-plugin-autostart.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+cpal.workspace = true
+rubato.workspace = true
+rdev.workspace = true
+arboard.workspace = true
+enigo.workspace = true
+log.workspace = true
+env_logger.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Accessibility (AXIsProcessTrusted*) and microphone (AVCaptureDevice) checks,
+# plus the hold-to-talk CGEvent tap.
+core-foundation.workspace = true
+core-graphics.workspace = true
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-av-foundation.workspace = true
+block2.workspace = true
+# Overlay window: collection behaviour + status-bar level (see overlay.rs).
+objc2-app-kit.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Microphone consent lives in the CapabilityAccessManager registry store.
+winreg.workspace = true
