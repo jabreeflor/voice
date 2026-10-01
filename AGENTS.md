@@ -44,9 +44,9 @@ crates/voice-app/                Tauri 2 desktop app
   src/overlay.rs                 floating pill window driver
   src/commands.rs                #[tauri::command] handlers + DTOs used by ui/
   src/platform/{mod,macos,windows,linux}.rs  permissions, settings panes, relaunch
-  ui/                            static HTML/CSS/JS (index, onboarding, overlay), sounds/
+  ui/                            static HTML/CSS/JS (index, onboarding, overlay, theme.js), sounds/
 assets/app-prototype.html        HTML mirror of the design tokens — keep in sync with ui/
-assets/screenshots/              README images
+assets/screenshots/              README images (dark-mode/: light/dark UI evidence)
 build.sh                         macOS wrapper: cargo tauri build → ./Voice.app (+ voicectl) + codesign
 scripts/install.sh               curl | bash installer for macOS and Linux
 scripts/e2e-smoke.sh             tier-4 GUI smoke (macOS, manual)
@@ -198,9 +198,14 @@ Rules:
   white window, flat light-gray bubble cards (no outlines, no dashed rules),
   one black pill for the primary action, blue accent for
   links/selection/emphasis, orange/green mascot colours for the brand blob
-  and hero art. System sans only: no serif, no italics, no uppercase
-  microcaps (section headers are sentence case). Keep the prototype and
-  `ui/app.css` tokens in sync.
+  and hero art. Dark mode swaps the same tokens (charcoal window and cards,
+  the primary pill inverts to white): `app.css` repeats one dark block under
+  `prefers-color-scheme` and under `:root[data-theme="dark"]`, set by
+  `ui/theme.js` from `Settings → Appearance`; edit both together (a
+  `commands.rs` test pins them equal) and never hardcode a colour that
+  should flip. The overlay HUD stays black (`--hud`) in both. System sans
+  only: no serif, no italics, no uppercase microcaps (section headers are
+  sentence case). Keep the prototype and `ui/app.css` tokens in sync.
 - Comments explain non-obvious constraints (ports, skip-vs-fail, TCC,
   clipboard restore timing, Wayland). Do not narrate obvious code.
 
@@ -217,7 +222,9 @@ Rules:
   macOS the activation policy is Accessory until a window is shown.
 - `Settings` keys keep the Swift `UserDefaults` names (`hotkey`, `sounds`,
   `trailingSpace`, `modelFile`, `onboarded`, `lastAXRelaunch`, `wordsTotal`)
-  and `Hotkey::raw_value` keeps the Swift raw strings.
+  and `Hotkey::raw_value` keeps the Swift raw strings. `appearance`
+  (`system` / `light` / `dark`, Rust-only) is the one key the Swift app
+  never wrote.
 - `history.json` and `snippets.json` stay byte-compatible with the files the
   Swift app wrote: `DictationEntry.date` is stored as seconds since
   2001-01-01 (Apple reference date), and `Store::dir()` is

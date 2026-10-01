@@ -100,6 +100,42 @@ impl Hotkey {
     }
 }
 
+/// Window colour scheme. `System` follows the OS light/dark setting; the
+/// other two pin it. Not a Swift setting (the AppKit app only followed the
+/// system), so the raw values are new and lower-case like the CSS
+/// `data-theme` attribute ui/app.css keys its dark tokens on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum Appearance {
+    System,
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    /// In the order the Appearance select lists them.
+    pub const ALL: [Appearance; 3] = [Appearance::System, Appearance::Light, Appearance::Dark];
+
+    pub fn raw_value(self) -> &'static str {
+        match self {
+            Appearance::System => "system",
+            Appearance::Light => "light",
+            Appearance::Dark => "dark",
+        }
+    }
+
+    pub fn from_raw(raw: &str) -> Option<Appearance> {
+        Appearance::ALL.into_iter().find(|a| a.raw_value() == raw)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Appearance::System => "Match system",
+            Appearance::Light => "Light",
+            Appearance::Dark => "Dark",
+        }
+    }
+}
+
 /// Expands a leading `~` or `~/` to the user's home directory. A bare `~` is
 /// returned as-is when no home directory can be resolved.
 ///
@@ -165,6 +201,19 @@ impl Config {
 
     pub fn set_sounds_enabled(settings: &Settings, enabled: bool) {
         settings.set("sounds", enabled);
+    }
+
+    /// Default `System`; an unknown raw value falls back the same way an
+    /// unknown hotkey does.
+    pub fn appearance(settings: &Settings) -> Appearance {
+        settings
+            .get_string("appearance")
+            .and_then(|raw| Appearance::from_raw(&raw))
+            .unwrap_or(Appearance::System)
+    }
+
+    pub fn set_appearance(settings: &Settings, appearance: Appearance) {
+        settings.set("appearance", appearance.raw_value());
     }
 
     pub fn trailing_space(settings: &Settings) -> bool {

@@ -231,6 +231,17 @@
       }
     }
     sel.value = settings.hotkey;
+    const look = $('appearance-select');
+    if (look.options.length !== settings.appearances.length) {
+      look.textContent = '';
+      for (const a of settings.appearances) {
+        const o = document.createElement('option');
+        o.value = a.id;
+        o.textContent = a.label;
+        look.appendChild(o);
+      }
+    }
+    look.value = settings.appearance;
     setSwitch($('sounds-switch'), settings.sounds);
     setSwitch($('login-switch'), settings.start_at_login);
   }
@@ -239,6 +250,8 @@
     el.setAttribute('aria-checked', on ? 'true' : 'false');
   }
   $('hotkey-select').addEventListener('change', (e) => invoke('set_hotkey', { id: e.target.value }));
+  // theme.js restyles every window on the backend's `appearance-changed`.
+  $('appearance-select').addEventListener('change', (e) => invoke('set_appearance', { id: e.target.value }));
   $('sounds-switch').addEventListener('click', (e) => {
     const on = !e.currentTarget.classList.contains('on');
     setSwitch(e.currentTarget, on);

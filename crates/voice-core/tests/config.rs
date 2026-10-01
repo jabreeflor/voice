@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
-use voice_core::{expand_tilde, Config, Hotkey, ModelCatalog, Settings};
+use voice_core::{expand_tilde, Appearance, Config, Hotkey, ModelCatalog, Settings};
 
 struct Fixture {
     dir: TempDir,
@@ -454,4 +454,43 @@ fn sounds_and_trailing_space_default_to_on() {
     assert!(!Config::sounds_enabled(&f.settings));
     f.settings.set("trailingSpace", false);
     assert!(!Config::trailing_space(&f.settings));
+}
+
+// MARK: - Appearance
+
+#[test]
+fn appearance_defaults_to_following_the_system() {
+    let fx = fixture();
+    assert_eq!(Config::appearance(&fx.settings), Appearance::System);
+}
+
+#[test]
+fn appearance_round_trips_through_settings() {
+    let fx = fixture();
+    for appearance in Appearance::ALL {
+        Config::set_appearance(&fx.settings, appearance);
+        assert_eq!(Config::appearance(&fx.settings), appearance);
+        assert_eq!(
+            Appearance::from_raw(appearance.raw_value()),
+            Some(appearance)
+        );
+        assert!(!appearance.label().is_empty());
+    }
+}
+
+/// ui/app.css matches `:root[data-theme="light"|"dark"]` on these strings, and
+/// they sit in settings.json under `appearance`; renaming either strands a
+/// user's choice.
+#[test]
+fn appearance_raw_values_match_the_css_theme_attribute() {
+    assert_eq!(Appearance::System.raw_value(), "system");
+    assert_eq!(Appearance::Light.raw_value(), "light");
+    assert_eq!(Appearance::Dark.raw_value(), "dark");
+}
+
+#[test]
+fn unknown_appearance_falls_back_to_system() {
+    let fx = fixture();
+    fx.settings.set("appearance", "sepia");
+    assert_eq!(Config::appearance(&fx.settings), Appearance::System);
 }

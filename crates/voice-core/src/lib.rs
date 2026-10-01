@@ -24,7 +24,7 @@ pub mod transcript;
 pub mod wav;
 
 pub use cli::{CliResult, VoiceCli};
-pub use config::{expand_tilde, Config, Hotkey, ModelCatalog, ModelSpec};
+pub use config::{expand_tilde, Appearance, Config, Hotkey, ModelCatalog, ModelSpec};
 pub use download::ModelDownloader;
 pub use engine::{EngineError, WhisperEngine};
 pub use settings::Settings;

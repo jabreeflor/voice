@@ -10,7 +10,34 @@
     --soft: #6E6E73; --faint: #8E8E93; --line: #E5E5EA;
     --accent: #2478F3; --accent-tint: #E9F2FF; --pillk: #0F0F10;
     --green: #34C759; --green-tint: #E5F7E9; --orange: #FF7A1A;
+    --pill-ink: #FFFFFF; --pill-soft: rgba(255,255,255,.75); --pill-key: rgba(255,255,255,.15);
+    --switch-off: #D1D1D6;
+    --hud: #0F0F10;
     --sans: -apple-system, system-ui, "Inter", "Helvetica Neue", Arial, sans-serif;
+    color-scheme: light;
+  }
+  /* Dark tokens: kept identical to crates/voice-app/ui/app.css. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1C1C1E; --panel: #2C2C2E; --panel-deep: #3A3A3C; --ink: #F5F5F7;
+      --soft: #AEAEB2; --faint: #8E8E93; --line: #38383A;
+      --accent: #3D8BFF; --accent-tint: #1B2C47; --pillk: #F5F5F7;
+      --green: #30D158; --green-tint: #1C3524; --orange: #FF8A33;
+      --red: #FF453A;
+      --pill-ink: #0F0F10; --pill-soft: rgba(15,15,16,.7); --pill-key: rgba(15,15,16,.1);
+      --switch-off: #48484A;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1C1C1E; --panel: #2C2C2E; --panel-deep: #3A3A3C; --ink: #F5F5F7;
+    --soft: #AEAEB2; --faint: #8E8E93; --line: #38383A;
+    --accent: #3D8BFF; --accent-tint: #1B2C47; --pillk: #F5F5F7;
+    --green: #30D158; --green-tint: #1C3524; --orange: #FF8A33;
+    --red: #FF453A;
+    --pill-ink: #0F0F10; --pill-soft: rgba(15,15,16,.7); --pill-key: rgba(15,15,16,.1);
+    --switch-off: #48484A;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #E9E9EC; font-family: var(--sans); color: var(--ink);
@@ -22,7 +49,7 @@
   .proto-bar span { font-size: 13px; color: rgba(0,0,0,.5); margin-right: 6px; }
   .proto-btn { font: 600 13px var(--sans); padding: 8px 18px; border-radius: 999px;
     border: none; background: var(--bg); color: var(--ink); cursor: pointer; }
-  .proto-btn.active { background: var(--pillk); color: #fff; }
+  .proto-btn.active { background: var(--pillk); color: var(--pill-ink); }
 
   .window { width: min(1040px, 96vw); height: 690px; background: var(--bg);
     border-radius: 14px; box-shadow: 0 30px 80px rgba(0,0,0,.28);
@@ -37,7 +64,7 @@
   .sticker { background: var(--panel); border-radius: 20px; }
   .sticker-lav { background: var(--accent-tint); border-radius: 20px; }
   .cap-btn { font: 600 13.5px var(--sans); padding: 10px 22px; border-radius: 999px;
-    cursor: pointer; background: var(--pillk); color: #fff; border: none;
+    cursor: pointer; background: var(--pillk); color: var(--pill-ink); border: none;
     transition: transform .08s, opacity .12s; }
   .cap-btn:active { transform: scale(.98); }
   .cap-btn.lav { background: var(--panel); color: var(--ink); }
@@ -125,10 +152,10 @@
   .statchip .l { font-size: 12px; color: var(--soft); display: flex; align-items: center; gap: 6px; }
   .statchip .l::before { content: ""; width: 8px; height: 8px; border-radius: 50%;
                          background: var(--c, var(--accent)); display: inline-block; }
-  .livecap { margin-left: auto; background: var(--pillk); color: #fff; border-radius: 22px;
+  .livecap { margin-left: auto; background: var(--pillk); color: var(--pill-ink); border-radius: 22px;
     display: flex; align-items: center; gap: 12px; padding: 0 24px; }
-  .livecap span { font: 500 12.5px var(--sans); color: rgba(255,255,255,.75); }
-  .livecap kbd { font: 600 11.5px var(--sans); background: rgba(255,255,255,.15);
+  .livecap span { font: 500 12.5px var(--sans); color: var(--pill-soft); }
+  .livecap kbd { font: 600 11.5px var(--sans); background: var(--pill-key);
                  padding: 1px 7px; border-radius: 6px; }
   .ledger { padding: 4px 0; margin-bottom: 22px; }
   .lrow { display: flex; gap: 16px; padding: 13px 20px; align-items: baseline;
@@ -153,7 +180,7 @@
   .ex .say { font: 600 13px var(--sans); background: var(--bg);
              border: 1px solid var(--line); padding: 6px 14px; border-radius: 14px; }
   .ex .arrow { font: 600 13px var(--sans); color: var(--soft); }
-  .ex .out { font: 12.5px var(--sans); background: var(--pillk); color: #fff;
+  .ex .out { font: 12.5px var(--sans); background: var(--pillk); color: var(--pill-ink);
              padding: 7px 14px; border-radius: 14px; max-width: 420px;
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .slist { padding: 4px 0; }
@@ -184,7 +211,7 @@
   .set-row + .set-row { border-top: 1px solid var(--line); }
   .set-row select { font: 13px var(--sans); padding: 6px 12px; border-radius: 8px;
                     border: 1px solid var(--line); background: var(--bg); }
-  .switch { width: 40px; height: 24px; border-radius: 12px; background: #D1D1D6;
+  .switch { width: 40px; height: 24px; border-radius: 12px; background: var(--switch-off);
             border: none; position: relative; cursor: pointer; }
   .switch i { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px;
               border-radius: 50%; background: #fff; transition: left .15s;
@@ -194,7 +221,7 @@
   /* floating dictation pill */
   #pill { position: fixed; bottom: 34px; left: 50%;
     transform: translateX(-50%) translateY(90px);
-    background: var(--pillk); border: 1px solid rgba(255,255,255,.18); color: #fff;
+    background: var(--hud); border: 1px solid rgba(255,255,255,.18); color: #fff;
     border-radius: 999px; padding: 13px 26px; transition: transform .18s; z-index: 50;
     box-shadow: 0 12px 30px rgba(0,0,0,.35); }
   #pill.show { transform: translateX(-50%) translateY(0); }
@@ -229,14 +256,14 @@
     <p>Voice only listens while you hold the hotkey — never in the background.</p>
     <div class="perm sticker">
       <div class="glyph">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#2478F3" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/></svg>
       </div>
       <div class="tx"><b>Microphone</b><small>To hear you while the hotkey is held.</small></div>
       <button class="cap-btn lav" id="mic-chip" onclick="grant(this)">Allow</button>
     </div>
     <div class="perm sticker">
       <div class="glyph">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#2478F3" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
       </div>
       <div class="tx"><b>Accessibility</b><small>To catch the hotkey anywhere and type at your cursor.</small></div>
       <button class="cap-btn lav" id="ax-chip" onclick="grant(this)">Open Settings</button>
