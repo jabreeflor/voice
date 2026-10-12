@@ -41,11 +41,14 @@ crates/voice-app/                Tauri 2 desktop app
   src/app.rs                     App state machine, recording flow, status, window show/hide
   src/audio.rs                   Recorder (cpal → 16 kHz mono f32)
   src/hotkey.rs                  HotkeyController (CGEvent tap / rdev)
-  src/paste.rs                   paste_text (arboard + enigo, clipboard restore)
+  src/paste.rs                   paste_text (arboard + enigo, clipboard restore),
+                                 paste_outcome (platform-neutral landed/not-landed decision)
   src/tray.rs                    tray icon + menu
   src/overlay.rs                 floating pill window driver
   src/commands.rs                #[tauri::command] handlers + DTOs used by ui/
   src/platform/{mod,macos,windows,linux}.rs  permissions, settings panes, relaunch
+  src/platform/macos_pasteboard.rs  macOS only: promised pasteboard item (paste-landed check)
+  tests/macos_pasteboard.rs      harness = false: that module against real AppKit + osascript
   ui/                            static HTML/CSS/JS (index, onboarding, overlay, theme.js,
                                  keyboard.js talk-key picker), sounds/
 assets/app-prototype.html        HTML mirror of the design tokens — keep in sync with ui/
@@ -132,7 +135,13 @@ feature flags to make macOS code compile elsewhere.
    (default off; any error pastes the unpolished text), then
    `SnippetStore::expand` rewrites triggers, then `paste::paste_text` copies
    to the clipboard, synthesizes ⌘V / Ctrl+V with `enigo`, and restores the
-   previous clipboard after 0.6 s. History is appended, the overlay flashes
+   previous clipboard after 0.6 s. On macOS the copy is a promised
+   `NSPasteboardItem` (`platform::macos_pasteboard`); if no app reads it
+   within 1.2 s, `paste_outcome` says `NotPasted`, the transcript is kept on
+   the clipboard as a plain string (no restore) and the overlay flashes
+   "Not pasted, copied to clipboard". The provider callback is served on the
+   main thread's run loop, so `paste_text` must never run on the main
+   thread. Windows/Linux cannot tell and keep the old behaviour. History is appended, the overlay flashes
    "Typed: …" (24-char prefix), and a trailing space is added when
    `trailingSpace` is on.
 
@@ -160,7 +169,7 @@ new commands in `tests/cli.rs`.
 
 | Tier | What | Where |
 | --- | --- | --- |
-| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,vocabulary,prompt,polish,cli,download}.rs` (`polish.rs` runs a mock OpenAI-compatible server on 127.0.0.1) plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection) | CI `cargo test --workspace` |
+| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,vocabulary,prompt,polish,cli,download}.rs` (`polish.rs` runs a mock OpenAI-compatible server on 127.0.0.1) plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection, `paste_outcome`) and, on macOS, `voice-app/tests/macos_pasteboard.rs` (real AppKit promise on a private named pasteboard, read by an `osascript` process) | CI `cargo test --workspace` |
 | 2 | Real `whisper-server` + fixture audio: `tests/engine_integration.rs` `test1..test6` | CI `cargo test --workspace` |
 | 3 | `compute_status` decision table: `tests/status.rs` | CI `cargo test --workspace` |
 | 4 | Full GUI dictation | `scripts/e2e-smoke.sh` only (macOS) |

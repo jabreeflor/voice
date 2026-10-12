@@ -71,6 +71,10 @@ const MIC_PREVIEW: Duration = Duration::from_secs(3);
 const FLASH_SETTING_UP: Duration = Duration::from_millis(1400);
 const FLASH_MIC_ERROR: Duration = Duration::from_secs(2);
 const FLASH_ENGINE_ERROR: Duration = Duration::from_millis(2200);
+/// Long enough to read, since the user has to act on it (paste by hand).
+const FLASH_NOT_PASTED: Duration = Duration::from_millis(2200);
+/// Overlay notice when macOS saw no app read the pasted text.
+pub const NOT_PASTED_MESSAGE: &str = "Not pasted, copied to clipboard";
 /// Overlay preview of a pasted dictation: this many characters then "…".
 const TYPED_PREVIEW_CHARS: usize = 24;
 
@@ -847,15 +851,19 @@ impl App {
             duration,
             latency,
         ));
-        if Config::trailing_space(&self.settings) {
-            paste_text(&format!("{text} "));
+        let outcome = if Config::trailing_space(&self.settings) {
+            paste_text(&format!("{text} "))
         } else {
-            paste_text(&text);
-        }
+            paste_text(&text)
+        };
         if Config::sounds_enabled(&self.settings) {
             self.overlay.play_sound("done");
         }
-        self.overlay.flash(&typed_flash(&text), FLASH_DEFAULT);
+        if outcome.notify_user() {
+            self.overlay.flash(NOT_PASTED_MESSAGE, FLASH_NOT_PASTED);
+        } else {
+            self.overlay.flash(&typed_flash(&text), FLASH_DEFAULT);
+        }
         let _ = self.handle.emit("dictation-landed", ());
         let _ = self.handle.emit("history-changed", ());
         self.refresh_ui();

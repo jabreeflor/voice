@@ -159,6 +159,13 @@ transcript appears at your cursor.
 - The tray icon shows status and turns red while recording; a small pill at
   the bottom of the screen shows the live level and "Typed: …" after a
   paste.
+- On macOS Voice also checks that the paste landed: if no app took the
+  text within about a second of <kbd>⌘V</kbd> (no text field focused, say),
+  the pill says **"Not pasted, copied to clipboard"** and the transcript
+  stays on the clipboard for you to paste by hand, instead of your old
+  clipboard coming back. (A clipboard manager that reads every copy makes
+  every paste look successful, so with one running you get the old
+  behaviour.) Windows and Linux cannot tell, and behave as before.
 
 ### Talk key
 
@@ -336,7 +343,9 @@ graph LR
   markers and filler words (and optionally polished by a local LLM), snippet triggers are expanded,
   the text is placed on the clipboard, and <kbd>⌘V</kbd> / <kbd>Ctrl+V</kbd>
   is synthesized into the frontmost app — your previous clipboard is
-  restored afterwards.
+  restored afterwards. On macOS the text is put on the clipboard as a
+  *promise* that is only filled in when an app reads it, which is how
+  Voice knows whether the paste was taken.
 
 **Privacy:** the server binds to localhost only. No telemetry, no accounts,
 no network calls except model downloads from Hugging Face. The optional

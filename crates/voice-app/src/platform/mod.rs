@@ -9,6 +9,10 @@
 mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::*;
+/// macOS-only paste-landing detection (promised pasteboard item); outside
+/// the shared contract below, so callers gate on `cfg(target_os = "macos")`.
+#[cfg(target_os = "macos")]
+pub mod macos_pasteboard;
 
 #[cfg(target_os = "windows")]
 mod windows;
