@@ -276,6 +276,15 @@
     }
     look.value = settings.appearance;
     setSwitch($('context-switch'), settings.context_prompt);
+    setSwitch($('fillers-switch'), settings.remove_fillers);
+    setSwitch($('polish-switch'), settings.llm_polish);
+    $('polish-switch').closest('.set-card').classList.toggle('polish-on', settings.llm_polish);
+    // The 1 s refresh must not overwrite a field the user is typing in, nor
+    // a refused URL they have not corrected yet.
+    for (const [id, value] of [['polish-url', settings.llm_polish_url], ['polish-model', settings.llm_polish_model]]) {
+      const field = $(id);
+      if (document.activeElement !== field && !field.classList.contains('invalid')) field.value = value;
+    }
     setSwitch($('sounds-switch'), settings.sounds);
     setSwitch($('login-switch'), settings.start_at_login);
   }
@@ -309,6 +318,26 @@
   }
   // theme.js restyles every window on the backend's `appearance-changed`.
   $('appearance-select').addEventListener('change', (e) => invoke('set_appearance', { id: e.target.value }));
+  $('fillers-switch').addEventListener('click', (e) => {
+    const on = !e.currentTarget.classList.contains('on');
+    setSwitch(e.currentTarget, on);
+    invoke('set_remove_fillers', { enabled: on });
+  });
+  $('polish-switch').addEventListener('click', (e) => {
+    const on = !e.currentTarget.classList.contains('on');
+    setSwitch(e.currentTarget, on);
+    e.currentTarget.closest('.set-card').classList.toggle('polish-on', on);
+    invoke('set_llm_polish', { enabled: on });
+  });
+  // Only loopback URLs are accepted (the backend refuses anything else, so
+  // dictated text can never leave the machine); a refused URL turns red.
+  $('polish-url').addEventListener('change', async (e) => {
+    const ok = await invoke('set_llm_polish_url', { url: e.target.value });
+    e.target.classList.toggle('invalid', !ok);
+    e.target.title = ok ? '' : 'Only this computer: 127.0.0.1, ::1 or localhost';
+  });
+  $('polish-url').addEventListener('input', (e) => e.target.classList.remove('invalid'));
+  $('polish-model').addEventListener('change', (e) => invoke('set_llm_polish_model', { model: e.target.value }));
   $('context-switch').addEventListener('click', (e) => {
     const on = !e.currentTarget.classList.contains('on');
     setSwitch(e.currentTarget, on);

@@ -243,6 +243,27 @@ anywhere but the local whisper-server.
   line. A long prompt adds a little decode time, so keep the list to the
   words whisper actually gets wrong. `voicectl vocab prompt` prints the
   exact line.
+- **Remove filler words** (Settings, on by default) — drops *um*, *uh*,
+  *erm* and their stretched spellings, then repairs the commas and capital
+  letters around them: "Um, so I think, uh, we ship it" pastes as "So I
+  think we ship it". Words that are only *sometimes* filler ("like", "you
+  know", "I mean", "hmm") are left alone, and so are "umbrella", "uh-oh",
+  "uh huh" and all-caps acronyms like "UM". It is plain pattern matching
+  for English; turn it off if you dictate Portuguese or German, where "um"
+  is a real word.
+- **Polish with a local LLM** (Settings, off by default) — sends the
+  cleaned transcript to an OpenAI-compatible chat endpoint **on this
+  computer** to fix punctuation, casing and false starts. The default is
+  [Ollama](https://ollama.com)'s `http://127.0.0.1:11434/v1/chat/completions`
+  with `llama3.2:3b` (`ollama pull llama3.2:3b`); llama.cpp's
+  `llama-server` and LM Studio work too. Only `127.0.0.1`, `::1` and
+  `localhost` URLs are accepted — anything else is refused before a
+  connection is made, and the request ignores proxy settings — so the
+  text cannot leave the machine. The pass gives up after 2.5 s, and on any
+  error (server not running, model missing, a reply that looks like the
+  model answered instead of cleaning) the un-polished text is pasted, so
+  dictation never blocks on it. Snippets are expanded after the pass, so
+  their text is pasted exactly as written.
 
 ## ⌨️ Command line: `voicectl`
 
@@ -300,7 +321,7 @@ graph LR
     A["🎹 Hold talk key"] --> B["🎙️ Record<br>16 kHz mono"]
     B --> C["⏹ Release"]
     C --> D["whisper-server<br>127.0.0.1:8178"]
-    D --> E["🧹 Clean up<br>+ expand snippets"]
+    D --> E["🧹 Clean up, fillers,<br>optional local LLM<br>+ expand snippets"]
     E --> F["📋 Paste at cursor<br>(clipboard restored)"]
 ```
 
@@ -312,13 +333,14 @@ graph LR
   and resampled to 16 kHz mono.
 - On release, the WAV is POSTed to the local server (with your vocabulary
   as whisper's prompt), the transcript is cleaned of whisper's non-speech
-  markers, snippet triggers are expanded,
+  markers and filler words (and optionally polished by a local LLM), snippet triggers are expanded,
   the text is placed on the clipboard, and <kbd>⌘V</kbd> / <kbd>Ctrl+V</kbd>
   is synthesized into the frontmost app — your previous clipboard is
   restored afterwards.
 
 **Privacy:** the server binds to localhost only. No telemetry, no accounts,
-no network calls except model downloads from Hugging Face.
+no network calls except model downloads from Hugging Face. The optional
+LLM polish talks only to a loopback address you run yourself.
 
 ## 🛠️ Development
 

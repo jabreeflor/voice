@@ -40,10 +40,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager};
+use voice_core::polish;
 use voice_core::{
-    clean_transcript, compute_status, wav_data, whisper_prompt, Config, DictationEntry,
-    HistoryStore, Hotkey, ModelCatalog, ModelDownloader, Platform, Settings, SnippetStore,
-    StatusInfo, StatusInputs, Store, VocabularyStore, WhisperEngine,
+    clean_transcript, compute_status, remove_fillers, wav_data, whisper_prompt, Config,
+    DictationEntry, HistoryStore, Hotkey, ModelCatalog, ModelDownloader, Platform, Settings,
+    SnippetStore, StatusInfo, StatusInputs, Store, VocabularyStore, WhisperEngine,
 };
 
 use crate::audio::Recorder;
@@ -822,13 +823,21 @@ impl App {
         self.overlay.hide();
     }
 
-    /// Everything after a successful transcription: cleanup, snippets,
-    /// history, paste, confirmation.
+    /// Everything after a successful transcription: cleanup (artifacts,
+    /// fillers, optional local LLM), snippets, history, paste, confirmation.
+    /// The LLM pass runs before snippet expansion so a snippet's text is
+    /// pasted exactly as the user wrote it.
     fn deliver(&self, raw: String, duration: f64, sent_at: Instant) {
-        let cleaned = clean_transcript(&raw);
+        let mut cleaned = clean_transcript(&raw);
+        if Config::remove_fillers(&self.settings) {
+            cleaned = remove_fillers(&cleaned);
+        }
         if cleaned.is_empty() {
             self.overlay.flash("No speech detected", FLASH_DEFAULT);
             return;
+        }
+        if Config::llm_polish(&self.settings) {
+            cleaned = self.polish(cleaned);
         }
         let text = lock(&self.snippets).expand(&cleaned);
         let latency = sent_at.elapsed().as_secs_f64();
@@ -850,6 +859,21 @@ impl App {
         let _ = self.handle.emit("dictation-landed", ());
         let _ = self.handle.emit("history-changed", ());
         self.refresh_ui();
+    }
+
+    /// The local-LLM pass, bounded by `polish::POLISH_TIMEOUT`. Any failure
+    /// (server not running, model missing, timeout, a non-loopback URL in
+    /// settings.json) pastes the text unpolished; only the log says why.
+    fn polish(&self, text: String) -> String {
+        let url = Config::llm_polish_url(&self.settings);
+        let model = Config::llm_polish_model(&self.settings);
+        match polish::polish(&text, &url, &model, polish::POLISH_TIMEOUT) {
+            Ok(polished) => polished,
+            Err(e) => {
+                log::warn!("LLM polish skipped: {e}");
+                text
+            }
+        }
     }
 
     pub fn cancel_recording(&self) {

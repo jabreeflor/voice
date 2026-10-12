@@ -90,6 +90,10 @@
         <p class="kb-hint">Click a highlighted key, or press it, to hold it for dictation.</p>
       </div>
       <div class="set-row"><span>Appearance</span><select id="appearance-select" aria-label="Appearance"></select></div>
+      <div class="set-row"><span>Remove filler words</span><button class="switch" id="fillers-switch" role="switch" aria-checked="true" aria-label="Remove filler words"><i></i></button></div>
+      <div class="set-row"><span>Polish with a local LLM</span><button class="switch" id="polish-switch" role="switch" aria-checked="false" aria-label="Polish with a local LLM"><i></i></button></div>
+      <div class="set-row polish-opt"><span>LLM endpoint</span><input type="text" id="polish-url" aria-label="LLM endpoint URL" spellcheck="false"></div>
+      <div class="set-row polish-opt"><span>LLM model</span><input type="text" id="polish-model" aria-label="LLM model" spellcheck="false"></div>
       <div class="set-row"><span>Use vocabulary as a hint</span><button class="switch" id="context-switch" role="switch" aria-checked="true" aria-label="Use vocabulary as a hint"><i></i></button></div>
       <div class="set-row"><span>Sound effects</span><button class="switch" id="sounds-switch" role="switch" aria-checked="true" aria-label="Sound effects"><i></i></button></div>
       <div class="set-row"><span>Start at login</span><button class="switch" id="login-switch" role="switch" aria-checked="false" aria-label="Start at login"><i></i></button></div>

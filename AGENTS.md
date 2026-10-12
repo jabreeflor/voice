@@ -19,7 +19,8 @@ crates/voice-core/               pure logic, no GUI/audio deps; builds + tests e
   src/lib.rs                     module map + re-exports
   src/settings.rs                Settings: JSON key/value file replacing UserDefaults
   src/config.rs                  Hotkey, Config (port, models dirs, model search), ModelCatalog
-  src/transcript.rs              clean_transcript
+  src/transcript.rs              clean_transcript, remove_fillers (um/uh/erm, English-only)
+  src/polish.rs                  optional local-LLM pass (OpenAI-compatible, loopback URLs only)
   src/wav.rs                     wav_data (44-byte RIFF header, 16 kHz mono i16)
   src/status.rs                  StatusInputs / compute_status decision table
   src/store.rs                   Store::dir, HistoryStore, SnippetStore, VocabularyStore
@@ -125,7 +126,10 @@ feature flags to make macOS code compile elsewhere.
    disturbed. `find_binary` searches next to the executable, `PATH`, then
    the fixed install prefixes (Homebrew, `/usr/bin`, `~/.local/bin`,
    `%LOCALAPPDATA%\voice\bin`).
-4. `voice_core::clean_transcript` strips known non-speech markers, then
+4. `voice_core::clean_transcript` strips known non-speech markers,
+   `remove_fillers` drops um/uh/erm when `removeFillers` is on (default),
+   `polish::polish` runs the optional local-LLM pass when `llmPolish` is on
+   (default off; any error pastes the unpolished text), then
    `SnippetStore::expand` rewrites triggers, then `paste::paste_text` copies
    to the clipboard, synthesizes ⌘V / Ctrl+V with `enigo`, and restores the
    previous clipboard after 0.6 s. History is appended, the overlay flashes
@@ -156,7 +160,7 @@ new commands in `tests/cli.rs`.
 
 | Tier | What | Where |
 | --- | --- | --- |
-| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,vocabulary,prompt,cli,download}.rs` plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection) | CI `cargo test --workspace` |
+| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,vocabulary,prompt,polish,cli,download}.rs` (`polish.rs` runs a mock OpenAI-compatible server on 127.0.0.1) plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection) | CI `cargo test --workspace` |
 | 2 | Real `whisper-server` + fixture audio: `tests/engine_integration.rs` `test1..test6` | CI `cargo test --workspace` |
 | 3 | `compute_status` decision table: `tests/status.rs` | CI `cargo test --workspace` |
 | 4 | Full GUI dictation | `scripts/e2e-smoke.sh` only (macOS) |
@@ -220,8 +224,9 @@ Rules:
 ## Invariants — do not break these
 
 - Privacy: `whisper-server` must bind `127.0.0.1` only. No analytics,
-  accounts, or sending audio off-device. Hugging Face is used only for
-  model downloads.
+  accounts, or sending audio or text off-device. Hugging Face is used only
+  for model downloads. `polish::polish` refuses any non-loopback URL before
+  connecting and its agent ignores proxy env vars; keep both.
 - Production inference stays on port 8178; tests stay on 18178.
 - `clean_transcript` only strips the listed artifacts. Unknown `[brackets]`
   are left alone.
@@ -231,8 +236,9 @@ Rules:
 - `Settings` keys keep the Swift `UserDefaults` names (`hotkey`, `sounds`,
   `trailingSpace`, `modelFile`, `onboarded`, `lastAXRelaunch`, `wordsTotal`)
   and `Hotkey::raw_value` keeps the Swift raw strings. The Rust-only keys
-  the Swift app never wrote are `appearance` (`system` / `light` / `dark`)
-  and `contextPrompt`.
+  the Swift app never wrote are `appearance` (`system` / `light` / `dark`),
+  `contextPrompt`, `removeFillers`, `llmPolish`, `llmPolishUrl` and
+  `llmPolishModel`.
 - `history.json` and `snippets.json` stay byte-compatible with the files the
   Swift app wrote: `DictationEntry.date` is stored as seconds since
   2001-01-01 (Apple reference date), and `Store::dir()` is

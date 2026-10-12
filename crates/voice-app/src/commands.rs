@@ -106,6 +106,12 @@ pub struct SettingsDto {
     pub trailing_space: bool,
     /// Send the vocabulary + snippet triggers to whisper as its prompt.
     pub context_prompt: bool,
+    pub remove_fillers: bool,
+    /// Local-LLM polish pass and its endpoint (loopback only, enforced in
+    /// `voice_core::polish`).
+    pub llm_polish: bool,
+    pub llm_polish_url: String,
+    pub llm_polish_model: String,
     /// `Appearance::raw_value`: "system" | "light" | "dark". ui/*.js mirrors
     /// it onto `<html data-theme>` (omitted for "system").
     pub appearance: String,
@@ -292,6 +298,34 @@ pub fn set_context_prompt(app: State<'_, Arc<App>>, enabled: bool) {
 }
 
 #[tauri::command]
+pub fn set_remove_fillers(app: State<'_, Arc<App>>, enabled: bool) {
+    Config::set_remove_fillers(&app.settings, enabled);
+}
+
+#[tauri::command]
+pub fn set_llm_polish(app: State<'_, Arc<App>>, enabled: bool) {
+    Config::set_llm_polish(&app.settings, enabled);
+}
+
+/// Returns false (and stores nothing) for a URL that is not on this
+/// machine, so the field can show it was refused rather than silently
+/// falling back on every dictation.
+#[tauri::command]
+pub fn set_llm_polish_url(app: State<'_, Arc<App>>, url: String) -> bool {
+    let url = url.trim();
+    if !url.is_empty() && !voice_core::polish::is_loopback_url(url) {
+        return false;
+    }
+    Config::set_llm_polish_url(&app.settings, url);
+    true
+}
+
+#[tauri::command]
+pub fn set_llm_polish_model(app: State<'_, Arc<App>>, model: String) {
+    Config::set_llm_polish_model(&app.settings, &model);
+}
+
+#[tauri::command]
 pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
     let start_at_login = app.handle.autolaunch().is_enabled().unwrap_or_else(|e| {
         log::warn!("autostart query: {e}");
@@ -311,6 +345,10 @@ pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
         start_at_login,
         trailing_space: Config::trailing_space(&app.settings),
         context_prompt: Config::context_prompt(&app.settings),
+        remove_fillers: Config::remove_fillers(&app.settings),
+        llm_polish: Config::llm_polish(&app.settings),
+        llm_polish_url: Config::llm_polish_url(&app.settings),
+        llm_polish_model: Config::llm_polish_model(&app.settings),
         appearance: Config::appearance(&app.settings).raw_value().to_string(),
         appearances: Appearance::ALL
             .into_iter()
@@ -449,6 +487,10 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         set_hotkey,
         set_sounds,
         set_context_prompt,
+        set_remove_fillers,
+        set_llm_polish,
+        set_llm_polish_url,
+        set_llm_polish_model,
         set_appearance,
         set_start_at_login,
         preview_mic,
