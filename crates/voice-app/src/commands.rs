@@ -7,6 +7,7 @@
 //! - `snippets-changed` (no payload)         snippets.json changed (app or voicectl)
 //! - `dictation-landed` (no payload)         a dictation was pasted (onboarding step 4)
 //! - `window-visible`   (bool, per window)    main/onboarding shown or hidden: start/stop UI timers
+//! - `appearance-changed` ("system" | "light" | "dark")  Settings changed the colour scheme
 //! - `overlay`, `level`, `sound`             see overlay.rs
 //!
 //! Sync commands run on the main thread. Each one takes at most one `App`
@@ -21,7 +22,7 @@ use chrono::{DateTime, Local, TimeZone};
 use serde::Serialize;
 use tauri::{Emitter, State};
 use tauri_plugin_autostart::ManagerExt;
-use voice_core::{Config, HistoryStore, Hotkey, Settings, StatusColor};
+use voice_core::{Appearance, Config, HistoryStore, Hotkey, Settings, StatusColor};
 
 use crate::app::App;
 use crate::platform;
@@ -75,6 +76,12 @@ pub struct SnippetsDto {
 }
 
 #[derive(Serialize, Clone, Debug)]
+pub struct AppearanceOptionDto {
+    pub id: String,
+    pub label: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct HotkeyOptionDto {
     /// raw value, e.g. "rightOption"
     pub id: String,
@@ -89,6 +96,10 @@ pub struct SettingsDto {
     pub sounds: bool,
     pub start_at_login: bool,
     pub trailing_space: bool,
+    /// `Appearance::raw_value`: "system" | "light" | "dark". ui/*.js mirrors
+    /// it onto `<html data-theme>` (omitted for "system").
+    pub appearance: String,
+    pub appearances: Vec<AppearanceOptionDto>,
     /// "macos" | "windows" | "linux"
     pub platform: String,
 }
@@ -246,6 +257,14 @@ pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
         sounds: Config::sounds_enabled(&app.settings),
         start_at_login,
         trailing_space: Config::trailing_space(&app.settings),
+        appearance: Config::appearance(&app.settings).raw_value().to_string(),
+        appearances: Appearance::ALL
+            .into_iter()
+            .map(|a| AppearanceOptionDto {
+                id: a.raw_value().to_string(),
+                label: a.label().to_string(),
+            })
+            .collect(),
         platform: platform_name().to_string(),
     }
 }
@@ -264,6 +283,33 @@ pub fn set_hotkey(app: State<'_, Arc<App>>, id: String) {
 #[tauri::command]
 pub fn set_sounds(app: State<'_, Arc<App>>, enabled: bool) {
     Config::set_sounds_enabled(&app.settings, enabled);
+}
+
+/// The native half of the colour scheme: window chrome (title bar, Windows
+/// menus) and the webviews' `prefers-color-scheme` on macOS and Windows.
+/// WebKitGTK does not reliably follow the GTK theme, which is why ui/app.css
+/// also keys its dark tokens on `data-theme`.
+pub fn apply_appearance(handle: &tauri::AppHandle, appearance: Appearance) {
+    handle.set_theme(match appearance {
+        Appearance::System => None,
+        Appearance::Light => Some(tauri::Theme::Light),
+        Appearance::Dark => Some(tauri::Theme::Dark),
+    });
+}
+
+#[tauri::command]
+pub fn set_appearance(app: State<'_, Arc<App>>, id: String) {
+    match Appearance::from_raw(&id) {
+        Some(appearance) => {
+            Config::set_appearance(&app.settings, appearance);
+            apply_appearance(&app.handle, appearance);
+            // Both windows restyle, not just the one whose select changed.
+            let _ = app
+                .handle
+                .emit("appearance-changed", appearance.raw_value());
+        }
+        None => log::warn!("set_appearance: unknown id {id:?}"),
+    }
 }
 
 #[tauri::command]
@@ -345,6 +391,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         get_settings,
         set_hotkey,
         set_sounds,
+        set_appearance,
         set_start_at_login,
         preview_mic,
         permission_state,
@@ -404,6 +451,32 @@ mod tests {
         assert_eq!(color_name(StatusColor::Red), "red");
         assert_eq!(color_name(StatusColor::Orange), "orange");
         assert_eq!(color_name(StatusColor::Green), "green");
+    }
+
+    /// app.css repeats the dark tokens once under `prefers-color-scheme`
+    /// (Match system) and once under `data-theme="dark"` (pinned Dark); CSS
+    /// cannot share one block between the two, so a token edited in only one
+    /// of them would make the two routes to dark mode drift apart.
+    #[test]
+    fn dark_token_blocks_in_app_css_are_identical() {
+        fn tokens_after(css: &str, selector: &str) -> Vec<String> {
+            let start = css.find(selector).expect("selector present") + selector.len();
+            let body = &css[start..];
+            let body = &body[..body.find('}').expect("block closed")];
+            body.split(';')
+                .map(|decl| decl.split_whitespace().collect::<Vec<_>>().join(" "))
+                .filter(|decl| !decl.is_empty())
+                .collect()
+        }
+        let css = include_str!("../ui/app.css");
+        let system = tokens_after(css, ":root:not([data-theme=\"light\"]) {");
+        let pinned = tokens_after(css, ":root[data-theme=\"dark\"] {");
+        assert!(system.iter().any(|d| d.starts_with("--bg:")));
+        assert_eq!(system, pinned);
+        for appearance in [Appearance::Light, Appearance::Dark] {
+            let attr = format!("[data-theme=\"{}\"]", appearance.raw_value());
+            assert!(css.contains(&attr), "app.css keys on {attr}");
+        }
     }
 
     #[test]

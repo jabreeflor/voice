@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
+use voice_core::Config;
 
 use crate::app::{App, MAIN_WINDOW, ONBOARDING_WINDOW};
 
@@ -46,6 +47,7 @@ fn main() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let state = App::new(app.handle().clone());
+            commands::apply_appearance(app.handle(), Config::appearance(&state.settings));
             state.overlay.configure_window();
             app.manage(state.clone());
             tray::build(app.handle(), state.clone())?;

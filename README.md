@@ -214,8 +214,11 @@ The main window has three tabs:
   day-grouped ledger of everything you dictated (click a row to copy it).
 - **Snippets** — say a trigger phrase, paste a longer text. Also editable
   from a terminal with [`voicectl`](#️-command-line-voicectl).
-- **Settings** — permission status, talk key, sound effects, start at
-  login, and a 3-second microphone check.
+- **Settings** — permission status, talk key, appearance, sound effects,
+  start at login, and a 3-second microphone check.
+
+The windows follow the system's light or dark appearance; **Settings →
+Appearance** can pin either one instead (Match system / Light / Dark).
 
 <div align="center">
 <img src="assets/screenshots/main-snippets.png" width="440" alt="Snippets tab">

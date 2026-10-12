@@ -7,7 +7,41 @@
   --accent: #2478F3; --accent-tint: #E9F2FF; --pillk: #0F0F10;
   --green: #34C759; --green-tint: #E5F7E9; --orange: #FF7A1A;
   --red: #FF3B30;
+  /* Text on the primary pill, and the off-state switch track. */
+  --pill-ink: #FFFFFF; --pill-soft: rgba(255,255,255,.75); --pill-key: rgba(255,255,255,.15);
+  --switch-off: #D1D1D6;
+  /* The overlay HUD stays black in both schemes (white level bars). */
+  --hud: #0F0F10;
   --sans: -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+/* Dark: the same layout on a near-black window with raised charcoal cards;
+   the primary pill inverts to white-on-black. Applied when the OS is dark and
+   Settings → Appearance is "Match system" (no data-theme), or when it is
+   pinned to "dark". Keep both blocks identical (and in sync with the
+   prototype); CSS cannot share a declaration block between a media query and
+   an attribute selector. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1C1C1E; --panel: #2C2C2E; --panel-deep: #3A3A3C; --ink: #F5F5F7;
+    --soft: #AEAEB2; --faint: #8E8E93; --line: #38383A;
+    --accent: #3D8BFF; --accent-tint: #1B2C47; --pillk: #F5F5F7;
+    --green: #30D158; --green-tint: #1C3524; --orange: #FF8A33;
+    --red: #FF453A;
+    --pill-ink: #0F0F10; --pill-soft: rgba(15,15,16,.7); --pill-key: rgba(15,15,16,.1);
+    --switch-off: #48484A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1C1C1E; --panel: #2C2C2E; --panel-deep: #3A3A3C; --ink: #F5F5F7;
+  --soft: #AEAEB2; --faint: #8E8E93; --line: #38383A;
+  --accent: #3D8BFF; --accent-tint: #1B2C47; --pillk: #F5F5F7;
+  --green: #30D158; --green-tint: #1C3524; --orange: #FF8A33;
+  --red: #FF453A;
+  --pill-ink: #0F0F10; --pill-soft: rgba(15,15,16,.7); --pill-key: rgba(15,15,16,.1);
+  --switch-off: #48484A;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
@@ -25,7 +59,7 @@ button, input, select, textarea { -webkit-app-region: no-drag; }
 .sticker { background: var(--panel); border-radius: 20px; }
 .sticker-lav { background: var(--accent-tint); border-radius: 20px; }
 .cap-btn { font: 600 13.5px var(--sans); padding: 10px 22px; border-radius: 999px;
-  background: var(--pillk); color: #fff; border: none;
+  background: var(--pillk); color: var(--pill-ink); border: none;
   transition: transform .08s, opacity .12s; }
 .cap-btn:active { transform: scale(.98); }
 .cap-btn.lav { background: var(--panel); color: var(--ink); }
@@ -79,10 +113,10 @@ body.macos .topbar { padding-left: 92px; }
 .statchip .l { font-size: 12px; color: var(--soft); display: flex; align-items: center; gap: 6px; }
 .statchip .l::before { content: ""; width: 8px; height: 8px; border-radius: 50%;
                        background: var(--c, var(--accent)); display: inline-block; }
-.livecap { margin-left: auto; background: var(--pillk); color: #fff; border-radius: 22px;
+.livecap { margin-left: auto; background: var(--pillk); color: var(--pill-ink); border-radius: 22px;
   display: flex; align-items: center; gap: 12px; padding: 0 24px; min-width: 240px; height: 64px; }
-.livecap span { font: 500 12.5px var(--sans); color: rgba(255,255,255,.75); }
-.livecap kbd { font: 600 11.5px var(--sans); background: rgba(255,255,255,.15);
+.livecap span { font: 500 12.5px var(--sans); color: var(--pill-soft); }
+.livecap kbd { font: 600 11.5px var(--sans); background: var(--pill-key);
                padding: 1px 7px; border-radius: 6px; }
 .ledger { padding: 4px 0; margin-bottom: 22px; }
 .empty-card { padding: 18px 20px; font-size: 13px; color: var(--soft); }
@@ -124,7 +158,7 @@ body.macos .topbar { padding-left: 92px; }
 .ex .say { font: 600 13px var(--sans); background: var(--bg);
            border: 1px solid var(--line); padding: 6px 14px; border-radius: 14px; }
 .ex .arrow { font: 600 13px var(--sans); color: var(--soft); }
-.ex .out { font: 12.5px var(--sans); background: var(--pillk); color: #fff;
+.ex .out { font: 12.5px var(--sans); background: var(--pillk); color: var(--pill-ink);
            padding: 7px 14px; border-radius: 14px; max-width: 420px;
            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .slist { padding: 4px 0; }
@@ -160,7 +194,7 @@ body.macos .topbar { padding-left: 92px; }
 .set-row + .set-row { border-top: 1px solid var(--line); }
 .set-row select { font: 13px var(--sans); padding: 6px 12px; border-radius: 8px;
                   border: 1px solid var(--line); background: var(--bg); }
-.switch { width: 40px; height: 24px; border-radius: 12px; background: #D1D1D6;
+.switch { width: 40px; height: 24px; border-radius: 12px; background: var(--switch-off);
           border: none; position: relative; }
 .switch i { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px;
             border-radius: 50%; background: #fff; transition: left .15s;
@@ -192,7 +226,7 @@ body.onboarding { align-items: center; justify-content: center; }
 [hidden] { display: none !important; }
 .perm .glyph { width: 42px; height: 42px; border-radius: 50%; background: var(--accent-tint);
                display: flex; align-items: center; justify-content: center; flex: none; }
-.perm .glyph svg { width: 20px; height: 20px; }
+.perm .glyph svg { width: 20px; height: 20px; color: var(--accent); }
 .perm .tx b { display: block; font-size: 14px; margin-bottom: 2px; }
 .perm .tx small { color: var(--soft); font-size: 12.5px; line-height: 1.4; display: block; }
 .perm .cap-btn { margin-left: auto; flex: none; padding: 8px 16px; font-size: 12px; }
@@ -208,7 +242,7 @@ body.onboarding { align-items: center; justify-content: center; }
 
 /* ══ OVERLAY ══ */
 body.overlay { background: transparent; }
-.pill { width: 192px; height: 44px; border-radius: 22px; background: var(--pillk);
+.pill { width: 192px; height: 44px; border-radius: 22px; background: var(--hud);
   border: 1px solid rgba(255,255,255,.18); position: relative; overflow: hidden;
   opacity: 0; transition: opacity .18s; } /* hide: matches FADE_OUT in overlay.rs */
 .pill.show { opacity: 1; transition: opacity .15s; } /* show: Overlay.show() 0.15 s */
@@ -217,3 +251,6 @@ body.overlay { background: transparent; }
   font: 500 13px var(--sans); color: #fff; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; display: none; }
 .pill.flash .label { display: block; } .pill.flash canvas { display: none; }
+/* The overlay page is transparent around the pill; a dark color-scheme would
+   paint the webview canvas behind it. */
+:root.hud-root { color-scheme: normal; }
