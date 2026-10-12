@@ -43,7 +43,8 @@
 <div class="ob-step" data-step="3">
   <h1 class="sm">Pick your <em>talk key</em></h1>
   <p>Hold it down to speak. Let go and your words are typed. Tap Esc to cancel.</p>
-  <div class="hk-row" id="hk-row" role="radiogroup" aria-label="Talk key"></div>
+  <div id="hk-keyboard"></div>
+  <p class="kb-hint" id="hk-current"></p>
   <button class="cap-btn" data-go="4">Continue</button>
 </div>
 
@@ -66,6 +67,7 @@
 <button class="cap-btn ghost back" id="back">Back</button>
 <div class="progress" id="progress" style="width:20%"></div>
 
+<script src="keyboard.js"></script>
 <script src="onboarding.js"></script>
 </body>
 </html>

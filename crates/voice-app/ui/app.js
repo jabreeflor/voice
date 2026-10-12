@@ -220,17 +220,7 @@
     $('status-text').textContent = status.text;
     $('fix-accessibility').classList.toggle('visible', status.needs_accessibility);
 
-    const sel = $('hotkey-select');
-    if (sel.options.length !== settings.hotkeys.length) {
-      sel.textContent = '';
-      for (const hk of settings.hotkeys) {
-        const o = document.createElement('option');
-        o.value = hk.id;
-        o.textContent = 'Hold ' + hk.label;
-        sel.appendChild(o);
-      }
-    }
-    sel.value = settings.hotkey;
+    renderTalkKey(settings);
     const look = $('appearance-select');
     if (look.options.length !== settings.appearances.length) {
       look.textContent = '';
@@ -245,11 +235,34 @@
     setSwitch($('sounds-switch'), settings.sounds);
     setSwitch($('login-switch'), settings.start_at_login);
   }
+  // Built once (the 1 s refresh only moves the selection) so keyboard focus
+  // on a key survives the poll.
+  let keyboard = null;
+  let talkKeys = [];
+  function renderTalkKey(settings) {
+    talkKeys = settings.hotkeys;
+    if (!keyboard) {
+      keyboard = window.VoiceKeyboard.render($('hotkey-keyboard'), {
+        platform: settings.platform,
+        hotkeys: settings.hotkeys,
+        selected: settings.hotkey,
+        onSelect: async (id) => {
+          showTalkKey(id);
+          await invoke('set_hotkey', { id });
+        },
+      });
+    }
+    showTalkKey(settings.hotkey);
+  }
+  function showTalkKey(id) {
+    keyboard.update(id);
+    const hk = talkKeys.find((h) => h.id === id);
+    $('hotkey-current').textContent = hk ? 'Hold ' + hk.label : '';
+  }
   function setSwitch(el, on) {
     el.classList.toggle('on', on);
     el.setAttribute('aria-checked', on ? 'true' : 'false');
   }
-  $('hotkey-select').addEventListener('change', (e) => invoke('set_hotkey', { id: e.target.value }));
   // theme.js restyles every window on the backend's `appearance-changed`.
   $('appearance-select').addEventListener('change', (e) => invoke('set_appearance', { id: e.target.value }));
   $('sounds-switch').addEventListener('click', (e) => {

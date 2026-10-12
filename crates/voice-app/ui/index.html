@@ -72,7 +72,11 @@
       <button class="cap-btn lav fix" id="fix-accessibility">Open Settings…</button>
     </div>
     <div class="set-card sticker">
-      <div class="set-row"><span>Talk key</span><select id="hotkey-select" aria-label="Talk key"></select></div>
+      <div class="set-row set-key">
+        <div class="set-row"><span>Talk key</span><span class="kb-current" id="hotkey-current"></span></div>
+        <div id="hotkey-keyboard"></div>
+        <p class="kb-hint">Click a highlighted key, or press it, to hold it for dictation.</p>
+      </div>
       <div class="set-row"><span>Appearance</span><select id="appearance-select" aria-label="Appearance"></select></div>
       <div class="set-row"><span>Sound effects</span><button class="switch" id="sounds-switch" role="switch" aria-checked="true" aria-label="Sound effects"><i></i></button></div>
       <div class="set-row"><span>Start at login</span><button class="switch" id="login-switch" role="switch" aria-checked="false" aria-label="Start at login"><i></i></button></div>
@@ -86,6 +90,7 @@
      an accessibility announcement); visually hidden. -->
 <div class="sr-only" id="sr-live" aria-live="polite"></div>
 
+<script src="keyboard.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

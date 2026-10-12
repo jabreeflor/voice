@@ -64,26 +64,25 @@
   }
 
   // ── step 3: talk key ──────────────────────────────────────────────────
+  let keyboard = null;
   function renderHotkeys() {
-    const row = $('hk-row');
-    row.textContent = '';
-    settings.hotkeys.forEach((hk, i) => {
-      const selected = hk.id === settings.hotkey;
-      const b = document.createElement('button');
-      b.className = 'hk' + (selected ? ' sel' : '');
-      b.setAttribute('role', 'radio');
-      b.setAttribute('aria-checked', selected ? 'true' : 'false');
-      b.textContent = hk.short_label;
-      const small = document.createElement('small');
-      small.textContent = i === 0 ? 'recommended' : 'alternative';
-      b.appendChild(small);
-      b.addEventListener('click', async () => {
-        await invoke('set_hotkey', { id: hk.id });
-        settings.hotkey = hk.id;
-        renderHotkeys();
+    if (!keyboard) {
+      keyboard = window.VoiceKeyboard.render($('hk-keyboard'), {
+        platform: settings.platform,
+        hotkeys: settings.hotkeys,
+        selected: settings.hotkey,
+        onSelect: async (id) => {
+          settings.hotkey = id;
+          renderHotkeys();
+          await invoke('set_hotkey', { id });
+        },
       });
-      row.appendChild(b);
-    });
+    }
+    keyboard.update(settings.hotkey);
+    const hk = settings.hotkeys.find((h) => h.id === settings.hotkey) || settings.hotkeys[0];
+    // hotkeys[0] is the platform default (Hotkey::available order).
+    const note = hk.id === settings.hotkeys[0].id ? ' (recommended)' : '';
+    $('hk-current').textContent = `Talk key: ${hk.label}${note}. Click or press a highlighted key to change it.`;
   }
 
   // ── step 5: done ──────────────────────────────────────────────────────
