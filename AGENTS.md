@@ -44,9 +44,10 @@ crates/voice-app/                Tauri 2 desktop app
   src/overlay.rs                 floating pill window driver
   src/commands.rs                #[tauri::command] handlers + DTOs used by ui/
   src/platform/{mod,macos,windows,linux}.rs  permissions, settings panes, relaunch
-  ui/                            static HTML/CSS/JS (index, onboarding, overlay, theme.js), sounds/
+  ui/                            static HTML/CSS/JS (index, onboarding, overlay, theme.js,
+                                 keyboard.js talk-key picker), sounds/
 assets/app-prototype.html        HTML mirror of the design tokens — keep in sync with ui/
-assets/screenshots/              README images (dark-mode/: light/dark UI evidence)
+assets/screenshots/              README images (dark-mode/, talk-key/: UI evidence)
 build.sh                         macOS wrapper: cargo tauri build → ./Voice.app (+ voicectl) + codesign
 scripts/install.sh               curl | bash installer for macOS and Linux
 scripts/e2e-smoke.sh             tier-4 GUI smoke (macOS, manual)

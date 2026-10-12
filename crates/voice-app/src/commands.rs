@@ -446,6 +446,18 @@ mod tests {
         assert_eq!(effective_hotkey(&settings), Hotkey::RightCommand);
     }
 
+    /// ui/keyboard.js draws the talk-key picker and marks the selectable keys
+    /// by `Hotkey::raw_value`; a variant missing there would be offered by
+    /// `get_settings` but have no key to click.
+    #[test]
+    fn keyboard_picker_has_a_key_for_every_hotkey() {
+        let js = include_str!("../ui/keyboard.js");
+        for hk in Hotkey::ALL {
+            let needle = format!("id: '{}'", hk.raw_value());
+            assert!(js.contains(&needle), "keyboard.js lacks {needle}");
+        }
+    }
+
     #[test]
     fn status_colors_match_the_css_classes() {
         assert_eq!(color_name(StatusColor::Red), "red");
