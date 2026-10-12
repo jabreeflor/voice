@@ -5,6 +5,7 @@
 //! - `status-changed`   (no payload)         status line / tray text changed
 //! - `history-changed`  (no payload)         a dictation was added
 //! - `snippets-changed` (no payload)         snippets.json changed (app or voicectl)
+//! - `vocabulary-changed` (no payload)       vocabulary.json changed from the app
 //! - `dictation-landed` (no payload)         a dictation was pasted (onboarding step 4)
 //! - `window-visible`   (bool, per window)    main/onboarding shown or hidden: start/stop UI timers
 //! - `appearance-changed` ("system" | "light" | "dark")  Settings changed the colour scheme
@@ -75,6 +76,13 @@ pub struct SnippetsDto {
     pub snippets: Vec<SnippetDto>,
 }
 
+/// `stamp` plays the same role as in [`SnippetsDto`].
+#[derive(Serialize, Clone, Debug)]
+pub struct VocabularyDto {
+    pub stamp: u64,
+    pub words: Vec<String>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct AppearanceOptionDto {
     pub id: String,
@@ -96,6 +104,8 @@ pub struct SettingsDto {
     pub sounds: bool,
     pub start_at_login: bool,
     pub trailing_space: bool,
+    /// Send the vocabulary + snippet triggers to whisper as its prompt.
+    pub context_prompt: bool,
     /// `Appearance::raw_value`: "system" | "light" | "dark". ui/*.js mirrors
     /// it onto `<html data-theme>` (omitted for "system").
     pub appearance: String,
@@ -239,6 +249,49 @@ pub fn remove_snippet(app: State<'_, Arc<App>>, index: usize) {
 }
 
 #[tauri::command]
+pub fn get_vocabulary(app: State<'_, Arc<App>>) -> VocabularyDto {
+    // Same rule as snippets: voicectl may have rewritten the file.
+    let mut vocabulary = app.vocabulary.lock().unwrap_or_else(|e| e.into_inner());
+    vocabulary.reload_if_changed();
+    VocabularyDto {
+        stamp: vocabulary.stamp(),
+        words: vocabulary.words().to_vec(),
+    }
+}
+
+#[tauri::command]
+pub fn add_vocabulary(app: State<'_, Arc<App>>, word: String) -> bool {
+    let added = app
+        .vocabulary
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .add(&word);
+    if added {
+        let _ = app.handle.emit("vocabulary-changed", ());
+    }
+    added
+}
+
+/// By spelling rather than index: voicectl may have reordered the file
+/// since the list was drawn.
+#[tauri::command]
+pub fn remove_vocabulary(app: State<'_, Arc<App>>, word: String) {
+    let removed = app
+        .vocabulary
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&word);
+    if removed {
+        let _ = app.handle.emit("vocabulary-changed", ());
+    }
+}
+
+#[tauri::command]
+pub fn set_context_prompt(app: State<'_, Arc<App>>, enabled: bool) {
+    Config::set_context_prompt(&app.settings, enabled);
+}
+
+#[tauri::command]
 pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
     let start_at_login = app.handle.autolaunch().is_enabled().unwrap_or_else(|e| {
         log::warn!("autostart query: {e}");
@@ -257,6 +310,7 @@ pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
         sounds: Config::sounds_enabled(&app.settings),
         start_at_login,
         trailing_space: Config::trailing_space(&app.settings),
+        context_prompt: Config::context_prompt(&app.settings),
         appearance: Config::appearance(&app.settings).raw_value().to_string(),
         appearances: Appearance::ALL
             .into_iter()
@@ -388,9 +442,13 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         get_snippets,
         add_snippet,
         remove_snippet,
+        get_vocabulary,
+        add_vocabulary,
+        remove_vocabulary,
         get_settings,
         set_hotkey,
         set_sounds,
+        set_context_prompt,
         set_appearance,
         set_start_at_login,
         preview_mic,

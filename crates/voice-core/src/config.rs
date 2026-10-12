@@ -220,6 +220,16 @@ impl Config {
         settings.get_bool("trailingSpace").unwrap_or(true)
     }
 
+    /// `contextPrompt` (Rust-only): send the vocabulary and snippet triggers
+    /// to the local whisper-server as its prompt. Default on.
+    pub fn context_prompt(settings: &Settings) -> bool {
+        settings.get_bool("contextPrompt").unwrap_or(true)
+    }
+
+    pub fn set_context_prompt(settings: &Settings, enabled: bool) {
+        settings.set("contextPrompt", enabled);
+    }
+
     /// `~/voice/models` then `~/.voice/models`.
     pub fn models_dirs() -> Vec<PathBuf> {
         // A process with no resolvable home (no $HOME / passwd entry, which

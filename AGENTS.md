@@ -22,8 +22,9 @@ crates/voice-core/               pure logic, no GUI/audio deps; builds + tests e
   src/transcript.rs              clean_transcript
   src/wav.rs                     wav_data (44-byte RIFF header, 16 kHz mono i16)
   src/status.rs                  StatusInputs / compute_status decision table
-  src/store.rs                   Store::dir, HistoryStore, SnippetStore
-  src/engine.rs                  WhisperEngine (whisper-server child + HTTP), find_binary
+  src/store.rs                   Store::dir, HistoryStore, SnippetStore, VocabularyStore
+  src/engine.rs                  WhisperEngine (whisper-server child + HTTP), find_binary,
+                                 whisper_prompt (vocabulary → whisper `prompt` field)
   src/download.rs                ModelDownloader
   src/cli.rs                     voicectl: VoiceCli::run (pure) / VoiceCli::main
   tests/*.rs                     tiers 1–3 (one file per former Swift test class)
@@ -116,7 +117,10 @@ feature flags to make macOS code compile elsewhere.
    (`app::recording_long_enough`), then `voice_core::wav_data` wraps PCM in a
    44-byte RIFF header.
 3. `voice_core::engine::WhisperEngine` POSTs the WAV to
-   `http://127.0.0.1:<port>/inference`. Production port is
+   `http://127.0.0.1:<port>/inference`, plus a `prompt` field built by
+   `whisper_prompt` from `vocabulary.json` and the snippet triggers when
+   `contextPrompt` is on (no field at all when the prompt is empty, so the
+   request is then byte-identical to the Swift one). Production port is
    `Config::SERVER_PORT` (8178). Tests use **18178** so a running app is not
    disturbed. `find_binary` searches next to the executable, `PATH`, then
    the fixed install prefixes (Homebrew, `/usr/bin`, `~/.local/bin`,
@@ -134,11 +138,14 @@ feature flags to make macOS code compile elsewhere.
 
 ## voicectl (bundled CLI)
 
-`voicectl` is the supported way for scripts and agents to edit snippets:
-`voicectl snippets list|get|add|remove|expand|export|import|path`, `--json`
+`voicectl` is the supported way for scripts and agents to edit snippets
+and vocabulary:
+`voicectl snippets list|get|add|remove|expand|export|import|path`,
+`voicectl vocab list|add|remove|export|import|prompt|path`, `--json`
 for machine output, `-` for stdin, `--dir` to target another data
 directory. Exit codes: 0 ok, 1 not found/invalid, 2 usage. It writes the
-same `snippets.json` the app reads; `SnippetStore::reload_if_changed`
+same `snippets.json` / `vocabulary.json` the app reads;
+`SnippetStore::reload_if_changed` (and its `VocabularyStore` twin)
 (called from `expand`, from mutations, and from the Snippets tab's refresh)
 is what makes the running app see those edits. `build.sh` copies it into
 `Voice.app/Contents/MacOS/`; the Linux/Windows bundles do not include it
@@ -149,8 +156,8 @@ new commands in `tests/cli.rs`.
 
 | Tier | What | Where |
 | --- | --- | --- |
-| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,cli,download}.rs` plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection) | CI `cargo test --workspace` |
-| 2 | Real `whisper-server` + fixture audio: `tests/engine_integration.rs` `test1..test5` | CI `cargo test --workspace` |
+| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,vocabulary,prompt,cli,download}.rs` plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection) | CI `cargo test --workspace` |
+| 2 | Real `whisper-server` + fixture audio: `tests/engine_integration.rs` `test1..test6` | CI `cargo test --workspace` |
 | 3 | `compute_status` decision table: `tests/status.rs` | CI `cargo test --workspace` |
 | 4 | Full GUI dictation | `scripts/e2e-smoke.sh` only (macOS) |
 
@@ -223,9 +230,9 @@ Rules:
   macOS the activation policy is Accessory until a window is shown.
 - `Settings` keys keep the Swift `UserDefaults` names (`hotkey`, `sounds`,
   `trailingSpace`, `modelFile`, `onboarded`, `lastAXRelaunch`, `wordsTotal`)
-  and `Hotkey::raw_value` keeps the Swift raw strings. `appearance`
-  (`system` / `light` / `dark`, Rust-only) is the one key the Swift app
-  never wrote.
+  and `Hotkey::raw_value` keeps the Swift raw strings. The Rust-only keys
+  the Swift app never wrote are `appearance` (`system` / `light` / `dark`)
+  and `contextPrompt`.
 - `history.json` and `snippets.json` stay byte-compatible with the files the
   Swift app wrote: `DictationEntry.date` is stored as seconds since
   2001-01-01 (Apple reference date), and `Store::dir()` is

@@ -1,5 +1,5 @@
 //! Tier-2 integration tests: a real `whisper-server` process, real audio, real
-//! transcripts. Nothing in `test1..test5` is mocked. Reference:
+//! transcripts. Nothing in `test1..test6` is mocked. Reference:
 //! Tests/VoiceCoreTests/EngineIntegrationTests.swift.
 //!
 //! These tests skip (print `SKIPPED: <reason>` and return) rather than fail
@@ -53,11 +53,11 @@ const JFK_PHRASE: &str = "And so my fellow Americans, ask not";
 const JFK_KEYWORD: &str = "fellow americans";
 const SECOND_PHRASE: &str = "Hello world, this is a test of the voice engine.";
 
-/// Number of `test1..test5` functions below. Once that many have finished the
+/// Number of `test1..test6` functions below. Once that many have finished the
 /// shared server is stopped, because a `static` engine is never dropped and a
 /// child process outlives its parent. Running a filtered subset leaves the
 /// server for `reclaim_test_port` on the next run.
-const INTEGRATION_TEST_COUNT: usize = 5;
+const INTEGRATION_TEST_COUNT: usize = 6;
 
 struct Booted {
     engine: WhisperEngine,
@@ -332,11 +332,56 @@ fn test5_silence_cleans_to_empty_string() {
 
 /// Runs a (blocking) transcription on a helper thread so a stalled server
 /// surfaces as a timeout error instead of hanging the whole suite.
+/// The real server accepts the vocabulary prompt: speech still comes through
+/// intact, and silence still cleans to nothing rather than whisper echoing
+/// the prompt back (the classic failure mode of initial prompts).
+#[test]
+fn test6_vocabulary_prompt_is_accepted_and_not_echoed() {
+    let _done = Completion;
+    let Some(b) = booted() else { return };
+    let prompt = voice_core::whisper_prompt(
+        &[
+            "Kennedy".to_string(),
+            "Jabree".to_string(),
+            "Tauri".to_string(),
+        ],
+        &["my email".to_string()],
+    );
+    assert_eq!(prompt, "Kennedy, Jabree, Tauri, my email.");
+
+    let raw = transcribe_sync_with_prompt(&b.engine, &b.speech_wav, &prompt)
+        .expect("speech transcription with prompt");
+    let cleaned = clean_transcript(&raw);
+    log(&format!("with prompt {prompt:?}: {cleaned:?}"));
+    assert!(
+        normalize(&cleaned).contains(JFK_KEYWORD),
+        "prompt damaged the transcript: {cleaned:?}"
+    );
+
+    let silence = silence_wav(2.0, 0.0);
+    let raw = transcribe_sync_with_prompt(&b.engine, &silence, &prompt)
+        .expect("silence transcription with prompt");
+    assert!(
+        clean_transcript(&raw).is_empty(),
+        "whisper echoed the prompt over silence: {raw:?}"
+    );
+}
+
 fn transcribe_sync(engine: &'static WhisperEngine, wav: &[u8]) -> Result<String, String> {
+    transcribe_sync_with_prompt(engine, wav, "")
+}
+
+fn transcribe_sync_with_prompt(
+    engine: &'static WhisperEngine,
+    wav: &[u8],
+    prompt: &str,
+) -> Result<String, String> {
     let (tx, rx) = mpsc::channel();
     let wav = wav.to_vec();
+    let prompt = prompt.to_string();
     thread::spawn(move || {
-        let _ = tx.send(engine.transcribe(&wav).map_err(|e| e.to_string()));
+        let result = engine.transcribe_with_prompt(&wav, &prompt);
+        let _ = tx.send(result.map_err(|e| e.to_string()));
     });
     match rx.recv_timeout(REQUEST_TIMEOUT) {
         Ok(result) => result,
@@ -733,6 +778,37 @@ fn transcribe_posts_swift_multipart_form_and_returns_text_verbatim() {
         .windows(wav.len())
         .position(|w| w == wav.as_slice());
     assert!(wav_at.is_some(), "WAV bytes must be embedded unmodified");
+}
+
+#[test]
+fn transcribe_with_prompt_sends_the_prompt_field_before_the_file() {
+    let (port, rx) = fake_inference_server(r#"{"text": " Ask Jabree"}"#);
+    let engine = WhisperEngine::for_test_server(port);
+    let text = engine
+        .transcribe_with_prompt(&wav_data(&[0.0; 100]), "Jabree, Tauri.")
+        .expect("transcribe");
+    assert_eq!(text, " Ask Jabree");
+    let req = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("request captured");
+    let body = String::from_utf8_lossy(&req.body).into_owned();
+    let prompt_field = "--VoiceBoundary7f3a9c\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\nJabree, Tauri.\r\n";
+    let prompt_at = body.find(prompt_field).expect("prompt field present");
+    let file_at = body.find("name=\"file\"").expect("file field present");
+    assert!(prompt_at < file_at, "prompt must precede the audio");
+}
+
+#[test]
+fn transcribe_without_prompt_sends_no_prompt_field() {
+    let (port, rx) = fake_inference_server(r#"{"text": "x"}"#);
+    let engine = WhisperEngine::for_test_server(port);
+    engine
+        .transcribe_with_prompt(&wav_data(&[0.0; 100]), "")
+        .expect("transcribe");
+    let req = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("request captured");
+    assert!(!String::from_utf8_lossy(&req.body).contains("name=\"prompt\""));
 }
 
 #[test]

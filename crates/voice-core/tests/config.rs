@@ -456,6 +456,15 @@ fn sounds_and_trailing_space_default_to_on() {
     assert!(!Config::trailing_space(&f.settings));
 }
 
+#[test]
+fn context_prompt_defaults_to_on_and_persists_under_its_key() {
+    let f = fixture();
+    assert!(Config::context_prompt(&f.settings));
+    Config::set_context_prompt(&f.settings, false);
+    assert!(!Config::context_prompt(&f.settings));
+    assert_eq!(f.settings.get_bool("contextPrompt"), Some(false));
+}
+
 // MARK: - Appearance
 
 #[test]

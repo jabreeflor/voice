@@ -19,7 +19,8 @@
 //!   `claim_preview` read `preview_active` under `state` so the dictation
 //!   worker and the main thread cannot both start the recorder. Any further
 //!   nesting must follow the order `state` → `preview_active` → `recorder` →
-//!   `snippets` → `history` → `engine` → `setup_*` → `tray_items`.
+//!   `snippets` → `vocabulary` → `history` → `engine` → `setup_*` →
+//!   `tray_items`.
 //! - Bind a lock's result before testing it (`let r = lock(&x).f(); if let
 //!   Err(e) = r`): in edition 2021 an `if let` on the locked expression keeps
 //!   the guard alive for the whole body.
@@ -40,9 +41,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager};
 use voice_core::{
-    clean_transcript, compute_status, wav_data, Config, DictationEntry, HistoryStore, Hotkey,
-    ModelCatalog, ModelDownloader, Platform, Settings, SnippetStore, StatusInfo, StatusInputs,
-    Store, WhisperEngine,
+    clean_transcript, compute_status, wav_data, whisper_prompt, Config, DictationEntry,
+    HistoryStore, Hotkey, ModelCatalog, ModelDownloader, Platform, Settings, SnippetStore,
+    StatusInfo, StatusInputs, Store, VocabularyStore, WhisperEngine,
 };
 
 use crate::audio::Recorder;
@@ -91,6 +92,7 @@ pub struct App {
     pub settings: Arc<Settings>,
     pub history: Mutex<HistoryStore>,
     pub snippets: Mutex<SnippetStore>,
+    pub vocabulary: Mutex<VocabularyStore>,
     pub recorder: Mutex<Recorder>,
     pub hotkeys: HotkeyController,
     pub downloader: ModelDownloader,
@@ -209,7 +211,8 @@ impl App {
         let dir = Store::dir();
         let settings = Arc::new(Settings::in_dir(&dir));
         let history = HistoryStore::new(dir.clone(), settings.clone());
-        let snippets = SnippetStore::new(dir);
+        let snippets = SnippetStore::new(dir.clone());
+        let vocabulary = VocabularyStore::new(dir);
 
         let hotkey_settings = settings.clone();
         let (tx, rx) = mpsc::channel::<HotkeyEvent>();
@@ -226,6 +229,7 @@ impl App {
             settings,
             history: Mutex::new(history),
             snippets: Mutex::new(snippets),
+            vocabulary: Mutex::new(vocabulary),
             recorder: Mutex::new(Recorder::new()),
             hotkeys,
             downloader: ModelDownloader::new(),
@@ -758,7 +762,8 @@ impl App {
                 // goes through third-party clipboard/keystroke code) would
                 // otherwise leave the state machine in Transcribing forever.
                 let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    let result = engine.transcribe(&wav);
+                    let prompt = app.whisper_prompt();
+                    let result = engine.transcribe_with_prompt(&wav, &prompt);
                     app.set_state(State::Idle);
                     match result {
                         Err(error) => {
@@ -781,6 +786,31 @@ impl App {
             self.overlay
                 .flash(&format!("Error: {e}"), FLASH_ENGINE_ERROR);
         }
+    }
+
+    /// The vocabulary + snippet-trigger prompt for the local whisper-server,
+    /// or "" when `contextPrompt` is off. Both stores re-read their files
+    /// first so a `voicectl` edit counts on the very next dictation; each
+    /// lock is released before the next is taken.
+    fn whisper_prompt(&self) -> String {
+        if !Config::context_prompt(&self.settings) {
+            return String::new();
+        }
+        let triggers: Vec<String> = {
+            let mut snippets = lock(&self.snippets);
+            snippets.reload_if_changed();
+            snippets
+                .snippets()
+                .iter()
+                .map(|s| s.trigger.clone())
+                .collect()
+        };
+        let words = {
+            let mut vocabulary = lock(&self.vocabulary);
+            vocabulary.reload_if_changed();
+            vocabulary.words().to_vec()
+        };
+        whisper_prompt(&words, &triggers)
     }
 
     /// After a panic in begin/end/cancel: drop whatever was recording and go

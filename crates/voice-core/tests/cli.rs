@@ -410,3 +410,99 @@ fn running_store_sees_cli_edits() {
     f.run(&["snippets", "remove", "brb"]);
     assert_eq!(app_store.expand("brb"), "brb");
 }
+
+// MARK: - vocab
+
+#[test]
+fn vocab_list_empty() {
+    let f = Fixture::new();
+    let r = f.run(&["vocab", "list"]);
+    assert_eq!(r.status, 0);
+    assert_eq!(r.stdout, "No vocabulary.\n");
+    let r = f.run(&["vocab", "list", "--json"]);
+    assert_eq!(r.stdout, "[]\n");
+}
+
+#[test]
+fn vocab_add_several_then_list() {
+    let f = Fixture::new();
+    let r = f.run(&["vocab", "add", "Jabree", "whisper.cpp"]);
+    assert_eq!(r.status, 0, "{r:?}");
+    assert_eq!(r.stdout, "Added: Jabree\nAdded: whisper.cpp\n");
+    assert_eq!(f.run(&["vocab", "list"]).stdout, "Jabree\nwhisper.cpp\n");
+    assert_eq!(
+        f.run(&["vocab", "ls", "--json"]).stdout,
+        "[\n  \"Jabree\",\n  \"whisper.cpp\"\n]\n"
+    );
+}
+
+#[test]
+fn vocab_add_reports_respell_and_duplicate() {
+    let f = Fixture::new();
+    f.run(&["vocab", "add", "jabree"]);
+    let r = f.run(&["vocabulary", "add", "Jabree", "Jabree"]);
+    assert_eq!(r.stdout, "Updated: Jabree\nAlready present: Jabree\n");
+    assert_eq!(f.run(&["vocab", "list"]).stdout, "Jabree\n");
+}
+
+#[test]
+fn vocab_add_needs_a_word() {
+    let f = Fixture::new();
+    assert_eq!(f.run(&["vocab", "add"]).status, 2);
+    let r = f.run(&["vocab", "add", "  "]);
+    assert_eq!(r.status, 1);
+    assert_eq!(r.stderr, "Word must not be empty\n");
+}
+
+#[test]
+fn vocab_remove_hit_and_miss() {
+    let f = Fixture::new();
+    f.run(&["vocab", "add", "Tauri", "Ollama"]);
+    let r = f.run(&["vocab", "remove", "tauri"]);
+    assert_eq!((r.status, r.stdout.as_str()), (0, "Removed: tauri\n"));
+    let r = f.run(&["vocab", "rm", "Ollama", "Nope"]);
+    assert_eq!(r.status, 1);
+    assert_eq!(r.stdout, "Removed: Ollama\n");
+    assert_eq!(r.stderr, "Not in vocabulary: Nope\n");
+}
+
+#[test]
+fn vocab_import_and_export_round_trip() {
+    let f = Fixture::new();
+    let r = f.run_stdin(&["vocab", "import", "-"], r#"["Grafana", "", "Loki"]"#);
+    assert_eq!(r.status, 0, "{r:?}");
+    assert_eq!(r.stdout, "Imported 2 words, skipped 1 empty\n");
+    let exported = f.run(&["vocab", "export"]).stdout;
+    let r = f.run_stdin(&["vocab", "import", "-", "--replace"], &exported);
+    assert_eq!(r.stdout, "Imported 2 words (replaced existing)\n");
+    assert_eq!(f.run(&["vocab", "list"]).stdout, "Grafana\nLoki\n");
+    let r = f.run_stdin(&["vocab", "import", "-"], r#"[{"trigger": "x"}]"#);
+    assert_eq!(r.status, 1);
+}
+
+#[test]
+fn vocab_prompt_shows_vocabulary_then_snippet_triggers() {
+    let f = Fixture::new();
+    assert_eq!(
+        f.run(&["vocab", "prompt"]).stdout,
+        "(no prompt: vocabulary and snippets are empty)\n"
+    );
+    f.run(&["vocab", "add", "Jabree", "Tauri"]);
+    f.run(&["snippets", "add", "my email", "me@example.com"]);
+    assert_eq!(
+        f.run(&["vocab", "prompt"]).stdout,
+        "Jabree, Tauri, my email.\n"
+    );
+}
+
+#[test]
+fn vocab_path_and_unknown_subcommand() {
+    let f = Fixture::new();
+    assert_eq!(
+        f.run(&["vocab", "path"]).stdout,
+        format!("{}\n", path_string(f.path().join("vocabulary.json")))
+    );
+    assert_eq!(f.run(&["vocab", "frobnicate"]).status, 2);
+    assert_eq!(f.run(&["vocab"]).status, 2);
+    assert_eq!(f.run(&["vocab", "list", "--bogus"]).status, 2);
+}

@@ -212,9 +212,12 @@ The main window has three tabs:
 
 - **Dictations** — words spoken, words per minute, average latency, and a
   day-grouped ledger of everything you dictated (click a row to copy it).
-- **Snippets** — say a trigger phrase, paste a longer text. Also editable
-  from a terminal with [`voicectl`](#️-command-line-voicectl).
-- **Settings** — permission status, talk key, appearance, sound effects,
+- **Snippets** — say a trigger phrase, paste a longer text; below it, the
+  **Vocabulary** list (see [Accuracy and cleanup](#-accuracy-and-cleanup)).
+  Both are also editable from a terminal with
+  [`voicectl`](#️-command-line-voicectl).
+- **Settings** — permission status, talk key, appearance, the
+  [accuracy and cleanup](#-accuracy-and-cleanup) switches, sound effects,
   start at login, and a 3-second microphone check.
 
 The windows follow the system's light or dark appearance; **Settings →
@@ -225,11 +228,27 @@ Appearance** can pin either one instead (Match system / Light / Dark).
 <img src="assets/screenshots/main-settings.png" width="440" alt="Settings tab">
 </div>
 
+## 🎯 Accuracy and cleanup
+
+Everything here runs on your machine. Nothing below sends audio or text
+anywhere but the local whisper-server.
+
+- **Vocabulary** (Snippets tab, or `voicectl vocab`) — names and jargon
+  whisper should spell your way: `Jabree`, `Tauri`, `whisper.cpp`. With
+  **Settings → Use vocabulary as a hint** on (the default), every dictation
+  sends your vocabulary, then your snippet triggers, to the local
+  whisper-server as its `prompt`, e.g. `Jabree, Tauri, whisper.cpp, my
+  email.` The line is capped at 400 characters (whisper reads at most ~223
+  prompt tokens); entries that don't fit are skipped, earlier ones first in
+  line. A long prompt adds a little decode time, so keep the list to the
+  words whisper actually gets wrong. `voicectl vocab prompt` prints the
+  exact line.
+
 ## ⌨️ Command line: `voicectl`
 
 `voicectl` ships next to the app (inside `Voice.app` on macOS) and the
-installer links it onto your PATH. It edits the same snippets the app
-uses, so scripts and coding agents can manage them without clicking
+installer links it onto your PATH. It edits the same snippets and
+vocabulary the app uses, so scripts and coding agents can manage them without clicking
 through the Snippets tab. The running app picks changes up immediately.
 
 ```sh
@@ -244,6 +263,12 @@ voicectl snippets remove brb
 voicectl snippets export > snippets.json             # back up / share
 voicectl snippets import snippets.json               # merge (--replace to overwrite)
 voicectl snippets path                               # where snippets.json lives
+
+voicectl vocab add Jabree Tauri whisper.cpp          # words whisper should spell your way
+voicectl vocab list                                  # or --json
+voicectl vocab remove Tauri
+voicectl vocab prompt                                # the prompt whisper gets
+voicectl vocab export > vocabulary.json              # import works like snippets
 ```
 
 Exit status is 0 on success, 1 when a trigger is missing or input is
@@ -262,7 +287,7 @@ produces `target/release/voicectl[.exe]`.
 
 | | macOS | Windows | Linux |
 |---|---|---|---|
-| Settings, history, snippets | `~/Library/Application Support/Voice/` | `%APPDATA%\Voice\` | `~/.local/share/Voice/` |
+| Settings, history, snippets, vocabulary | `~/Library/Application Support/Voice/` | `%APPDATA%\Voice\` | `~/.local/share/Voice/` |
 | Models | `~/voice/models/` (or `~/.voice/models/`) | `%USERPROFILE%\voice\models\` | `~/voice/models/` |
 
 History and snippets are the same `history.json` / `snippets.json` the
@@ -285,8 +310,9 @@ graph LR
 - A global keyboard hook (CGEvent tap on macOS, low-level hook on Windows,
   XRecord on Linux) watches the talk key; audio is captured with `cpal`
   and resampled to 16 kHz mono.
-- On release, the WAV is POSTed to the local server, the transcript is
-  cleaned of whisper's non-speech markers, snippet triggers are expanded,
+- On release, the WAV is POSTed to the local server (with your vocabulary
+  as whisper's prompt), the transcript is cleaned of whisper's non-speech
+  markers, snippet triggers are expanded,
   the text is placed on the clipboard, and <kbd>⌘V</kbd> / <kbd>Ctrl+V</kbd>
   is synthesized into the frontmost app — your previous clipboard is
   restored afterwards.

@@ -14,6 +14,7 @@
   let visible = false;
   let dictationsDirty = true;
   let lastSnippetStamp = null;
+  let lastVocabStamp = null;
 
   // ── tabs ──────────────────────────────────────────────────────────────
   function select(view) {
@@ -212,6 +213,48 @@
     $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') saveSnippet(); });
   }
 
+  // ── vocabulary ────────────────────────────────────────────────────────
+  // Same stamp guard as the snippet list; lives on the Snippets tab.
+  async function renderVocabulary(force) {
+    const { stamp, words } = await invoke('get_vocabulary');
+    if (!force && stamp === lastVocabStamp) return;
+    lastVocabStamp = stamp;
+    const root = $('vocab-rows');
+    root.textContent = '';
+    if (words.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'sempty';
+      empty.textContent = 'No words yet — add names or jargon the transcriber gets wrong.';
+      root.appendChild(empty);
+    }
+    for (const word of words) {
+      const row = document.createElement('div');
+      row.className = 'srow';
+      const t = document.createElement('span');
+      t.className = 't';
+      t.textContent = word;
+      const del = document.createElement('button');
+      del.className = 'del';
+      del.textContent = '✕';
+      del.title = 'Remove word';
+      del.setAttribute('aria-label', `Remove “${word}” from vocabulary`);
+      del.addEventListener('click', async () => {
+        await invoke('remove_vocabulary', { word });
+        renderVocabulary();
+      });
+      row.append(t, del);
+      root.appendChild(row);
+    }
+  }
+  async function saveWord() {
+    const ok = await invoke('add_vocabulary', { word: $('new-word').value });
+    if (!ok) { $('new-word').focus(); return; }
+    $('new-word').value = '';
+    renderVocabulary();
+  }
+  $('save-word').addEventListener('click', saveWord);
+  $('new-word').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveWord(); });
+
   // ── settings ──────────────────────────────────────────────────────────
   async function renderSettings() {
     const [status, settings] = await Promise.all([invoke('get_status'), invoke('get_settings')]);
@@ -232,6 +275,7 @@
       }
     }
     look.value = settings.appearance;
+    setSwitch($('context-switch'), settings.context_prompt);
     setSwitch($('sounds-switch'), settings.sounds);
     setSwitch($('login-switch'), settings.start_at_login);
   }
@@ -265,6 +309,11 @@
   }
   // theme.js restyles every window on the backend's `appearance-changed`.
   $('appearance-select').addEventListener('change', (e) => invoke('set_appearance', { id: e.target.value }));
+  $('context-switch').addEventListener('click', (e) => {
+    const on = !e.currentTarget.classList.contains('on');
+    setSwitch(e.currentTarget, on);
+    invoke('set_context_prompt', { enabled: on });
+  });
   $('sounds-switch').addEventListener('click', (e) => {
     const on = !e.currentTarget.classList.contains('on');
     setSwitch(e.currentTarget, on);
@@ -294,6 +343,7 @@
       if (entering || dictationsDirty) renderDictations();
     } else if (current === 'snippets') {
       renderSnippets(entering);
+      renderVocabulary(entering);
     } else {
       renderSettings();
     }
@@ -314,6 +364,7 @@
       if (visible && current === 'dictations') renderDictations();
     });
     listen('snippets-changed', () => { if (visible && current === 'snippets') renderSnippets(); });
+    listen('vocabulary-changed', () => { if (visible && current === 'snippets') renderVocabulary(); });
     // Edits made by voicectl (or by hand) are picked up by the backend on each
     // read, so a 1 s timer keeps the visible tab in sync with the file, the
     // same way the AppKit window did. Like that window's timer it only runs

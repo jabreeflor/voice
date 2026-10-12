@@ -1,4 +1,5 @@
-//! voicectl — command-line snippet editor. Reference: Sources/VoiceCore/cli.swift.
+//! voicectl — command-line snippet and vocabulary editor. Reference:
+//! Sources/VoiceCore/cli.swift (snippets; `vocab` is Rust-only).
 //!
 //! All parsing and execution lives in `VoiceCli::run`, a pure function of its
 //! arguments, stdin and a directory — that is what tests/cli.rs exercises.
@@ -10,7 +11,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::config::expand_tilde;
-use crate::store::{Snippet, SnippetStore, Store};
+use crate::engine::whisper_prompt;
+use crate::store::{Snippet, SnippetStore, Store, VocabularyStore};
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct CliResult {
@@ -50,7 +52,8 @@ pub struct VoiceCli;
 impl VoiceCli {
     pub const VERSION: &'static str = "1.0";
 
-    pub const HELP: &'static str = "voicectl — manage voice snippets from the command line
+    pub const HELP: &'static str =
+        "voicectl — manage voice snippets and vocabulary from the command line
 
 Usage:
   voicectl snippets list [--json]
@@ -61,6 +64,13 @@ Usage:
   voicectl snippets export                        (JSON array to stdout)
   voicectl snippets import <file|-> [--replace]   (JSON array; --replace drops existing)
   voicectl snippets path                          (where snippets.json lives)
+  voicectl vocab list [--json]
+  voicectl vocab add <word>...                    (one entry per argument)
+  voicectl vocab remove <word>...
+  voicectl vocab export                           (JSON array to stdout)
+  voicectl vocab import <file|-> [--replace]      (JSON array of strings)
+  voicectl vocab prompt                           (what whisper gets when context is on)
+  voicectl vocab path                             (where vocabulary.json lives)
   voicectl --version | --help
 
 Options:
@@ -69,6 +79,11 @@ Options:
 A snippet's trigger is a phrase you say while dictating; the text is what
 gets pasted instead. Triggers are lowercased. Adding an existing trigger
 replaces it. The running Voice app picks up changes immediately.
+
+Vocabulary entries are words or names whisper should spell your way
+(\"Jabree\", \"Tauri\", \"whisper.cpp\"). They are sent, with the snippet
+triggers, as the prompt of the local whisper-server, never off the machine.
+Case is kept; adding an entry that differs only in case re-spells it.
 
 Exit status: 0 ok, 1 not found / invalid input, 2 usage error.";
 
@@ -136,6 +151,7 @@ Exit status: 0 ok, 1 not found / invalid input, 2 usage error.";
             "help" => CliResult::ok(format!("{}\n", Self::HELP)),
             "version" => CliResult::ok(format!("voicectl {}\n", Self::VERSION)),
             "snippets" | "snippet" => snippets(&args[1..], &dir, stdin),
+            "vocab" | "vocabulary" => vocabulary(&args[1..], &dir, stdin),
             _ => CliResult::usage(&format!("Unknown command: {command}")),
         }
     }
@@ -299,6 +315,155 @@ fn snippets(args: &[String], directory: &Path, stdin: &mut dyn FnMut() -> String
         }
 
         _ => CliResult::usage(&format!("Unknown snippets subcommand: {sub}")),
+    }
+}
+
+// MARK: - vocab subcommands
+
+fn vocabulary(args: &[String], directory: &Path, stdin: &mut dyn FnMut() -> String) -> CliResult {
+    let Some(sub) = args.first() else {
+        return CliResult::usage("vocab needs a subcommand");
+    };
+    let json = args.iter().any(|a| a == "--json");
+    let replace = args.iter().any(|a| a == "--replace");
+    let rest: Vec<&str> = args[1..]
+        .iter()
+        .map(String::as_str)
+        .filter(|a| *a != "--json" && *a != "--replace")
+        .collect();
+    if let Some(bad) = rest.iter().find(|a| a.starts_with("--")) {
+        return CliResult::usage(&format!("Unknown option: {bad}"));
+    }
+
+    let mut store = VocabularyStore::new(directory.to_path_buf());
+
+    match sub.as_str() {
+        "list" | "ls" => {
+            if !rest.is_empty() {
+                return CliResult::usage("list takes no arguments");
+            }
+            if json {
+                return CliResult::ok(encode(store.words()));
+            }
+            if store.words().is_empty() {
+                return CliResult::ok("No vocabulary.\n");
+            }
+            CliResult::ok(store.words().join("\n") + "\n")
+        }
+
+        "add" => {
+            if rest.is_empty() {
+                return CliResult::usage("add needs at least one word");
+            }
+            let mut out = String::new();
+            for raw in &rest {
+                let word = VocabularyStore::normalize_word(raw);
+                if word.is_empty() {
+                    return CliResult::failure("Word must not be empty");
+                }
+                let verb = match store.find(&word) {
+                    Some(existing) if existing == word => "Already present",
+                    Some(_) => "Updated",
+                    None => "Added",
+                };
+                store.add(&word);
+                out.push_str(&format!("{verb}: {word}\n"));
+            }
+            CliResult::ok(out)
+        }
+
+        "remove" | "rm" | "delete" => {
+            if rest.is_empty() {
+                return CliResult::usage("remove needs at least one word");
+            }
+            let mut out = String::new();
+            for raw in &rest {
+                let word = VocabularyStore::normalize_word(raw);
+                if !store.remove(&word) {
+                    // Report what was removed before the miss, then fail.
+                    return CliResult {
+                        status: 1,
+                        stdout: out,
+                        stderr: format!("Not in vocabulary: {word}\n"),
+                    };
+                }
+                out.push_str(&format!("Removed: {word}\n"));
+            }
+            CliResult::ok(out)
+        }
+
+        "export" => {
+            if !rest.is_empty() {
+                return CliResult::usage("export takes no arguments");
+            }
+            CliResult::ok(encode(store.words()))
+        }
+
+        "import" => {
+            let [source] = rest[..] else {
+                return CliResult::usage("import needs a file path (use - for stdin)");
+            };
+            let raw: Vec<u8> = if source == "-" {
+                stdin().into_bytes()
+            } else {
+                match std::fs::read(expand_tilde(source)) {
+                    Ok(data) => data,
+                    Err(_) => return CliResult::failure(&format!("Cannot read file: {source}")),
+                }
+            };
+            let Ok(list) = serde_json::from_slice::<Vec<String>>(&raw) else {
+                return CliResult::failure("Expected a JSON array of strings");
+            };
+            let valid: Vec<String> = list
+                .iter()
+                .filter(|w| !VocabularyStore::normalize_word(w).is_empty())
+                .cloned()
+                .collect();
+            let skipped = list.len() - valid.len();
+            if replace {
+                store.replace_all(&valid);
+            } else {
+                for w in &valid {
+                    store.add(w);
+                }
+            }
+            let plural = if valid.len() == 1 { "" } else { "s" };
+            let mut msg = format!("Imported {} word{plural}", valid.len());
+            if replace {
+                msg.push_str(" (replaced existing)");
+            }
+            if skipped > 0 {
+                msg.push_str(&format!(", skipped {skipped} empty"));
+            }
+            CliResult::ok(msg + "\n")
+        }
+
+        "prompt" => {
+            if !rest.is_empty() {
+                return CliResult::usage("prompt takes no arguments");
+            }
+            // Exactly what the app sends when "Use vocabulary as context" is
+            // on: vocabulary first, then snippet triggers.
+            let triggers: Vec<String> = SnippetStore::new(directory.to_path_buf())
+                .snippets()
+                .iter()
+                .map(|s| s.trigger.clone())
+                .collect();
+            let prompt = whisper_prompt(store.words(), &triggers);
+            if prompt.is_empty() {
+                return CliResult::ok("(no prompt: vocabulary and snippets are empty)\n");
+            }
+            CliResult::ok(prompt + "\n")
+        }
+
+        "path" => {
+            if !rest.is_empty() {
+                return CliResult::usage("path takes no arguments");
+            }
+            CliResult::ok(format!("{}\n", store.file_path().display()))
+        }
+
+        _ => CliResult::usage(&format!("Unknown vocab subcommand: {sub}")),
     }
 }
 

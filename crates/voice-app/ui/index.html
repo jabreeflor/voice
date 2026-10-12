@@ -61,6 +61,18 @@
       </div>
       <div id="snippet-rows"></div>
     </div>
+    <div class="snip-head vocab-head">
+      <h1>Vocabulary</h1>
+    </div>
+    <p class="vocab-hint">Names and terms the transcriber should spell your way. They go to the local
+       engine, with your snippet triggers, as a hint before each dictation.</p>
+    <div class="slist sticker">
+      <div class="snew visible">
+        <input class="body" placeholder="Add a word or name…" aria-label="Vocabulary word" id="new-word" spellcheck="false">
+        <button class="cap-btn" style="padding:8px 18px" id="save-word">Add</button>
+      </div>
+      <div id="vocab-rows"></div>
+    </div>
   </div>
 
   <!-- settings -->
@@ -78,6 +90,7 @@
         <p class="kb-hint">Click a highlighted key, or press it, to hold it for dictation.</p>
       </div>
       <div class="set-row"><span>Appearance</span><select id="appearance-select" aria-label="Appearance"></select></div>
+      <div class="set-row"><span>Use vocabulary as a hint</span><button class="switch" id="context-switch" role="switch" aria-checked="true" aria-label="Use vocabulary as a hint"><i></i></button></div>
       <div class="set-row"><span>Sound effects</span><button class="switch" id="sounds-switch" role="switch" aria-checked="true" aria-label="Sound effects"><i></i></button></div>
       <div class="set-row"><span>Start at login</span><button class="switch" id="login-switch" role="switch" aria-checked="false" aria-label="Start at login"><i></i></button></div>
       <div class="set-row"><span>Microphone check</span><button class="cap-btn lav" style="padding:8px 16px; font-size:12px" id="mic-test">Run 3-second test</button></div>

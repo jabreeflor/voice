@@ -249,10 +249,17 @@ impl WhisperEngine {
 
     /// Blocking. Server when ready, `whisper-cli` fallback otherwise.
     pub fn transcribe(&self, wav: &[u8]) -> Result<String, EngineError> {
+        self.transcribe_with_prompt(wav, "")
+    }
+
+    /// [`transcribe`](Self::transcribe) with a whisper initial prompt (see
+    /// [`whisper_prompt`]). An empty prompt sends exactly the request
+    /// `transcribe` does.
+    pub fn transcribe_with_prompt(&self, wav: &[u8], prompt: &str) -> Result<String, EngineError> {
         if self.ready() {
-            transcribe_via_server(&self.inner.agent, self.port, wav)
+            transcribe_via_server(&self.inner.agent, self.port, wav, prompt)
         } else {
-            self.transcribe_via_cli(wav)
+            self.transcribe_via_cli(wav, prompt)
         }
     }
 
@@ -264,22 +271,23 @@ impl WhisperEngine {
     /// one whisper-cli process per utterance, which reloads the model every
     /// time. `-np -nt` suppress prints and timestamps so stdout is the text.
     /// `NotReady` when the fallback is impossible, as in the Swift original.
-    fn transcribe_via_cli(&self, wav: &[u8]) -> Result<String, EngineError> {
+    fn transcribe_via_cli(&self, wav: &[u8], prompt: &str) -> Result<String, EngineError> {
         let model = self.model.as_ref().ok_or(EngineError::NotReady)?;
         let bin = Self::find_binary("whisper-cli").ok_or(EngineError::NotReady)?;
         let dir = create_cli_scratch_dir()?;
         let tmp = dir.join("audio.wav");
         let result = (|| {
             std::fs::write(&tmp, wav)?;
-            let output = hidden_command(bin)
-                .arg("-m")
+            let mut cmd = hidden_command(bin);
+            cmd.arg("-m")
                 .arg(model)
                 .arg("-f")
                 .arg(&tmp)
-                .args(["-np", "-nt", "-bs", "1", "-nf"])
-                .stdin(Stdio::null())
-                .stderr(Stdio::null())
-                .output()?;
+                .args(["-np", "-nt", "-bs", "1", "-nf"]);
+            if !prompt.is_empty() {
+                cmd.args(["--prompt", prompt]);
+            }
+            let output = cmd.stdin(Stdio::null()).stderr(Stdio::null()).output()?;
             Ok(String::from_utf8_lossy(&output.stdout).into_owned())
         })();
         let _ = std::fs::remove_dir_all(&dir);
@@ -440,18 +448,20 @@ fn supervise(inner: Arc<Inner>, generation: u64, port: u16, max_polls: usize) {
 }
 
 /// Push a half-second of silence through the model right after load so
-/// GPU kernels are compiled before the user's first real dictation.
+/// GPU kernels are compiled before the user's first real dictation. No
+/// prompt: a prompt over silence is what tempts whisper to echo it.
 fn warm_up(agent: &ureq::Agent, port: u16) {
     let silence = wav_data(&[0.0; 8000]);
-    let _ = transcribe_via_server(agent, port, &silence);
+    let _ = transcribe_via_server(agent, port, &silence, "");
 }
 
 fn transcribe_via_server(
     agent: &ureq::Agent,
     port: u16,
     wav: &[u8],
+    prompt: &str,
 ) -> Result<String, EngineError> {
-    let body = multipart_body(wav);
+    let body = multipart_body(wav, prompt);
     let response = agent
         .post(format!("http://127.0.0.1:{port}/inference"))
         .config()
@@ -475,9 +485,13 @@ fn transcribe_via_server(
     }
 }
 
-/// Exactly the Swift form: three text fields, then `file` as `audio/wav`.
-fn multipart_body(wav: &[u8]) -> Vec<u8> {
-    let mut body = Vec::with_capacity(wav.len() + 512);
+/// The Swift form — three text fields, then `file` as `audio/wav` — plus a
+/// `prompt` field before `file` when `prompt` is non-empty (whisper-server
+/// reads it per request; requests without it keep the server default, no
+/// prompt). CR/LF in the prompt become spaces: a line break is the only way
+/// a value could forge a boundary line and cut the form short.
+fn multipart_body(wav: &[u8], prompt: &str) -> Vec<u8> {
+    let mut body = Vec::with_capacity(wav.len() + 512 + prompt.len());
     let mut field = |name: &str, value: &str| {
         let _ = write!(
             body,
@@ -487,6 +501,9 @@ fn multipart_body(wav: &[u8]) -> Vec<u8> {
     field("temperature", "0.0");
     field("temperature_inc", "0.0");
     field("response_format", "json");
+    if !prompt.is_empty() {
+        field("prompt", &prompt.replace(['\r', '\n'], " "));
+    }
     let _ = write!(
         body,
         "--{MULTIPART_BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
@@ -494,6 +511,50 @@ fn multipart_body(wav: &[u8]) -> Vec<u8> {
     body.extend_from_slice(wav);
     let _ = write!(body, "\r\n--{MULTIPART_BOUNDARY}--\r\n");
     body
+}
+
+// MARK: - Prompt
+
+/// whisper.cpp conditions on at most `n_text_ctx / 2 - 1` = 223 prompt tokens
+/// and silently drops the *oldest* tokens beyond that. This crate has no
+/// tokenizer, so characters stand in: GPT-2 BPE averages about 4 characters
+/// per token on English and nearer 2–3 on unusual names, so 400 characters
+/// stays under the cap even for a list made only of rare words. Long prompts
+/// also cost decode time on every dictation, which is another reason to stay
+/// well short of the limit.
+pub const PROMPT_CHAR_BUDGET: usize = 400;
+
+/// The whisper `prompt` for one dictation: the user's vocabulary, then the
+/// snippet triggers, as one comma-separated line ending in a period (the
+/// spelling whisper should copy, written the way a transcript would be).
+/// Terms are trimmed, inner whitespace is collapsed, and case-insensitive
+/// duplicates keep their first spelling. A term that would push the line
+/// past [`PROMPT_CHAR_BUDGET`] is skipped, and later shorter terms may still
+/// fit, so earlier entries win when the list is too long. Empty when there is
+/// nothing to send, in which case the request carries no `prompt` at all.
+pub fn whisper_prompt(vocabulary: &[String], triggers: &[String]) -> String {
+    let mut seen: Vec<String> = Vec::new();
+    let mut line = String::new();
+    for term in vocabulary.iter().chain(triggers) {
+        let term = term.split_whitespace().collect::<Vec<_>>().join(" ");
+        let key = term.to_lowercase();
+        if term.is_empty() || seen.contains(&key) {
+            continue;
+        }
+        let separator = if line.is_empty() { "" } else { ", " };
+        // +1 for the closing period.
+        let len = line.chars().count() + separator.len() + term.chars().count() + 1;
+        if len > PROMPT_CHAR_BUDGET {
+            continue;
+        }
+        line.push_str(separator);
+        line.push_str(&term);
+        seen.push(key);
+    }
+    if !line.is_empty() && !line.ends_with(['.', '!', '?']) {
+        line.push('.');
+    }
+    line
 }
 
 fn local_agent() -> ureq::Agent {
@@ -564,7 +625,7 @@ mod tests {
 
     #[test]
     fn multipart_body_matches_swift_layout() {
-        let body = multipart_body(b"RIFFxxxx");
+        let body = multipart_body(b"RIFFxxxx", "");
         let text = String::from_utf8_lossy(&body);
         let expected = "--VoiceBoundary7f3a9c\r\nContent-Disposition: form-data; name=\"temperature\"\r\n\r\n0.0\r\n\
 --VoiceBoundary7f3a9c\r\nContent-Disposition: form-data; name=\"temperature_inc\"\r\n\r\n0.0\r\n\
@@ -572,6 +633,29 @@ mod tests {
 --VoiceBoundary7f3a9c\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFFxxxx\r\n\
 --VoiceBoundary7f3a9c--\r\n";
         assert_eq!(text, expected);
+    }
+
+    #[test]
+    fn multipart_body_adds_prompt_field_before_the_file() {
+        let body = multipart_body(b"RIFFxxxx", "Jabree, Tauri, whisper.cpp.");
+        let text = String::from_utf8_lossy(&body);
+        let expected = "--VoiceBoundary7f3a9c\r\nContent-Disposition: form-data; name=\"temperature\"\r\n\r\n0.0\r\n\
+--VoiceBoundary7f3a9c\r\nContent-Disposition: form-data; name=\"temperature_inc\"\r\n\r\n0.0\r\n\
+--VoiceBoundary7f3a9c\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\njson\r\n\
+--VoiceBoundary7f3a9c\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\nJabree, Tauri, whisper.cpp.\r\n\
+--VoiceBoundary7f3a9c\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFFxxxx\r\n\
+--VoiceBoundary7f3a9c--\r\n";
+        assert_eq!(text, expected);
+    }
+
+    #[test]
+    fn multipart_body_prompt_cannot_forge_a_boundary() {
+        // A line break is what a forged `--boundary` line would need.
+        let body = multipart_body(b"RIFF", "a\r\n--VoiceBoundary7f3a9c--\r\nb\nc");
+        let text = String::from_utf8_lossy(&body);
+        assert!(text.contains("name=\"prompt\"\r\n\r\na  --VoiceBoundary7f3a9c--  b c\r\n"));
+        assert_eq!(text.matches("\r\n--VoiceBoundary7f3a9c--\r\n").count(), 1);
+        assert!(text.ends_with("\r\n--VoiceBoundary7f3a9c--\r\n"));
     }
 
     #[test]

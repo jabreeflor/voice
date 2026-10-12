@@ -180,6 +180,8 @@ body.macos .topbar { padding-left: 92px; }
 .snew input:focus { border-color: var(--accent); }
 .snew input.trig { width: 150px; font-weight: 500; }
 .snew input.body { flex: 1; }
+.vocab-head { margin: 34px 0 6px; }
+.vocab-hint { font-size: 13px; color: var(--soft); margin-bottom: 14px; max-width: 560px; }
 
 /* settings */
 .status { display: flex; align-items: center; gap: 10px; font: 500 13px var(--sans);
