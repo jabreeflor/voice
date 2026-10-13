@@ -159,3 +159,121 @@ fn cleaning_twice_matches_cleaning_once() {
     assert_eq!(clean_transcript(&once), once);
     assert_eq!(once, "hold on I'll check now");
 }
+
+// MARK: - remove_fillers
+
+use voice_core::remove_fillers;
+
+/// (whisper output after `clean_transcript`, what gets pasted). The PR's
+/// before/after table is printed from this list.
+const FILLER_CASES: &[(&str, &str)] = &[
+    // Plain removals.
+    (
+        "Um, so I think we should ship it.",
+        "So I think we should ship it.",
+    ),
+    (
+        "I, uh, think we should ship it.",
+        "I think we should ship it.",
+    ),
+    ("We should go, um.", "We should go."),
+    ("Is it, um, ready?", "Is it ready?"),
+    ("So um I think", "So I think"),
+    ("I was um, going to say", "I was going to say"),
+    ("Uh, um, okay.", "Okay."),
+    ("Umm, let's start.", "Let's start."),
+    ("Uhh, wait.", "Wait."),
+    ("Uhm, maybe.", "Maybe."),
+    ("Erm, not sure.", "Not sure."),
+    ("Ummmm, yes.", "Yes."),
+    ("That's it. Uh, next item.", "That's it. Next item."),
+    ("That's it. Um. Next item.", "That's it. Next item."),
+    ("Um... I think so.", "I think so."),
+    ("Uh… fine.", "Fine."),
+    ("It costs, uh, five dollars.", "It costs five dollars."),
+    ("Did you, uh, eat? Um, I did.", "Did you eat? I did."),
+    ("UM, so, uh, what now?", "UM, so what now?"),
+    ("um", ""),
+    ("Um.", ""),
+    ("Uh, um.", ""),
+    ("", ""),
+    // Capitals after removal.
+    ("Um, the plan is simple.", "The plan is simple."),
+    ("Um, iPhone sales are up.", "iPhone sales are up."),
+    ("Uh, eBay listed it.", "eBay listed it."),
+    ("Um, 42 is the answer.", "42 is the answer."),
+    ("Um, I agree.", "I agree."),
+    ("Done! Uh, what's next?", "Done! What's next?"),
+    // Words that contain the letters stay.
+    (
+        "Uh, the umbrella is in the album.",
+        "The umbrella is in the album.",
+    ),
+    ("The drummer hummed a tune.", "The drummer hummed a tune."),
+    ("Summer, humor and Uhura.", "Summer, humor and Uhura."),
+    ("Ermine and term papers.", "Ermine and term papers."),
+    ("The vacuum is on.", "The vacuum is on."),
+    // Hyphenated, quoted and two-word forms are speech, not hesitation.
+    ("Uh-oh, that broke.", "Uh-oh, that broke."),
+    ("Uh-huh, sounds good.", "Uh-huh, sounds good."),
+    ("Uh huh, sounds good.", "Uh huh, sounds good."),
+    ("Uh oh.", "Uh oh."),
+    ("He said \"um\" twice.", "He said \"um\" twice."),
+    ("Stop saying 'uh'.", "Stop saying 'uh'."),
+    ("The um's are gone.", "The um's are gone."),
+    // All-caps tokens are acronyms.
+    ("I went to UM for college.", "I went to UM for college."),
+    ("ERM is our risk framework.", "ERM is our risk framework."),
+    // Unrelated text is untouched.
+    ("Like, you know, I mean it.", "Like, you know, I mean it."),
+    ("Hmm, let me think.", "Hmm, let me think."),
+    ("Take her to the ER.", "Take her to the ER."),
+];
+
+#[test]
+fn filler_cases() {
+    for (before, after) in FILLER_CASES {
+        assert_eq!(remove_fillers(before), *after, "input {before:?}");
+    }
+}
+
+#[test]
+fn removing_fillers_twice_changes_nothing_more() {
+    for (before, _) in FILLER_CASES {
+        let once = remove_fillers(before);
+        assert_eq!(remove_fillers(&once), once, "input {before:?}");
+    }
+}
+
+#[test]
+fn fillers_text_without_fillers_is_returned_verbatim() {
+    let text = "Ship the Tauri build tonight, then ping Jabree.";
+    assert_eq!(remove_fillers(text), text);
+}
+
+#[test]
+fn fillers_composes_with_clean_transcript() {
+    let raw = " Um, [BLANK_AUDIO] so\nuh, we ship it. ";
+    assert_eq!(remove_fillers(&clean_transcript(raw)), "So we ship it.");
+}
+
+#[test]
+fn fillers_non_ascii_neighbours_are_safe() {
+    // Multi-byte characters right next to removal points must not split a
+    // char or panic.
+    assert_eq!(remove_fillers("Uh, élan vital."), "Élan vital.");
+    assert_eq!(remove_fillers("Café, um, au lait."), "Café au lait.");
+    assert_eq!(remove_fillers("Um, 日本語 text."), "日本語 text.");
+}
+
+/// Pinned so nobody mistakes it for a bug: the cleaner is English-only.
+/// "um" is a real word in Portuguese and German, which is why
+/// `removeFillers` is a setting (README says to turn it off for those).
+#[test]
+fn fillers_is_english_only_by_design() {
+    assert_eq!(remove_fillers("Comprei um carro."), "Comprei carro.");
+    assert_eq!(
+        remove_fillers("Wir treffen uns um 5 Uhr."),
+        "Wir treffen uns 5 Uhr."
+    );
+}

@@ -456,6 +456,52 @@ fn sounds_and_trailing_space_default_to_on() {
     assert!(!Config::trailing_space(&f.settings));
 }
 
+#[test]
+fn context_prompt_defaults_to_on_and_persists_under_its_key() {
+    let f = fixture();
+    assert!(Config::context_prompt(&f.settings));
+    Config::set_context_prompt(&f.settings, false);
+    assert!(!Config::context_prompt(&f.settings));
+    assert_eq!(f.settings.get_bool("contextPrompt"), Some(false));
+}
+
+#[test]
+fn filler_removal_defaults_to_on_and_llm_polish_to_off() {
+    let f = fixture();
+    assert!(Config::remove_fillers(&f.settings));
+    assert!(!Config::llm_polish(&f.settings));
+    Config::set_remove_fillers(&f.settings, false);
+    Config::set_llm_polish(&f.settings, true);
+    assert_eq!(f.settings.get_bool("removeFillers"), Some(false));
+    assert_eq!(f.settings.get_bool("llmPolish"), Some(true));
+}
+
+#[test]
+fn llm_polish_endpoint_defaults_to_local_ollama_and_blank_resets() {
+    use voice_core::polish::{DEFAULT_POLISH_MODEL, DEFAULT_POLISH_URL};
+    let f = fixture();
+    assert_eq!(Config::llm_polish_url(&f.settings), DEFAULT_POLISH_URL);
+    assert_eq!(
+        DEFAULT_POLISH_URL,
+        "http://127.0.0.1:11434/v1/chat/completions"
+    );
+    assert_eq!(Config::llm_polish_model(&f.settings), DEFAULT_POLISH_MODEL);
+
+    Config::set_llm_polish_url(&f.settings, "  http://localhost:8080/v1/chat/completions ");
+    Config::set_llm_polish_model(&f.settings, " qwen2.5:3b ");
+    assert_eq!(
+        Config::llm_polish_url(&f.settings),
+        "http://localhost:8080/v1/chat/completions"
+    );
+    assert_eq!(Config::llm_polish_model(&f.settings), "qwen2.5:3b");
+
+    Config::set_llm_polish_url(&f.settings, "   ");
+    Config::set_llm_polish_model(&f.settings, "");
+    assert_eq!(f.settings.get_string("llmPolishUrl"), None);
+    assert_eq!(Config::llm_polish_url(&f.settings), DEFAULT_POLISH_URL);
+    assert_eq!(Config::llm_polish_model(&f.settings), DEFAULT_POLISH_MODEL);
+}
+
 // MARK: - Appearance
 
 #[test]

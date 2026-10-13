@@ -159,6 +159,13 @@ transcript appears at your cursor.
 - The tray icon shows status and turns red while recording; a small pill at
   the bottom of the screen shows the live level and "Typed: …" after a
   paste.
+- On macOS Voice also checks that the paste landed: if no app took the
+  text within about a second of <kbd>⌘V</kbd> (no text field focused, say),
+  the pill says **"Not pasted, copied to clipboard"** and the transcript
+  stays on the clipboard for you to paste by hand, instead of your old
+  clipboard coming back. (A clipboard manager that reads every copy makes
+  every paste look successful, so with one running you get the old
+  behaviour.) Windows and Linux cannot tell, and behave as before.
 
 ### Talk key
 
@@ -212,9 +219,12 @@ The main window has three tabs:
 
 - **Dictations** — words spoken, words per minute, average latency, and a
   day-grouped ledger of everything you dictated (click a row to copy it).
-- **Snippets** — say a trigger phrase, paste a longer text. Also editable
-  from a terminal with [`voicectl`](#️-command-line-voicectl).
-- **Settings** — permission status, talk key, appearance, sound effects,
+- **Snippets** — say a trigger phrase, paste a longer text; below it, the
+  **Vocabulary** list (see [Accuracy and cleanup](#-accuracy-and-cleanup)).
+  Both are also editable from a terminal with
+  [`voicectl`](#️-command-line-voicectl).
+- **Settings** — permission status, talk key, appearance, the
+  [accuracy and cleanup](#-accuracy-and-cleanup) switches, sound effects,
   start at login, and a 3-second microphone check.
 
 The windows follow the system's light or dark appearance; **Settings →
@@ -225,11 +235,48 @@ Appearance** can pin either one instead (Match system / Light / Dark).
 <img src="assets/screenshots/main-settings.png" width="440" alt="Settings tab">
 </div>
 
+## 🎯 Accuracy and cleanup
+
+Everything here runs on your machine. Nothing below sends audio or text
+anywhere but the local whisper-server.
+
+- **Vocabulary** (Snippets tab, or `voicectl vocab`) — names and jargon
+  whisper should spell your way: `Jabree`, `Tauri`, `whisper.cpp`. With
+  **Settings → Use vocabulary as a hint** on (the default), every dictation
+  sends your vocabulary, then your snippet triggers, to the local
+  whisper-server as its `prompt`, e.g. `Jabree, Tauri, whisper.cpp, my
+  email.` The line is capped at 400 characters (whisper reads at most ~223
+  prompt tokens); entries that don't fit are skipped, earlier ones first in
+  line. A long prompt adds a little decode time, so keep the list to the
+  words whisper actually gets wrong. `voicectl vocab prompt` prints the
+  exact line.
+- **Remove filler words** (Settings, on by default) — drops *um*, *uh*,
+  *erm* and their stretched spellings, then repairs the commas and capital
+  letters around them: "Um, so I think, uh, we ship it" pastes as "So I
+  think we ship it". Words that are only *sometimes* filler ("like", "you
+  know", "I mean", "hmm") are left alone, and so are "umbrella", "uh-oh",
+  "uh huh" and all-caps acronyms like "UM". It is plain pattern matching
+  for English; turn it off if you dictate Portuguese or German, where "um"
+  is a real word.
+- **Polish with a local LLM** (Settings, off by default) — sends the
+  cleaned transcript to an OpenAI-compatible chat endpoint **on this
+  computer** to fix punctuation, casing and false starts. The default is
+  [Ollama](https://ollama.com)'s `http://127.0.0.1:11434/v1/chat/completions`
+  with `llama3.2:3b` (`ollama pull llama3.2:3b`); llama.cpp's
+  `llama-server` and LM Studio work too. Only `127.0.0.1`, `::1` and
+  `localhost` URLs are accepted — anything else is refused before a
+  connection is made, and the request ignores proxy settings — so the
+  text cannot leave the machine. The pass gives up after 2.5 s, and on any
+  error (server not running, model missing, a reply that looks like the
+  model answered instead of cleaning) the un-polished text is pasted, so
+  dictation never blocks on it. Snippets are expanded after the pass, so
+  their text is pasted exactly as written.
+
 ## ⌨️ Command line: `voicectl`
 
 `voicectl` ships next to the app (inside `Voice.app` on macOS) and the
-installer links it onto your PATH. It edits the same snippets the app
-uses, so scripts and coding agents can manage them without clicking
+installer links it onto your PATH. It edits the same snippets and
+vocabulary the app uses, so scripts and coding agents can manage them without clicking
 through the Snippets tab. The running app picks changes up immediately.
 
 ```sh
@@ -244,6 +291,12 @@ voicectl snippets remove brb
 voicectl snippets export > snippets.json             # back up / share
 voicectl snippets import snippets.json               # merge (--replace to overwrite)
 voicectl snippets path                               # where snippets.json lives
+
+voicectl vocab add Jabree Tauri whisper.cpp          # words whisper should spell your way
+voicectl vocab list                                  # or --json
+voicectl vocab remove Tauri
+voicectl vocab prompt                                # the prompt whisper gets
+voicectl vocab export > vocabulary.json              # import works like snippets
 ```
 
 Exit status is 0 on success, 1 when a trigger is missing or input is
@@ -262,7 +315,7 @@ produces `target/release/voicectl[.exe]`.
 
 | | macOS | Windows | Linux |
 |---|---|---|---|
-| Settings, history, snippets | `~/Library/Application Support/Voice/` | `%APPDATA%\Voice\` | `~/.local/share/Voice/` |
+| Settings, history, snippets, vocabulary | `~/Library/Application Support/Voice/` | `%APPDATA%\Voice\` | `~/.local/share/Voice/` |
 | Models | `~/voice/models/` (or `~/.voice/models/`) | `%USERPROFILE%\voice\models\` | `~/voice/models/` |
 
 History and snippets are the same `history.json` / `snippets.json` the
@@ -275,7 +328,7 @@ graph LR
     A["🎹 Hold talk key"] --> B["🎙️ Record<br>16 kHz mono"]
     B --> C["⏹ Release"]
     C --> D["whisper-server<br>127.0.0.1:8178"]
-    D --> E["🧹 Clean up<br>+ expand snippets"]
+    D --> E["🧹 Clean up, fillers,<br>optional local LLM<br>+ expand snippets"]
     E --> F["📋 Paste at cursor<br>(clipboard restored)"]
 ```
 
@@ -285,14 +338,18 @@ graph LR
 - A global keyboard hook (CGEvent tap on macOS, low-level hook on Windows,
   XRecord on Linux) watches the talk key; audio is captured with `cpal`
   and resampled to 16 kHz mono.
-- On release, the WAV is POSTed to the local server, the transcript is
-  cleaned of whisper's non-speech markers, snippet triggers are expanded,
+- On release, the WAV is POSTed to the local server (with your vocabulary
+  as whisper's prompt), the transcript is cleaned of whisper's non-speech
+  markers and filler words (and optionally polished by a local LLM), snippet triggers are expanded,
   the text is placed on the clipboard, and <kbd>⌘V</kbd> / <kbd>Ctrl+V</kbd>
   is synthesized into the frontmost app — your previous clipboard is
-  restored afterwards.
+  restored afterwards. On macOS the text is put on the clipboard as a
+  *promise* that is only filled in when an app reads it, which is how
+  Voice knows whether the paste was taken.
 
 **Privacy:** the server binds to localhost only. No telemetry, no accounts,
-no network calls except model downloads from Hugging Face.
+no network calls except model downloads from Hugging Face. The optional
+LLM polish talks only to a loopback address you run yourself.
 
 ## 🛠️ Development
 

@@ -14,6 +14,7 @@
   let visible = false;
   let dictationsDirty = true;
   let lastSnippetStamp = null;
+  let lastVocabStamp = null;
 
   // ── tabs ──────────────────────────────────────────────────────────────
   function select(view) {
@@ -212,6 +213,48 @@
     $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') saveSnippet(); });
   }
 
+  // ── vocabulary ────────────────────────────────────────────────────────
+  // Same stamp guard as the snippet list; lives on the Snippets tab.
+  async function renderVocabulary(force) {
+    const { stamp, words } = await invoke('get_vocabulary');
+    if (!force && stamp === lastVocabStamp) return;
+    lastVocabStamp = stamp;
+    const root = $('vocab-rows');
+    root.textContent = '';
+    if (words.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'sempty';
+      empty.textContent = 'No words yet — add names or jargon the transcriber gets wrong.';
+      root.appendChild(empty);
+    }
+    for (const word of words) {
+      const row = document.createElement('div');
+      row.className = 'srow';
+      const t = document.createElement('span');
+      t.className = 't';
+      t.textContent = word;
+      const del = document.createElement('button');
+      del.className = 'del';
+      del.textContent = '✕';
+      del.title = 'Remove word';
+      del.setAttribute('aria-label', `Remove “${word}” from vocabulary`);
+      del.addEventListener('click', async () => {
+        await invoke('remove_vocabulary', { word });
+        renderVocabulary();
+      });
+      row.append(t, del);
+      root.appendChild(row);
+    }
+  }
+  async function saveWord() {
+    const ok = await invoke('add_vocabulary', { word: $('new-word').value });
+    if (!ok) { $('new-word').focus(); return; }
+    $('new-word').value = '';
+    renderVocabulary();
+  }
+  $('save-word').addEventListener('click', saveWord);
+  $('new-word').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveWord(); });
+
   // ── settings ──────────────────────────────────────────────────────────
   async function renderSettings() {
     const [status, settings] = await Promise.all([invoke('get_status'), invoke('get_settings')]);
@@ -232,6 +275,16 @@
       }
     }
     look.value = settings.appearance;
+    setSwitch($('context-switch'), settings.context_prompt);
+    setSwitch($('fillers-switch'), settings.remove_fillers);
+    setSwitch($('polish-switch'), settings.llm_polish);
+    $('polish-switch').closest('.set-card').classList.toggle('polish-on', settings.llm_polish);
+    // The 1 s refresh must not overwrite a field the user is typing in, nor
+    // a refused URL they have not corrected yet.
+    for (const [id, value] of [['polish-url', settings.llm_polish_url], ['polish-model', settings.llm_polish_model]]) {
+      const field = $(id);
+      if (document.activeElement !== field && !field.classList.contains('invalid')) field.value = value;
+    }
     setSwitch($('sounds-switch'), settings.sounds);
     setSwitch($('login-switch'), settings.start_at_login);
   }
@@ -265,6 +318,31 @@
   }
   // theme.js restyles every window on the backend's `appearance-changed`.
   $('appearance-select').addEventListener('change', (e) => invoke('set_appearance', { id: e.target.value }));
+  $('fillers-switch').addEventListener('click', (e) => {
+    const on = !e.currentTarget.classList.contains('on');
+    setSwitch(e.currentTarget, on);
+    invoke('set_remove_fillers', { enabled: on });
+  });
+  $('polish-switch').addEventListener('click', (e) => {
+    const on = !e.currentTarget.classList.contains('on');
+    setSwitch(e.currentTarget, on);
+    e.currentTarget.closest('.set-card').classList.toggle('polish-on', on);
+    invoke('set_llm_polish', { enabled: on });
+  });
+  // Only loopback URLs are accepted (the backend refuses anything else, so
+  // dictated text can never leave the machine); a refused URL turns red.
+  $('polish-url').addEventListener('change', async (e) => {
+    const ok = await invoke('set_llm_polish_url', { url: e.target.value });
+    e.target.classList.toggle('invalid', !ok);
+    e.target.title = ok ? '' : 'Only this computer: 127.0.0.1, ::1 or localhost';
+  });
+  $('polish-url').addEventListener('input', (e) => e.target.classList.remove('invalid'));
+  $('polish-model').addEventListener('change', (e) => invoke('set_llm_polish_model', { model: e.target.value }));
+  $('context-switch').addEventListener('click', (e) => {
+    const on = !e.currentTarget.classList.contains('on');
+    setSwitch(e.currentTarget, on);
+    invoke('set_context_prompt', { enabled: on });
+  });
   $('sounds-switch').addEventListener('click', (e) => {
     const on = !e.currentTarget.classList.contains('on');
     setSwitch(e.currentTarget, on);
@@ -294,6 +372,7 @@
       if (entering || dictationsDirty) renderDictations();
     } else if (current === 'snippets') {
       renderSnippets(entering);
+      renderVocabulary(entering);
     } else {
       renderSettings();
     }
@@ -314,6 +393,7 @@
       if (visible && current === 'dictations') renderDictations();
     });
     listen('snippets-changed', () => { if (visible && current === 'snippets') renderSnippets(); });
+    listen('vocabulary-changed', () => { if (visible && current === 'snippets') renderVocabulary(); });
     // Edits made by voicectl (or by hand) are picked up by the backend on each
     // read, so a 1 s timer keeps the visible tab in sync with the file, the
     // same way the AppKit window did. Like that window's timer it only runs

@@ -19,7 +19,8 @@
 //!   `claim_preview` read `preview_active` under `state` so the dictation
 //!   worker and the main thread cannot both start the recorder. Any further
 //!   nesting must follow the order `state` → `preview_active` → `recorder` →
-//!   `snippets` → `history` → `engine` → `setup_*` → `tray_items`.
+//!   `snippets` → `vocabulary` → `history` → `engine` → `setup_*` →
+//!   `tray_items`.
 //! - Bind a lock's result before testing it (`let r = lock(&x).f(); if let
 //!   Err(e) = r`): in edition 2021 an `if let` on the locked expression keeps
 //!   the guard alive for the whole body.
@@ -39,10 +40,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager};
+use voice_core::polish;
 use voice_core::{
-    clean_transcript, compute_status, wav_data, Config, DictationEntry, HistoryStore, Hotkey,
-    ModelCatalog, ModelDownloader, Platform, Settings, SnippetStore, StatusInfo, StatusInputs,
-    Store, WhisperEngine,
+    clean_transcript, compute_status, remove_fillers, wav_data, whisper_prompt, Config,
+    DictationEntry, HistoryStore, Hotkey, ModelCatalog, ModelDownloader, Platform, Settings,
+    SnippetStore, StatusInfo, StatusInputs, Store, VocabularyStore, WhisperEngine,
 };
 
 use crate::audio::Recorder;
@@ -69,6 +71,10 @@ const MIC_PREVIEW: Duration = Duration::from_secs(3);
 const FLASH_SETTING_UP: Duration = Duration::from_millis(1400);
 const FLASH_MIC_ERROR: Duration = Duration::from_secs(2);
 const FLASH_ENGINE_ERROR: Duration = Duration::from_millis(2200);
+/// Long enough to read, since the user has to act on it (paste by hand).
+const FLASH_NOT_PASTED: Duration = Duration::from_millis(2200);
+/// Overlay notice when macOS saw no app read the pasted text.
+pub const NOT_PASTED_MESSAGE: &str = "Not pasted, copied to clipboard";
 /// Overlay preview of a pasted dictation: this many characters then "…".
 const TYPED_PREVIEW_CHARS: usize = 24;
 
@@ -91,6 +97,7 @@ pub struct App {
     pub settings: Arc<Settings>,
     pub history: Mutex<HistoryStore>,
     pub snippets: Mutex<SnippetStore>,
+    pub vocabulary: Mutex<VocabularyStore>,
     pub recorder: Mutex<Recorder>,
     pub hotkeys: HotkeyController,
     pub downloader: ModelDownloader,
@@ -209,7 +216,8 @@ impl App {
         let dir = Store::dir();
         let settings = Arc::new(Settings::in_dir(&dir));
         let history = HistoryStore::new(dir.clone(), settings.clone());
-        let snippets = SnippetStore::new(dir);
+        let snippets = SnippetStore::new(dir.clone());
+        let vocabulary = VocabularyStore::new(dir);
 
         let hotkey_settings = settings.clone();
         let (tx, rx) = mpsc::channel::<HotkeyEvent>();
@@ -226,6 +234,7 @@ impl App {
             settings,
             history: Mutex::new(history),
             snippets: Mutex::new(snippets),
+            vocabulary: Mutex::new(vocabulary),
             recorder: Mutex::new(Recorder::new()),
             hotkeys,
             downloader: ModelDownloader::new(),
@@ -758,7 +767,8 @@ impl App {
                 // goes through third-party clipboard/keystroke code) would
                 // otherwise leave the state machine in Transcribing forever.
                 let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                    let result = engine.transcribe(&wav);
+                    let prompt = app.whisper_prompt();
+                    let result = engine.transcribe_with_prompt(&wav, &prompt);
                     app.set_state(State::Idle);
                     match result {
                         Err(error) => {
@@ -783,6 +793,31 @@ impl App {
         }
     }
 
+    /// The vocabulary + snippet-trigger prompt for the local whisper-server,
+    /// or "" when `contextPrompt` is off. Both stores re-read their files
+    /// first so a `voicectl` edit counts on the very next dictation; each
+    /// lock is released before the next is taken.
+    fn whisper_prompt(&self) -> String {
+        if !Config::context_prompt(&self.settings) {
+            return String::new();
+        }
+        let triggers: Vec<String> = {
+            let mut snippets = lock(&self.snippets);
+            snippets.reload_if_changed();
+            snippets
+                .snippets()
+                .iter()
+                .map(|s| s.trigger.clone())
+                .collect()
+        };
+        let words = {
+            let mut vocabulary = lock(&self.vocabulary);
+            vocabulary.reload_if_changed();
+            vocabulary.words().to_vec()
+        };
+        whisper_prompt(&words, &triggers)
+    }
+
     /// After a panic in begin/end/cancel: drop whatever was recording and go
     /// back to Idle so the next hold works.
     fn recover_from_panic(&self) {
@@ -792,13 +827,21 @@ impl App {
         self.overlay.hide();
     }
 
-    /// Everything after a successful transcription: cleanup, snippets,
-    /// history, paste, confirmation.
+    /// Everything after a successful transcription: cleanup (artifacts,
+    /// fillers, optional local LLM), snippets, history, paste, confirmation.
+    /// The LLM pass runs before snippet expansion so a snippet's text is
+    /// pasted exactly as the user wrote it.
     fn deliver(&self, raw: String, duration: f64, sent_at: Instant) {
-        let cleaned = clean_transcript(&raw);
+        let mut cleaned = clean_transcript(&raw);
+        if Config::remove_fillers(&self.settings) {
+            cleaned = remove_fillers(&cleaned);
+        }
         if cleaned.is_empty() {
             self.overlay.flash("No speech detected", FLASH_DEFAULT);
             return;
+        }
+        if Config::llm_polish(&self.settings) {
+            cleaned = self.polish(cleaned);
         }
         let text = lock(&self.snippets).expand(&cleaned);
         let latency = sent_at.elapsed().as_secs_f64();
@@ -808,18 +851,37 @@ impl App {
             duration,
             latency,
         ));
-        if Config::trailing_space(&self.settings) {
-            paste_text(&format!("{text} "));
+        let outcome = if Config::trailing_space(&self.settings) {
+            paste_text(&format!("{text} "))
         } else {
-            paste_text(&text);
-        }
+            paste_text(&text)
+        };
         if Config::sounds_enabled(&self.settings) {
             self.overlay.play_sound("done");
         }
-        self.overlay.flash(&typed_flash(&text), FLASH_DEFAULT);
+        if outcome.notify_user() {
+            self.overlay.flash(NOT_PASTED_MESSAGE, FLASH_NOT_PASTED);
+        } else {
+            self.overlay.flash(&typed_flash(&text), FLASH_DEFAULT);
+        }
         let _ = self.handle.emit("dictation-landed", ());
         let _ = self.handle.emit("history-changed", ());
         self.refresh_ui();
+    }
+
+    /// The local-LLM pass, bounded by `polish::POLISH_TIMEOUT`. Any failure
+    /// (server not running, model missing, timeout, a non-loopback URL in
+    /// settings.json) pastes the text unpolished; only the log says why.
+    fn polish(&self, text: String) -> String {
+        let url = Config::llm_polish_url(&self.settings);
+        let model = Config::llm_polish_model(&self.settings);
+        match polish::polish(&text, &url, &model, polish::POLISH_TIMEOUT) {
+            Ok(polished) => polished,
+            Err(e) => {
+                log::warn!("LLM polish skipped: {e}");
+                text
+            }
+        }
     }
 
     pub fn cancel_recording(&self) {

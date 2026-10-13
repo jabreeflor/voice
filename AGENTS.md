@@ -19,11 +19,13 @@ crates/voice-core/               pure logic, no GUI/audio deps; builds + tests e
   src/lib.rs                     module map + re-exports
   src/settings.rs                Settings: JSON key/value file replacing UserDefaults
   src/config.rs                  Hotkey, Config (port, models dirs, model search), ModelCatalog
-  src/transcript.rs              clean_transcript
+  src/transcript.rs              clean_transcript, remove_fillers (um/uh/erm, English-only)
+  src/polish.rs                  optional local-LLM pass (OpenAI-compatible, loopback URLs only)
   src/wav.rs                     wav_data (44-byte RIFF header, 16 kHz mono i16)
   src/status.rs                  StatusInputs / compute_status decision table
-  src/store.rs                   Store::dir, HistoryStore, SnippetStore
-  src/engine.rs                  WhisperEngine (whisper-server child + HTTP), find_binary
+  src/store.rs                   Store::dir, HistoryStore, SnippetStore, VocabularyStore
+  src/engine.rs                  WhisperEngine (whisper-server child + HTTP), find_binary,
+                                 whisper_prompt (vocabulary → whisper `prompt` field)
   src/download.rs                ModelDownloader
   src/cli.rs                     voicectl: VoiceCli::run (pure) / VoiceCli::main
   tests/*.rs                     tiers 1–3 (one file per former Swift test class)
@@ -39,11 +41,14 @@ crates/voice-app/                Tauri 2 desktop app
   src/app.rs                     App state machine, recording flow, status, window show/hide
   src/audio.rs                   Recorder (cpal → 16 kHz mono f32)
   src/hotkey.rs                  HotkeyController (CGEvent tap / rdev)
-  src/paste.rs                   paste_text (arboard + enigo, clipboard restore)
+  src/paste.rs                   paste_text (arboard + enigo, clipboard restore),
+                                 paste_outcome (platform-neutral landed/not-landed decision)
   src/tray.rs                    tray icon + menu
   src/overlay.rs                 floating pill window driver
   src/commands.rs                #[tauri::command] handlers + DTOs used by ui/
   src/platform/{mod,macos,windows,linux}.rs  permissions, settings panes, relaunch
+  src/platform/macos_pasteboard.rs  macOS only: promised pasteboard item (paste-landed check)
+  tests/macos_pasteboard.rs      harness = false: that module against real AppKit + osascript
   ui/                            static HTML/CSS/JS (index, onboarding, overlay, theme.js,
                                  keyboard.js talk-key picker), sounds/
 assets/app-prototype.html        HTML mirror of the design tokens — keep in sync with ui/
@@ -116,15 +121,27 @@ feature flags to make macOS code compile elsewhere.
    (`app::recording_long_enough`), then `voice_core::wav_data` wraps PCM in a
    44-byte RIFF header.
 3. `voice_core::engine::WhisperEngine` POSTs the WAV to
-   `http://127.0.0.1:<port>/inference`. Production port is
+   `http://127.0.0.1:<port>/inference`, plus a `prompt` field built by
+   `whisper_prompt` from `vocabulary.json` and the snippet triggers when
+   `contextPrompt` is on (no field at all when the prompt is empty, so the
+   request is then byte-identical to the Swift one). Production port is
    `Config::SERVER_PORT` (8178). Tests use **18178** so a running app is not
    disturbed. `find_binary` searches next to the executable, `PATH`, then
    the fixed install prefixes (Homebrew, `/usr/bin`, `~/.local/bin`,
    `%LOCALAPPDATA%\voice\bin`).
-4. `voice_core::clean_transcript` strips known non-speech markers, then
+4. `voice_core::clean_transcript` strips known non-speech markers,
+   `remove_fillers` drops um/uh/erm when `removeFillers` is on (default),
+   `polish::polish` runs the optional local-LLM pass when `llmPolish` is on
+   (default off; any error pastes the unpolished text), then
    `SnippetStore::expand` rewrites triggers, then `paste::paste_text` copies
    to the clipboard, synthesizes ⌘V / Ctrl+V with `enigo`, and restores the
-   previous clipboard after 0.6 s. History is appended, the overlay flashes
+   previous clipboard after 0.6 s. On macOS the copy is a promised
+   `NSPasteboardItem` (`platform::macos_pasteboard`); if no app reads it
+   within 1.2 s, `paste_outcome` says `NotPasted`, the transcript is kept on
+   the clipboard as a plain string (no restore) and the overlay flashes
+   "Not pasted, copied to clipboard". The provider callback is served on the
+   main thread's run loop, so `paste_text` must never run on the main
+   thread. Windows/Linux cannot tell and keep the old behaviour. History is appended, the overlay flashes
    "Typed: …" (24-char prefix), and a trailing space is added when
    `trailingSpace` is on.
 
@@ -134,11 +151,14 @@ feature flags to make macOS code compile elsewhere.
 
 ## voicectl (bundled CLI)
 
-`voicectl` is the supported way for scripts and agents to edit snippets:
-`voicectl snippets list|get|add|remove|expand|export|import|path`, `--json`
+`voicectl` is the supported way for scripts and agents to edit snippets
+and vocabulary:
+`voicectl snippets list|get|add|remove|expand|export|import|path`,
+`voicectl vocab list|add|remove|export|import|prompt|path`, `--json`
 for machine output, `-` for stdin, `--dir` to target another data
 directory. Exit codes: 0 ok, 1 not found/invalid, 2 usage. It writes the
-same `snippets.json` the app reads; `SnippetStore::reload_if_changed`
+same `snippets.json` / `vocabulary.json` the app reads;
+`SnippetStore::reload_if_changed` (and its `VocabularyStore` twin)
 (called from `expand`, from mutations, and from the Snippets tab's refresh)
 is what makes the running app see those edits. `build.sh` copies it into
 `Voice.app/Contents/MacOS/`; the Linux/Windows bundles do not include it
@@ -149,8 +169,8 @@ new commands in `tests/cli.rs`.
 
 | Tier | What | Where |
 | --- | --- | --- |
-| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,cli,download}.rs` plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection) | CI `cargo test --workspace` |
-| 2 | Real `whisper-server` + fixture audio: `tests/engine_integration.rs` `test1..test5` | CI `cargo test --workspace` |
+| 1 | Pure logic: `tests/{transcript,wav,config,settings,history,snippets,vocabulary,prompt,polish,cli,download}.rs` (`polish.rs` runs a mock OpenAI-compatible server on 127.0.0.1) plus the fake-server unit tests at the bottom of `tests/engine_integration.rs`; `voice-app` unit tests (`cargo test -p voice-app`: hotkey rules, recording guards, Wayland detection, `paste_outcome`) and, on macOS, `voice-app/tests/macos_pasteboard.rs` (real AppKit promise on a private named pasteboard, read by an `osascript` process) | CI `cargo test --workspace` |
+| 2 | Real `whisper-server` + fixture audio: `tests/engine_integration.rs` `test1..test6` | CI `cargo test --workspace` |
 | 3 | `compute_status` decision table: `tests/status.rs` | CI `cargo test --workspace` |
 | 4 | Full GUI dictation | `scripts/e2e-smoke.sh` only (macOS) |
 
@@ -213,8 +233,9 @@ Rules:
 ## Invariants — do not break these
 
 - Privacy: `whisper-server` must bind `127.0.0.1` only. No analytics,
-  accounts, or sending audio off-device. Hugging Face is used only for
-  model downloads.
+  accounts, or sending audio or text off-device. Hugging Face is used only
+  for model downloads. `polish::polish` refuses any non-loopback URL before
+  connecting and its agent ignores proxy env vars; keep both.
 - Production inference stays on port 8178; tests stay on 18178.
 - `clean_transcript` only strips the listed artifacts. Unknown `[brackets]`
   are left alone.
@@ -223,9 +244,10 @@ Rules:
   macOS the activation policy is Accessory until a window is shown.
 - `Settings` keys keep the Swift `UserDefaults` names (`hotkey`, `sounds`,
   `trailingSpace`, `modelFile`, `onboarded`, `lastAXRelaunch`, `wordsTotal`)
-  and `Hotkey::raw_value` keeps the Swift raw strings. `appearance`
-  (`system` / `light` / `dark`, Rust-only) is the one key the Swift app
-  never wrote.
+  and `Hotkey::raw_value` keeps the Swift raw strings. The Rust-only keys
+  the Swift app never wrote are `appearance` (`system` / `light` / `dark`),
+  `contextPrompt`, `removeFillers`, `llmPolish`, `llmPolishUrl` and
+  `llmPolishModel`.
 - `history.json` and `snippets.json` stay byte-compatible with the files the
   Swift app wrote: `DictationEntry.date` is stored as seconds since
   2001-01-01 (Apple reference date), and `Store::dir()` is

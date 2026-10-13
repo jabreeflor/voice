@@ -5,18 +5,20 @@
 //! Module map (mirrors the original Swift `VoiceCore` MARK sections):
 //! - `settings`   JSON-backed key/value store replacing `UserDefaults`
 //! - `config`     hotkey choices, model discovery, model catalog
-//! - `transcript` `clean_transcript`
+//! - `transcript` `clean_transcript`, `remove_fillers`
 //! - `wav`        `wav_data` RIFF encoder
 //! - `status`     `compute_status` decision table
-//! - `store`      dictation history + snippets
+//! - `store`      dictation history, snippets, vocabulary
 //! - `engine`     whisper-server child process + HTTP client
 //! - `download`   model downloader
+//! - `polish`     optional local-LLM cleanup (loopback endpoints only)
 //! - `cli`        voicectl argument parsing and commands
 
 pub mod cli;
 pub mod config;
 pub mod download;
 pub mod engine;
+pub mod polish;
 pub mod settings;
 pub mod status;
 pub mod store;
@@ -26,9 +28,9 @@ pub mod wav;
 pub use cli::{CliResult, VoiceCli};
 pub use config::{expand_tilde, Appearance, Config, Hotkey, ModelCatalog, ModelSpec};
 pub use download::ModelDownloader;
-pub use engine::{EngineError, WhisperEngine};
+pub use engine::{whisper_prompt, EngineError, WhisperEngine, PROMPT_CHAR_BUDGET};
 pub use settings::Settings;
 pub use status::{compute_status, Platform, StatusColor, StatusInfo, StatusInputs};
-pub use store::{DictationEntry, HistoryStore, Snippet, SnippetStore, Store};
-pub use transcript::clean_transcript;
+pub use store::{DictationEntry, HistoryStore, Snippet, SnippetStore, Store, VocabularyStore};
+pub use transcript::{clean_transcript, remove_fillers};
 pub use wav::wav_data;

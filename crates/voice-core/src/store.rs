@@ -69,6 +69,17 @@ fn write_atomically(path: &Path, bytes: &[u8]) {
     }
 }
 
+/// (mtime, size) of a user-editable file, `None` when it does not exist.
+/// Stores compare it against the value from their last load or save to
+/// notice edits made by `voicectl` (or a text editor) without re-reading the
+/// file every time.
+type Fingerprint = Option<(Option<SystemTime>, u64)>;
+
+fn file_fingerprint(path: &Path) -> Fingerprint {
+    let meta = fs::metadata(path).ok()?;
+    Some((meta.modified().ok(), meta.len()))
+}
+
 /// Swift's `split(separator: " ")` drops empty pieces, so runs of spaces and
 /// an empty string both count as zero extra words.
 fn word_count(text: &str) -> i64 {
@@ -283,10 +294,8 @@ pub struct SnippetStore {
     snippets: Vec<Snippet>,
     directory: PathBuf,
     stamp: u64,
-    /// (mtime, size) of snippets.json as of the last load or save.
-    /// `reload_if_changed` compares against it so the app notices edits made
-    /// by `voicectl` (or a text editor) without re-reading the file every time.
-    fingerprint: Option<(Option<SystemTime>, u64)>,
+    /// snippets.json as of the last load or save (see [`Fingerprint`]).
+    fingerprint: Fingerprint,
 }
 
 impl SnippetStore {
@@ -433,10 +442,8 @@ impl SnippetStore {
         out
     }
 
-    /// None when the file does not exist.
-    fn current_fingerprint(&self) -> Option<(Option<SystemTime>, u64)> {
-        let meta = fs::metadata(self.file_path()).ok()?;
-        Some((meta.modified().ok(), meta.len()))
+    fn current_fingerprint(&self) -> Fingerprint {
+        file_fingerprint(&self.file_path())
     }
 
     fn load(&mut self) {
@@ -453,6 +460,150 @@ impl SnippetStore {
         }
         // Record our own write so it is not later mistaken for an external edit.
         self.fingerprint = self.current_fingerprint();
+    }
+}
+
+// MARK: - Vocabulary
+
+/// Words and names whisper should spell the user's way (product names,
+/// colleagues, jargon). Sent to whisper as its initial prompt; see
+/// `engine::whisper_prompt`. Stored in `vocabulary.json` next to
+/// snippets.json as a plain JSON array of strings, with the same
+/// reload-on-external-edit rule so `voicectl vocab ...` reaches the running
+/// app. Unlike snippet triggers the spelling is kept as typed: case is the
+/// whole point ("Jabree", not "jabree").
+pub struct VocabularyStore {
+    words: Vec<String>,
+    directory: PathBuf,
+    stamp: u64,
+    fingerprint: Fingerprint,
+}
+
+impl VocabularyStore {
+    pub fn new(directory: PathBuf) -> VocabularyStore {
+        let _ = fs::create_dir_all(&directory);
+        let mut store = VocabularyStore {
+            words: Vec::new(),
+            directory,
+            stamp: 0,
+            fingerprint: None,
+        };
+        store.load();
+        store
+    }
+
+    pub fn words(&self) -> &[String] {
+        &self.words
+    }
+
+    pub fn stamp(&self) -> u64 {
+        self.stamp
+    }
+
+    pub fn file_path(&self) -> PathBuf {
+        self.directory.join("vocabulary.json")
+    }
+
+    /// Surrounding quotes and whitespace dropped, inner whitespace collapsed
+    /// to single spaces. Case is preserved.
+    pub fn normalize_word(word: &str) -> String {
+        word.trim_matches(|c: char| c == '"' || c.is_whitespace())
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// The stored spelling of `word`, matched case-insensitively.
+    pub fn find(&self, word: &str) -> Option<&str> {
+        let key = Self::normalize_word(word).to_lowercase();
+        self.words
+            .iter()
+            .find(|w| w.to_lowercase() == key)
+            .map(String::as_str)
+    }
+
+    /// Adds `word`, or re-spells an existing case-insensitive match in place
+    /// (so "jabree" → "Jabree" fixes the entry without moving it). Returns
+    /// false (and changes nothing) when the word is empty after
+    /// normalization.
+    pub fn add(&mut self, word: &str) -> bool {
+        let w = Self::normalize_word(word);
+        if w.is_empty() {
+            return false;
+        }
+        // A stale in-memory list must not clobber another writer's words.
+        self.reload_if_changed();
+        let key = w.to_lowercase();
+        match self.words.iter_mut().find(|x| x.to_lowercase() == key) {
+            Some(existing) if *existing == w => return true,
+            Some(existing) => *existing = w,
+            None => self.words.push(w),
+        }
+        self.stamp += 1;
+        self.save();
+        true
+    }
+
+    /// Case-insensitive. Returns false when there is no such word.
+    pub fn remove(&mut self, word: &str) -> bool {
+        self.reload_if_changed();
+        let key = Self::normalize_word(word).to_lowercase();
+        let before = self.words.len();
+        self.words.retain(|w| w.to_lowercase() != key);
+        if self.words.len() == before {
+            return false;
+        }
+        self.stamp += 1;
+        self.save();
+        true
+    }
+
+    /// Replaces every word (normalized, empties dropped, the first spelling
+    /// of a case-insensitive duplicate wins).
+    pub fn replace_all(&mut self, list: &[String]) {
+        let mut out: Vec<String> = Vec::new();
+        for word in list {
+            let w = Self::normalize_word(word);
+            if w.is_empty() || out.iter().any(|x| x.to_lowercase() == w.to_lowercase()) {
+                continue;
+            }
+            out.push(w);
+        }
+        self.words = out;
+        self.stamp += 1;
+        self.save();
+    }
+
+    /// Re-reads vocabulary.json if another process wrote it since the last
+    /// load or save. Returns true when the in-memory list actually changed.
+    pub fn reload_if_changed(&mut self) -> bool {
+        if file_fingerprint(&self.file_path()) == self.fingerprint {
+            return false;
+        }
+        let previous = std::mem::take(&mut self.words);
+        self.load();
+        if self.words != previous {
+            self.stamp += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn load(&mut self) {
+        self.fingerprint = file_fingerprint(&self.file_path());
+        self.words = fs::read(self.file_path())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Vec<String>>(&bytes).ok())
+            .unwrap_or_default();
+    }
+
+    fn save(&mut self) {
+        if let Ok(bytes) = serde_json::to_vec(&self.words) {
+            write_atomically(&self.file_path(), &bytes);
+        }
+        // Record our own write so it is not later mistaken for an external edit.
+        self.fingerprint = file_fingerprint(&self.file_path());
     }
 }
 

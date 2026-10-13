@@ -11,6 +11,12 @@ repository.workspace = true
 name = "voice"
 path = "src/main.rs"
 
+# Runs its own main so the main thread can service AppKit's pasteboard
+# callbacks (see the file); a no-op on Windows and Linux.
+[[test]]
+name = "macos_pasteboard"
+harness = false
+
 [build-dependencies]
 tauri-build.workspace = true
 
@@ -41,7 +47,8 @@ objc2.workspace = true
 objc2-foundation.workspace = true
 objc2-av-foundation.workspace = true
 block2.workspace = true
-# Overlay window: collection behaviour + status-bar level (see overlay.rs).
+# Overlay window: collection behaviour + status-bar level (see overlay.rs);
+# promised pasteboard item for paste-landing detection (macos_pasteboard.rs).
 objc2-app-kit.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]

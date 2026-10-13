@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::polish::{DEFAULT_POLISH_MODEL, DEFAULT_POLISH_URL};
 use crate::settings::Settings;
 
 /// The hold-to-talk key. Raw values are the Swift `UserDefaults` strings so a
@@ -218,6 +219,70 @@ impl Config {
 
     pub fn trailing_space(settings: &Settings) -> bool {
         settings.get_bool("trailingSpace").unwrap_or(true)
+    }
+
+    /// `contextPrompt` (Rust-only): send the vocabulary and snippet triggers
+    /// to the local whisper-server as its prompt. Default on.
+    pub fn context_prompt(settings: &Settings) -> bool {
+        settings.get_bool("contextPrompt").unwrap_or(true)
+    }
+
+    pub fn set_context_prompt(settings: &Settings, enabled: bool) {
+        settings.set("contextPrompt", enabled);
+    }
+
+    /// `removeFillers` (Rust-only): drop um/uh/erm before pasting
+    /// (`transcript::remove_fillers`). Default on.
+    pub fn remove_fillers(settings: &Settings) -> bool {
+        settings.get_bool("removeFillers").unwrap_or(true)
+    }
+
+    pub fn set_remove_fillers(settings: &Settings, enabled: bool) {
+        settings.set("removeFillers", enabled);
+    }
+
+    /// `llmPolish` (Rust-only): run the transcript through a local LLM
+    /// (`polish::polish`). Default off: it needs a model server the user
+    /// installs and runs themselves.
+    pub fn llm_polish(settings: &Settings) -> bool {
+        settings.get_bool("llmPolish").unwrap_or(false)
+    }
+
+    pub fn set_llm_polish(settings: &Settings, enabled: bool) {
+        settings.set("llmPolish", enabled);
+    }
+
+    /// `llmPolishUrl`; a blank value means the default (Ollama on 11434).
+    pub fn llm_polish_url(settings: &Settings) -> String {
+        settings
+            .get_string("llmPolishUrl")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| DEFAULT_POLISH_URL.to_string())
+    }
+
+    /// Stored trimmed; blank removes the key so the default applies again.
+    pub fn set_llm_polish_url(settings: &Settings, url: &str) {
+        match url.trim() {
+            "" => settings.remove("llmPolishUrl"),
+            url => settings.set("llmPolishUrl", url),
+        }
+    }
+
+    /// `llmPolishModel`; a blank value means the default.
+    pub fn llm_polish_model(settings: &Settings) -> String {
+        settings
+            .get_string("llmPolishModel")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| DEFAULT_POLISH_MODEL.to_string())
+    }
+
+    pub fn set_llm_polish_model(settings: &Settings, model: &str) {
+        match model.trim() {
+            "" => settings.remove("llmPolishModel"),
+            model => settings.set("llmPolishModel", model),
+        }
     }
 
     /// `~/voice/models` then `~/.voice/models`.
