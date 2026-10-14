@@ -15,3 +15,6 @@ crates/voice-app/gen/
 # whisper.cpp built from source by CI (Linux/Windows jobs)
 whisper-cpp-src/
 whisper-cpp-bin/
+
+# whisper-server sidecar staged by the release workflow (tauri.release.conf.json)
+crates/voice-app/binaries/

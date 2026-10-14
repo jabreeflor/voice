@@ -27,11 +27,26 @@ A [Wispr Flow](https://wisprflow.ai) alternative with no subscription, no cloud,
 ## ⚡ Install
 
 voice is a small tray app written in Rust ([Tauri 2](https://tauri.app)).
-It needs one external piece on every OS: `whisper-server` from
+It needs `whisper-server` from
 [whisper.cpp](https://github.com/ggml-org/whisper.cpp), which does the
-actual transcription. Pick whichever route suits you.
+actual transcription; the Mac download ships it inside the app, every other
+route needs it installed separately. Pick whichever route suits you.
 
-### Prebuilt bundles
+### Download the Mac app
+
+Grab the latest `.dmg` from
+[Releases](https://github.com/jabreeflor/voice/releases/latest):
+`Voice_x.y.z_aarch64.dmg` for Apple silicon, `Voice_x.y.z_x64.dmg` for
+Intel. Open it, drag **Voice** into **Applications**, launch it. The
+transcription engine is bundled inside the app, so there is nothing else to
+install; the speech model downloads on first launch.
+
+The release is not notarized yet, so the first launch shows "Apple could
+not verify Voice". Open **System Settings → Privacy & Security** and click
+**Open Anyway**, or run
+`xattr -dr com.apple.quarantine /Applications/Voice.app`.
+
+### Prebuilt bundles from CI (Windows, Linux)
 
 Every push to `main` builds installers on the [CI workflow](https://github.com/jabreeflor/voice/actions/workflows/ci.yml)
 (`Bundle app` jobs, artifacts named `voice-<os>`; download them from the
@@ -39,11 +54,11 @@ workflow run's summary page):
 
 | OS | Bundle | Notes |
 |---|---|---|
-| macOS | `Voice_x.y.z_aarch64.dmg` / `Voice.app` | Not notarized: right-click → Open the first time, or `xattr -dr com.apple.quarantine /Applications/Voice.app`. |
 | Windows | `Voice_x.y.z_x64-setup.exe` / `.msi` | Unsigned: SmartScreen shows "More info → Run anyway". |
 | Linux | `Voice_x.y.z_amd64.deb` / `.AppImage` | `.deb` needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`); the AppImage is self-contained. |
 
-Then install whisper.cpp for your OS (next section) and launch Voice.
+These do not include whisper.cpp: install it for your OS (next section),
+then launch Voice.
 
 ### One-line install (macOS and Linux, builds from source)
 
@@ -386,5 +401,18 @@ On macOS, rebuilding re-signs the binary, so the system will ask you to
 re-grant **Accessibility** (toggle Voice off/on in the list). Microphone
 permission survives. Signing with a real identity in your keychain
 (`build.sh` picks it up automatically) avoids this.
+
+### Cutting a release
+
+Bump `version` in `crates/voice-app/tauri.conf.json`, merge, then push a
+matching tag (`git tag v2.0.1 && git push origin v2.0.1`). The
+[Release workflow](.github/workflows/release.yml) builds whisper-server
+from source, bundles it into `Voice.app`, and attaches the Apple silicon and
+Intel `.dmg` files to a GitHub Release. Running the workflow by hand builds
+the same `.dmg` files as artifacts without publishing. With the
+`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`
+(and, for notarization, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`)
+repository secrets set, the app is signed with your Developer ID and
+notarized; without them it is ad-hoc signed.
 
 See [`AGENTS.md`](AGENTS.md) for the layout, invariants and conventions.

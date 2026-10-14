@@ -34,6 +34,7 @@ crates/voicectl/src/main.rs      thin entry: exit(VoiceCli::main())
 crates/voice-app/                Tauri 2 desktop app
   Cargo.toml build.rs            tauri-build; binary is `voice` (bundled as Voice / voice)
   tauri.conf.json                windows (main, onboarding, overlay), bundle targets, CSP
+  tauri.release.conf.json        release-only overlay: whisper-server sidecar, ad-hoc signing
   Info.plist                     merged into the macOS bundle (LSUIElement, mic usage string)
   capabilities/default.json      what the webviews may call
   icons/                         app + tray icons
@@ -57,6 +58,7 @@ build.sh                         macOS wrapper: cargo tauri build → ./Voice.ap
 scripts/install.sh               curl | bash installer for macOS and Linux
 scripts/e2e-smoke.sh             tier-4 GUI smoke (macOS, manual)
 .github/workflows/ci.yml         ubuntu / macos / windows: fmt, clippy, build, test, bundle
+.github/workflows/release.yml    tag v*: self-contained macOS .dmg (arm64 + x64) → GitHub Release
 ```
 
 Keep related types in the existing modules behind `// MARK:` sections. Do
@@ -255,6 +257,18 @@ Rules:
   macOS).
 - `scripts/install.sh` must stay ASCII-safe for macOS bash 3.2.
 - Do not add tier-4 e2e to CI (no mic, no GUI session, no TCC grants).
+
+## Releases
+
+`release.yml` runs on a `vX.Y.Z` tag (which must equal `version` in
+`tauri.conf.json`) or by hand. It builds `whisper-server` statically with
+the Metal library embedded, stages it as
+`crates/voice-app/binaries/whisper-server-<triple>` (gitignored), and runs
+`cargo tauri build --config tauri.release.conf.json`, which puts it in
+`Contents/MacOS/` next to `voice`, where `find_binary` looks first. Keep the
+sidecar out of `tauri.conf.json`: `tauri-build` fails every other build if
+an `externalBin` file is missing. Apple signing/notarization secrets are
+optional; unset, the bundle is ad-hoc signed.
 
 ## PR notes
 
