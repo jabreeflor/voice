@@ -1,0 +1,188 @@
+name: Release
+
+# Builds a self-contained macOS app: Voice.app with whisper-server inside
+# Contents/MacOS (where WhisperEngine::find_binary looks first), packed into a
+# .dmg. Pushing a tag `vX.Y.Z` publishes the .dmg files to a GitHub Release;
+# running the workflow by hand, or a pull request that edits the release
+# files, only uploads them as workflow artifacts.
+#
+# Signing: without secrets the app is ad-hoc signed (`signingIdentity: "-"`
+# in tauri.release.conf.json), so Gatekeeper asks once on first launch. Add
+# APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD and
+# APPLE_SIGNING_IDENTITY to sign with a Developer ID, plus APPLE_ID,
+# APPLE_PASSWORD (app-specific password) and APPLE_TEAM_ID to notarize;
+# tauri-bundler picks all of them up from the environment.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - crates/voice-app/tauri.release.conf.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep in step with ci.yml.
+  WHISPER_CPP_TAG: v1.9.4
+  # Matches bundle.macOS.minimumSystemVersion; applies to cargo and cmake.
+  MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+jobs:
+  macos:
+    name: Build Voice.app (${{ matrix.target }})
+    runs-on: macos-15
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+          - target: x86_64-apple-darwin
+            arch: x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches app version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION=$(python3 -c 'import json; print(json.load(open("crates/voice-app/tauri.conf.json"))["version"])')
+          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match tauri.conf.json version $VERSION"
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: release-${{ matrix.target }}
+
+      - name: Restore whisper.cpp build
+        id: whisper-cache
+        uses: actions/cache@v4
+        with:
+          path: whisper-cpp-bin
+          key: whisper-cpp-macos-${{ matrix.arch }}-${{ env.WHISPER_CPP_TAG }}-static-metal-${{ env.MACOSX_DEPLOYMENT_TARGET }}
+
+      # Static libraries so the binary needs nothing outside the bundle, and the
+      # Metal shaders embedded so no ggml-metal.metal file has to ship beside
+      # it. GGML_NATIVE=OFF: the binary runs on users' Macs, not this runner
+      # (and the x86_64 build is cross-compiled).
+      - name: Build whisper-server
+        if: steps.whisper-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$WHISPER_CPP_TAG" https://github.com/ggml-org/whisper.cpp.git whisper-cpp-src
+          cmake -S whisper-cpp-src -B whisper-cpp-src/build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+            -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_METAL_EMBED_LIBRARY=ON \
+            -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+          cmake --build whisper-cpp-src/build --config Release -j 4 --target whisper-server
+          mkdir -p whisper-cpp-bin
+          cp whisper-cpp-src/build/bin/whisper-server whisper-cpp-bin/
+
+      # Anything linked from outside /usr/lib or /System would be missing on a
+      # user's Mac (e.g. a Homebrew dylib or an @rpath to the build tree).
+      - name: Check whisper-server is self-contained
+        run: |
+          BIN=whisper-cpp-bin/whisper-server
+          lipo -archs "$BIN" | grep -qx "${{ matrix.arch }}"
+          otool -L "$BIN"
+          if otool -L "$BIN" | tail -n +2 | awk '{print $1}' | grep -vE '^(/usr/lib/|/System/Library/)'; then
+            echo "::error::whisper-server links libraries that will not exist on users' Macs"
+            exit 1
+          fi
+
+      # tauri-bundler expects externalBin files suffixed with the target triple
+      # and copies them into Contents/MacOS without the suffix.
+      - name: Stage sidecar
+        run: |
+          mkdir -p crates/voice-app/binaries
+          cp whisper-cpp-bin/whisper-server "crates/voice-app/binaries/whisper-server-${{ matrix.target }}"
+          chmod 755 "crates/voice-app/binaries/whisper-server-${{ matrix.target }}"
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
+      # Secrets that are not configured arrive as empty strings, which
+      # tauri-bundler would treat as set; unset them so it falls back to the
+      # ad-hoc identity and skips notarization.
+      - name: Build app and dmg
+        working-directory: crates/voice-app
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                   APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then unset "$v"; fi
+          done
+          cargo tauri build --target ${{ matrix.target }} --bundles app,dmg \
+            --config tauri.release.conf.json
+
+      - name: Verify bundle
+        run: |
+          APP="target/${{ matrix.target }}/release/bundle/macos/Voice.app"
+          test -x "$APP/Contents/MacOS/voice"
+          test -x "$APP/Contents/MacOS/whisper-server"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          if [ "$(uname -m)" = "${{ matrix.arch }}" ]; then
+            "$APP/Contents/MacOS/whisper-server" --help >/dev/null
+          fi
+          ls -l target/${{ matrix.target }}/release/bundle/dmg/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voice-macos-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: macos
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: voice-macos-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.dmg | tee SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
+          body: |
+            ## Install on macOS
+
+            1. Download the `_aarch64.dmg` for Apple silicon (M1 and later) or the `_x64.dmg` for Intel Macs.
+            2. Open the .dmg and drag **Voice** into **Applications**.
+            3. Launch Voice. If macOS says it cannot verify the developer, open **System Settings → Privacy & Security** and click **Open Anyway** (or run `xattr -dr com.apple.quarantine /Applications/Voice.app`).
+
+            The transcription engine (`whisper-server`) is included; on first launch Voice downloads the speech model (142 MB) and asks for Microphone and Accessibility access.
