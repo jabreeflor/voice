@@ -310,7 +310,9 @@
   function showTalkKey(id) {
     keyboard.update(id);
     const hk = talkKeys.find((h) => h.id === id);
-    $('hotkey-current').textContent = hk ? 'Hold ' + hk.label : '';
+    // A key that types would stop typing while it is held; say so.
+    const warn = hk && hk.types_text ? ". It won't type while it's your talk key." : '';
+    $('hotkey-current').textContent = hk ? 'Hold ' + hk.label + warn : '';
   }
   function setSwitch(el, on) {
     el.classList.toggle('on', on);

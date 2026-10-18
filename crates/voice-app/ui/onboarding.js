@@ -82,7 +82,9 @@
     const hk = settings.hotkeys.find((h) => h.id === settings.hotkey) || settings.hotkeys[0];
     // hotkeys[0] is the platform default (Hotkey::available order).
     const note = hk.id === settings.hotkeys[0].id ? ' (recommended)' : '';
-    $('hk-current').textContent = `Talk key: ${hk.label}${note}. Click or press a highlighted key to change it.`;
+    // A key that types would stop typing while it is held; say so.
+    const warn = hk.types_text ? " It won't type while it's your talk key." : '';
+    $('hk-current').textContent = `Talk key: ${hk.label}${note}. Click any key to change it.${warn}`;
   }
 
   // ── step 5: done ──────────────────────────────────────────────────────

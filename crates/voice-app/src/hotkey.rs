@@ -4,7 +4,10 @@
 //! Semantics: hotkey pressed → `Down`; released → `Up`. While a recording is
 //! active, Escape cancels and is swallowed; any other non-modifier key cancels
 //! and is passed through so Option/Alt-based shortcuts keep working. Key
-//! repeats are ignored.
+//! repeats are ignored. A talk key that is not a modifier (an F-key, a letter,
+//! Space, …) is swallowed on press, repeats and release, so holding it does
+//! not also type into the frontmost app; modifier talk keys are never
+//! swallowed, as their keystrokes are only flag changes.
 //!
 //! Backends (this deliberately supersedes the SPEC.md bullet that asks for
 //! `rdev::grab` on macOS; the spec's key mapping and event rules are kept):
@@ -96,7 +99,10 @@ fn is_modifier(key: &Key) -> bool {
 /// Rules mirror the Swift tap callback:
 /// - hotkey press while not held → `Down`; further presses while held are OS
 ///   key repeats and are ignored;
-/// - hotkey release while held → `Up`;
+/// - hotkey release while held → `Up`. A non-modifier talk key swallows its
+///   press, repeats and release. A release for a press this hook never saw
+///   (the key was already down when the hook started) passes through, since
+///   the app received that press and must receive its release too;
 /// - while a recording is active, any other non-modifier key press →
 ///   `Cancel`; Escape is swallowed, everything else is passed through (it is
 ///   a shortcut the user is typing with the modifier). `held` is deliberately
@@ -110,19 +116,21 @@ pub fn handle(
     active: bool,
 ) -> (Option<HotkeyEvent>, bool) {
     let hk = HotkeyController::rdev_key(hotkey);
+    // Modifiers pass through; a key that types must not reach the app.
+    let swallow_talk = !hotkey.is_modifier();
     match event {
         EventType::KeyPress(key) if *key == hk => {
             if state.held {
-                (None, false)
+                (None, swallow_talk)
             } else {
                 state.held = true;
-                (Some(HotkeyEvent::Down), false)
+                (Some(HotkeyEvent::Down), swallow_talk)
             }
         }
         EventType::KeyRelease(key) if *key == hk => {
             if state.held {
                 state.held = false;
-                (Some(HotkeyEvent::Up), false)
+                (Some(HotkeyEvent::Up), swallow_talk)
             } else {
                 (None, false)
             }
@@ -135,7 +143,7 @@ pub fn handle(
     }
 }
 
-/// The two CGEvent kinds the macOS tap subscribes to, reduced to plain values
+/// The CGEvent kinds the macOS tap subscribes to, reduced to plain values
 /// so the conversion rule can be unit-tested on any host.
 #[cfg(any(target_os = "macos", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -146,6 +154,8 @@ pub enum TapEvent {
     FlagsChanged { keycode: i64, pressed: bool },
     /// `keyDown` of a non-modifier key.
     KeyDown { keycode: i64 },
+    /// `keyUp` of a non-modifier key. Only a non-modifier talk key needs it.
+    KeyUp { keycode: i64 },
 }
 
 /// Virtual keycode of Escape on macOS.
@@ -154,19 +164,30 @@ const MAC_ESCAPE: i64 = 53;
 
 /// Maps a macOS tap event onto the rdev vocabulary `handle` speaks, so both
 /// backends share one state machine. Modifier changes other than the hotkey's
-/// own key are dropped here, exactly as the Swift tap ignored them.
+/// own key are dropped here, exactly as the Swift tap ignored them. A
+/// non-modifier talk key arrives as keyDown/keyUp of its own keycode; every
+/// other key release is dropped, since only presses mean anything to `handle`.
 #[cfg(any(target_os = "macos", test))]
 pub fn tap_to_event(ev: TapEvent, hotkey: Hotkey) -> Option<EventType> {
+    let talk_key = HotkeyController::rdev_key(hotkey);
     match ev {
-        TapEvent::FlagsChanged { keycode, pressed } if keycode == hotkey.key_code() => {
-            let key = HotkeyController::rdev_key(hotkey);
+        TapEvent::FlagsChanged { keycode, pressed }
+            if hotkey.is_modifier() && keycode == hotkey.key_code() =>
+        {
             Some(if pressed {
-                EventType::KeyPress(key)
+                EventType::KeyPress(talk_key)
             } else {
-                EventType::KeyRelease(key)
+                EventType::KeyRelease(talk_key)
             })
         }
         TapEvent::FlagsChanged { .. } => None,
+        TapEvent::KeyDown { keycode } if !hotkey.is_modifier() && keycode == hotkey.key_code() => {
+            Some(EventType::KeyPress(talk_key))
+        }
+        TapEvent::KeyUp { keycode } if !hotkey.is_modifier() && keycode == hotkey.key_code() => {
+            Some(EventType::KeyRelease(talk_key))
+        }
+        TapEvent::KeyUp { .. } => None,
         TapEvent::KeyDown { keycode } if keycode == MAC_ESCAPE => {
             Some(EventType::KeyPress(Key::Escape))
         }
@@ -519,6 +540,10 @@ impl HotkeyController {
     /// key (`MetaLeft` = VK_LWIN 91 / X11 Super_L 133); the right-hand key
     /// falls through to `Key::Unknown(<raw code>)`, so `MetaRight` would never
     /// match there and "Right Win"/"Right Super" would be dead.
+    ///
+    /// Left Option is rdev's `Alt` and right Option its `AltGr`. Every key on
+    /// the talk-key picker has an arm (no wildcard), so a key added to
+    /// `Hotkey` does not compile until it is given a delivery key here.
     pub fn rdev_key(hotkey: Hotkey) -> rdev::Key {
         match hotkey {
             Hotkey::RightOption => Key::AltGr,
@@ -530,21 +555,97 @@ impl HotkeyController {
             // X11 Super_R.
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             Hotkey::RightCommand => Key::Unknown(134),
-            Hotkey::Fn => Key::Function,
             Hotkey::RightControl => Key::ControlRight,
+            Hotkey::LeftOption => Key::Alt,
+            Hotkey::LeftCommand => Key::MetaLeft,
+            Hotkey::LeftControl => Key::ControlLeft,
+            Hotkey::LeftShift => Key::ShiftLeft,
+            Hotkey::RightShift => Key::ShiftRight,
+            Hotkey::Fn => Key::Function,
+            Hotkey::F1 => Key::F1,
+            Hotkey::F2 => Key::F2,
+            Hotkey::F3 => Key::F3,
+            Hotkey::F4 => Key::F4,
+            Hotkey::F5 => Key::F5,
+            Hotkey::F6 => Key::F6,
+            Hotkey::F7 => Key::F7,
+            Hotkey::F8 => Key::F8,
+            Hotkey::F9 => Key::F9,
+            Hotkey::F10 => Key::F10,
+            Hotkey::F11 => Key::F11,
+            Hotkey::F12 => Key::F12,
+            Hotkey::A => Key::KeyA,
+            Hotkey::B => Key::KeyB,
+            Hotkey::C => Key::KeyC,
+            Hotkey::D => Key::KeyD,
+            Hotkey::E => Key::KeyE,
+            Hotkey::F => Key::KeyF,
+            Hotkey::G => Key::KeyG,
+            Hotkey::H => Key::KeyH,
+            Hotkey::I => Key::KeyI,
+            Hotkey::J => Key::KeyJ,
+            Hotkey::K => Key::KeyK,
+            Hotkey::L => Key::KeyL,
+            Hotkey::M => Key::KeyM,
+            Hotkey::N => Key::KeyN,
+            Hotkey::O => Key::KeyO,
+            Hotkey::P => Key::KeyP,
+            Hotkey::Q => Key::KeyQ,
+            Hotkey::R => Key::KeyR,
+            Hotkey::S => Key::KeyS,
+            Hotkey::T => Key::KeyT,
+            Hotkey::U => Key::KeyU,
+            Hotkey::V => Key::KeyV,
+            Hotkey::W => Key::KeyW,
+            Hotkey::X => Key::KeyX,
+            Hotkey::Y => Key::KeyY,
+            Hotkey::Z => Key::KeyZ,
+            Hotkey::Digit0 => Key::Num0,
+            Hotkey::Digit1 => Key::Num1,
+            Hotkey::Digit2 => Key::Num2,
+            Hotkey::Digit3 => Key::Num3,
+            Hotkey::Digit4 => Key::Num4,
+            Hotkey::Digit5 => Key::Num5,
+            Hotkey::Digit6 => Key::Num6,
+            Hotkey::Digit7 => Key::Num7,
+            Hotkey::Digit8 => Key::Num8,
+            Hotkey::Digit9 => Key::Num9,
+            Hotkey::Backquote => Key::BackQuote,
+            Hotkey::Minus => Key::Minus,
+            Hotkey::Equal => Key::Equal,
+            Hotkey::BracketLeft => Key::LeftBracket,
+            Hotkey::BracketRight => Key::RightBracket,
+            Hotkey::Backslash => Key::BackSlash,
+            Hotkey::Semicolon => Key::SemiColon,
+            Hotkey::Quote => Key::Quote,
+            Hotkey::Comma => Key::Comma,
+            Hotkey::Period => Key::Dot,
+            Hotkey::Slash => Key::Slash,
+            Hotkey::Space => Key::Space,
+            Hotkey::Tab => Key::Tab,
+            Hotkey::Enter => Key::Return,
+            Hotkey::Backspace => Key::Backspace,
+            Hotkey::ArrowUp => Key::UpArrow,
+            Hotkey::ArrowDown => Key::DownArrow,
+            Hotkey::ArrowLeft => Key::LeftArrow,
+            Hotkey::ArrowRight => Key::RightArrow,
         }
     }
 }
 
-/// The CGEventFlags bit the hotkey toggles, i.e. `Hotkey.flag` in Swift.
+/// The CGEventFlags bit a modifier hotkey toggles, i.e. `Hotkey.flag` in
+/// Swift. `None` for keys that arrive as keyDown/keyUp instead of
+/// flagsChanged.
 #[cfg(target_os = "macos")]
-fn hotkey_flag(hotkey: Hotkey) -> core_graphics::event::CGEventFlags {
+fn hotkey_flag(hotkey: Hotkey) -> Option<core_graphics::event::CGEventFlags> {
     use core_graphics::event::CGEventFlags;
     match hotkey {
-        Hotkey::RightOption => CGEventFlags::CGEventFlagAlternate,
-        Hotkey::RightCommand => CGEventFlags::CGEventFlagCommand,
-        Hotkey::Fn => CGEventFlags::CGEventFlagSecondaryFn,
-        Hotkey::RightControl => CGEventFlags::CGEventFlagControl,
+        Hotkey::LeftOption | Hotkey::RightOption => Some(CGEventFlags::CGEventFlagAlternate),
+        Hotkey::LeftCommand | Hotkey::RightCommand => Some(CGEventFlags::CGEventFlagCommand),
+        Hotkey::LeftControl | Hotkey::RightControl => Some(CGEventFlags::CGEventFlagControl),
+        Hotkey::LeftShift | Hotkey::RightShift => Some(CGEventFlags::CGEventFlagShift),
+        Hotkey::Fn => Some(CGEventFlags::CGEventFlagSecondaryFn),
+        _ => None,
     }
 }
 
@@ -552,7 +653,7 @@ fn hotkey_flag(hotkey: Hotkey) -> core_graphics::event::CGEventFlags {
 /// be created (no Accessibility grant) and `Ok` only if the run loop ends.
 ///
 /// Mirrors `HotkeyController.startTap` / `handle` in core.swift: session
-/// tap, head insert, `flagsChanged | keyDown` only, and re-enable on the two
+/// tap, head insert, `flagsChanged | keyDown | keyUp` only, and re-enable on the two
 /// tap-disabled notifications — the WindowServer switches a tap off when its
 /// callback is slow or on user input, and a tap left that way is dead for
 /// the rest of the process while nothing else notices.
@@ -586,7 +687,11 @@ fn run_hook(inner: Arc<Inner>) -> Result<(), String> {
         CGEventTapLocation::Session,
         CGEventTapPlacement::HeadInsertEventTap,
         CGEventTapOptions::Default,
-        vec![CGEventType::FlagsChanged, CGEventType::KeyDown],
+        vec![
+            CGEventType::FlagsChanged,
+            CGEventType::KeyDown,
+            CGEventType::KeyUp,
+        ],
         move |_proxy, kind, event| {
             match kind {
                 CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput => {
@@ -599,7 +704,7 @@ fn run_hook(inner: Arc<Inner>) -> Result<(), String> {
                     }
                     return CallbackResult::Keep;
                 }
-                CGEventType::FlagsChanged | CGEventType::KeyDown => {}
+                CGEventType::FlagsChanged | CGEventType::KeyDown | CGEventType::KeyUp => {}
                 _ => return CallbackResult::Keep,
             }
             let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
@@ -607,8 +712,10 @@ fn run_hook(inner: Arc<Inner>) -> Result<(), String> {
             let ev = match kind {
                 CGEventType::FlagsChanged => TapEvent::FlagsChanged {
                     keycode,
-                    pressed: event.get_flags().contains(hotkey_flag(hotkey)),
+                    pressed: hotkey_flag(hotkey)
+                        .is_some_and(|flag| event.get_flags().contains(flag)),
                 },
+                CGEventType::KeyUp => TapEvent::KeyUp { keycode },
                 _ => TapEvent::KeyDown { keycode },
             };
             // Returning Drop hands a null event back to the WindowServer,
@@ -706,6 +813,12 @@ mod tests {
             HotkeyController::rdev_key(Hotkey::RightControl),
             Key::ControlRight
         );
+        // Left Option is rdev's `Alt`, not `AltGr`.
+        assert_eq!(HotkeyController::rdev_key(Hotkey::LeftOption), Key::Alt);
+        assert_eq!(HotkeyController::rdev_key(Hotkey::F5), Key::F5);
+        assert_eq!(HotkeyController::rdev_key(Hotkey::A), Key::KeyA);
+        assert_eq!(HotkeyController::rdev_key(Hotkey::Digit1), Key::Num1);
+        assert_eq!(HotkeyController::rdev_key(Hotkey::Enter), Key::Return);
         let keys: Vec<Key> = Hotkey::ALL
             .iter()
             .map(|h| HotkeyController::rdev_key(*h))
@@ -715,6 +828,81 @@ mod tests {
                 assert_ne!(a, b);
             }
         }
+    }
+
+    // A text key as the talk key must not reach the frontmost app: holding
+    // F5 (or Space, or a letter) would otherwise also press it there.
+    #[test]
+    fn text_talk_key_press_repeat_and_release_are_swallowed() {
+        let mut s = HookState::default();
+        let hk = Hotkey::F5;
+        assert_eq!(
+            handle(&mut s, &press(Key::F5), hk, false),
+            (Some(HotkeyEvent::Down), true)
+        );
+        // OS key repeat while held.
+        assert_eq!(handle(&mut s, &press(Key::F5), hk, true), (None, true));
+        assert_eq!(
+            handle(&mut s, &release(Key::F5), hk, true),
+            (Some(HotkeyEvent::Up), true)
+        );
+        assert!(!s.held);
+        // Space behaves the same way.
+        assert_eq!(
+            handle(&mut s, &press(Key::Space), Hotkey::Space, false),
+            (Some(HotkeyEvent::Down), true)
+        );
+        assert_eq!(
+            handle(&mut s, &release(Key::Space), Hotkey::Space, true),
+            (Some(HotkeyEvent::Up), true)
+        );
+    }
+
+    // The release of a key whose press this hook never saw (it was already
+    // down when the hook started) has to reach the app, because the app got
+    // that press.
+    #[test]
+    fn release_of_a_text_key_never_pressed_here_passes_through() {
+        let mut s = HookState::default();
+        assert_eq!(
+            handle(&mut s, &release(Key::F5), Hotkey::F5, false),
+            (None, false)
+        );
+    }
+
+    // Modifiers are never swallowed: their keystrokes are flag changes that
+    // other apps (⇧-click, ⌥-drag) depend on.
+    #[test]
+    fn modifier_talk_key_is_never_swallowed() {
+        let mut s = HookState::default();
+        let hk = Hotkey::LeftShift;
+        assert_eq!(
+            handle(&mut s, &press(Key::ShiftLeft), hk, false),
+            (Some(HotkeyEvent::Down), false)
+        );
+        assert_eq!(
+            handle(&mut s, &press(Key::ShiftLeft), hk, true),
+            (None, false)
+        );
+        assert_eq!(
+            handle(&mut s, &release(Key::ShiftLeft), hk, true),
+            (Some(HotkeyEvent::Up), false)
+        );
+    }
+
+    // Escape stays the cancel key even when a text key is the talk key, and
+    // another text key still cancels and passes through.
+    #[test]
+    fn text_talk_key_keeps_the_cancel_rules() {
+        let mut s = HookState { held: true };
+        assert_eq!(
+            handle(&mut s, &press(Key::Escape), Hotkey::F5, true),
+            (Some(HotkeyEvent::Cancel), true)
+        );
+        assert_eq!(
+            handle(&mut s, &press(Key::KeyC), Hotkey::F5, true),
+            (Some(HotkeyEvent::Cancel), false)
+        );
     }
 
     #[test]
@@ -813,6 +1001,56 @@ mod tests {
             );
         }
         assert!(s.held);
+    }
+
+    // A text key's keyDown and keyUp carry its own keycode; the rest of the
+    // keyboard is either "some other key" or ignored on release.
+    #[test]
+    fn tap_events_for_a_text_talk_key() {
+        let hk = Hotkey::F5;
+        assert_eq!(
+            tap_to_event(TapEvent::KeyDown { keycode: 96 }, hk),
+            Some(press(Key::F5))
+        );
+        assert_eq!(
+            tap_to_event(TapEvent::KeyUp { keycode: 96 }, hk),
+            Some(release(Key::F5))
+        );
+        // Another key's release is not ours, and cancels nothing.
+        assert_eq!(tap_to_event(TapEvent::KeyUp { keycode: 8 }, hk), None);
+        // A text key never reports a modifier flag change.
+        assert_eq!(
+            tap_to_event(
+                TapEvent::FlagsChanged {
+                    keycode: 96,
+                    pressed: true
+                },
+                hk
+            ),
+            None
+        );
+        // Other keyDowns still cancel a recording.
+        let other = tap_to_event(TapEvent::KeyDown { keycode: 8 }, hk).unwrap();
+        let mut s = HookState { held: true };
+        assert_eq!(
+            handle(&mut s, &other, hk, true),
+            (Some(HotkeyEvent::Cancel), false)
+        );
+    }
+
+    // End to end for a letter: the keyDown of "A" (keycode 0) is the press
+    // of the talk key, is swallowed, and its keyUp ends the recording.
+    #[test]
+    fn letter_talk_key_round_trips_through_the_tap() {
+        let hk = Hotkey::A;
+        let mut s = HookState::default();
+        let down = tap_to_event(TapEvent::KeyDown { keycode: 0 }, hk).unwrap();
+        assert_eq!(
+            handle(&mut s, &down, hk, false),
+            (Some(HotkeyEvent::Down), true)
+        );
+        let up = tap_to_event(TapEvent::KeyUp { keycode: 0 }, hk).unwrap();
+        assert_eq!(handle(&mut s, &up, hk, true), (Some(HotkeyEvent::Up), true));
     }
 
     #[test]
@@ -949,15 +1187,14 @@ mod tests {
     #[test]
     fn unavailable_hotkey_falls_back_to_platform_default() {
         let available = Hotkey::available();
-        let foreign = Hotkey::ALL
-            .iter()
-            .copied()
-            .find(|h| !available.contains(h))
-            .expect("every platform hides at least one hotkey");
-        let c = HotkeyController::new(Arc::new(move || foreign), Arc::new(|| false));
-        assert_eq!(c.inner.hotkey(), available[0]);
-        // Only the log line is deduplicated; the clamp itself is per call.
-        assert_eq!(c.inner.hotkey(), available[0]);
+        // macOS hooks every key on the picker, so it has no foreign key to
+        // clamp; the other platforms do.
+        if let Some(foreign) = Hotkey::ALL.iter().copied().find(|h| !available.contains(h)) {
+            let c = HotkeyController::new(Arc::new(move || foreign), Arc::new(|| false));
+            assert_eq!(c.inner.hotkey(), available[0]);
+            // Only the log line is deduplicated; the clamp itself is per call.
+            assert_eq!(c.inner.hotkey(), available[0]);
+        }
         for hk in available.iter().copied() {
             let c = HotkeyController::new(Arc::new(move || hk), Arc::new(|| false));
             assert_eq!(c.inner.hotkey(), hk);

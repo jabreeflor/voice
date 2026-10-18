@@ -186,11 +186,17 @@ transcript appears at your cursor.
 
 | OS | Default | Alternatives |
 |---|---|---|
-| macOS | <kbd>Right ⌥</kbd> | <kbd>Right ⌘</kbd>, <kbd>fn/🌐</kbd> (set *System Settings → Keyboard → "Press 🌐 key to" → Do Nothing* so macOS doesn't also open emoji/dictation) |
-| Windows | <kbd>Right Alt</kbd> | <kbd>Right Ctrl</kbd>, <kbd>Right Win</kbd> |
-| Linux | <kbd>Right Alt</kbd> | <kbd>Right Ctrl</kbd>, <kbd>Right Super</kbd> |
+| macOS | <kbd>Right ⌥</kbd> | <kbd>Right ⌘</kbd>, <kbd>fn/🌐</kbd> (set *System Settings → Keyboard → "Press 🌐 key to" → Do Nothing* so macOS doesn't also open emoji/dictation), or any other key except Esc and Caps Lock |
+| Windows | <kbd>Right Alt</kbd> | <kbd>Right Ctrl</kbd>, <kbd>Right Win</kbd>, or any other key except Esc and Caps Lock |
+| Linux | <kbd>Right Alt</kbd> | <kbd>Right Ctrl</kbd>, <kbd>Right Super</kbd>, the other modifiers, or an F-key |
 
-Change it in the Settings tab.
+Change it in the Settings tab, or in onboarding, by clicking a key on the
+drawn keyboard (a modifier or F-key can also be picked by pressing it). A letter, digit, Space or Enter as the talk
+key is swallowed while you hold it, so it will not type; on Linux only
+modifiers and F-keys are offered because the X11 hook cannot swallow keys.
+On a Mac, F-keys reach voice only when they act as standard function keys
+(*System Settings → Keyboard → Keyboard Shortcuts → Function Keys*), or
+while you also hold fn.
 
 ## 🧠 Models
 

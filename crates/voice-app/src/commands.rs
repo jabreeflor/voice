@@ -91,10 +91,15 @@ pub struct AppearanceOptionDto {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct HotkeyOptionDto {
-    /// raw value, e.g. "rightOption"
+    /// raw value, e.g. "rightOption" or "F5"
     pub id: String,
     pub label: String,
     pub short_label: String,
+    /// W3C `KeyboardEvent.code`, which keyboard.js matches key presses and
+    /// layout keys by. `None` for fn, which never reaches a webview.
+    pub code: Option<String>,
+    /// The key types or moves the caret, so the picker warns about it.
+    pub types_text: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -339,6 +344,8 @@ pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
                 id: hk.raw_value().to_string(),
                 label: hk.label(),
                 short_label: hk.short_label(),
+                code: hk.code().map(str::to_string),
+                types_text: hk.types_text(),
             })
             .collect(),
         sounds: Config::sounds_enabled(&app.settings),
@@ -361,13 +368,19 @@ pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
     }
 }
 
+/// Only keys the platform can hook are accepted, the same list `get_settings`
+/// offers, so a stale or hand-typed id cannot select a key nothing listens for.
 #[tauri::command]
 pub fn set_hotkey(app: State<'_, Arc<App>>, id: String) {
     match Hotkey::from_raw(&id) {
-        Some(hk) => {
+        Some(hk) if Hotkey::available().contains(&hk) => {
             Config::set_hotkey(&app.settings, hk);
             app.refresh_ui();
         }
+        Some(hk) => log::warn!(
+            "set_hotkey: {} is not hookable on this platform",
+            hk.raw_value()
+        ),
         None => log::warn!("set_hotkey: unknown id {id:?}"),
     }
 }
@@ -546,15 +559,24 @@ mod tests {
         assert_eq!(effective_hotkey(&settings), Hotkey::RightCommand);
     }
 
-    /// ui/keyboard.js draws the talk-key picker and marks the selectable keys
-    /// by `Hotkey::raw_value`; a variant missing there would be offered by
-    /// `get_settings` but have no key to click.
+    /// ui/keyboard.js draws the talk-key picker and matches each key by its
+    /// W3C code (`code: '...'`), with fn matched by id since it has no code.
+    /// A variant with no key there would be offered by `get_settings` but
+    /// have nothing to click or press.
     #[test]
     fn keyboard_picker_has_a_key_for_every_hotkey() {
         let js = include_str!("../ui/keyboard.js");
         for hk in Hotkey::ALL {
-            let needle = format!("id: '{}'", hk.raw_value());
-            assert!(js.contains(&needle), "keyboard.js lacks {needle}");
+            match hk.code() {
+                Some(code) => {
+                    let needle = format!("code: '{code}'");
+                    assert!(js.contains(&needle), "keyboard.js lacks {needle}");
+                }
+                None => {
+                    assert_eq!(hk, Hotkey::Fn);
+                    assert!(js.contains("id: 'fn'"), "keyboard.js lacks fn");
+                }
+            }
         }
     }
 
