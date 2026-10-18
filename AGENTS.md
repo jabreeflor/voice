@@ -109,7 +109,12 @@ feature flags to make macOS code compile elsewhere.
 ## Dictation loop
 
 1. `hotkey::HotkeyController` watches the talk key (default
-   `Hotkey::RightOption`: Right ⌥ on macOS, Right Alt elsewhere). macOS uses
+   `Hotkey::RightOption`: Right ⌥ on macOS, Right Alt elsewhere). The talk
+   key is any single key on the picker (`Hotkey` in voice-core: one table,
+   raw value = W3C code, macOS keycode, class, labels). A modifier talk key
+   is never swallowed; any other talk key is swallowed on press, repeats and
+   release on macOS and Windows so it does not also type. Linux offers
+   modifiers and F-keys only, because XRecord cannot swallow. macOS uses
    a CGEvent tap (`core-graphics`), Windows `rdev::grab`, Linux/X11
    `rdev::listen` (XRecord, so Esc cannot be swallowed there; Wayland is
    refused up front by `platform::linux`). Esc while recording cancels and

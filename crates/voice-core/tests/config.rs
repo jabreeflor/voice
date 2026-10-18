@@ -366,9 +366,32 @@ fn hotkey_raw_values_round_trip() {
     }
 }
 
+/// The raw value is what settings.json stores, and the code is what the
+/// picker sends; both must name the same key in both directions.
+#[test]
+fn hotkey_codes_round_trip_through_from_raw() {
+    for hk in Hotkey::ALL {
+        if let Some(code) = hk.code() {
+            assert_eq!(Hotkey::from_raw(code), Some(hk), "{code}");
+        }
+    }
+}
+
+#[test]
+fn raw_values_and_codes_are_each_unique() {
+    let raws: HashSet<&str> = Hotkey::ALL.iter().map(|hk| hk.raw_value()).collect();
+    assert_eq!(raws.len(), Hotkey::ALL.len());
+    let codes: HashSet<&str> = Hotkey::ALL.iter().filter_map(|hk| hk.code()).collect();
+    assert_eq!(codes.len(), Hotkey::ALL.len() - 1, "only fn has no code");
+}
+
 #[test]
 fn unknown_hotkey_raw_value_does_not_resolve() {
     assert_eq!(Hotkey::from_raw("leftPinky"), None);
+    // Escape cancels a dictation and Caps Lock is a toggle; neither may be a
+    // talk key.
+    assert_eq!(Hotkey::from_raw("Escape"), None);
+    assert_eq!(Hotkey::from_raw("CapsLock"), None);
 }
 
 /// Raw values are what the Swift app wrote to UserDefaults; changing them
@@ -381,29 +404,135 @@ fn hotkey_raw_values_match_the_swift_user_defaults_strings() {
     assert_eq!(Hotkey::RightControl.raw_value(), "rightControl");
 }
 
-/// fn cannot be delivered to apps off macOS, and Right Control has no
-/// macOS-side hook, so each platform offers a different trio. The order is
-/// the order the Talk key select shows.
+/// The webview reports the right-hand Option, Command and Control keys by
+/// their W3C codes. Those must normalise to the legacy variants, so a value
+/// from the picker and a value from settings.json agree.
+#[test]
+fn right_hand_w3c_codes_are_aliases_of_the_legacy_keys() {
+    assert_eq!(Hotkey::RightOption.code(), Some("AltRight"));
+    assert_eq!(Hotkey::RightCommand.code(), Some("MetaRight"));
+    assert_eq!(Hotkey::RightControl.code(), Some("ControlRight"));
+    assert_eq!(Hotkey::from_raw("AltRight"), Some(Hotkey::RightOption));
+    assert_eq!(Hotkey::from_raw("MetaRight"), Some(Hotkey::RightCommand));
+    assert_eq!(Hotkey::from_raw("ControlRight"), Some(Hotkey::RightControl));
+    assert_eq!(Hotkey::Fn.code(), None, "fn never reaches a webview");
+}
+
+#[test]
+fn new_keys_use_their_w3c_code_as_raw_value() {
+    assert_eq!(Hotkey::F5.raw_value(), "F5");
+    assert_eq!(Hotkey::A.raw_value(), "KeyA");
+    assert_eq!(Hotkey::Digit1.raw_value(), "Digit1");
+    assert_eq!(Hotkey::LeftShift.raw_value(), "ShiftLeft");
+    assert_eq!(Hotkey::LeftOption.raw_value(), "AltLeft");
+    assert_eq!(Hotkey::Backquote.raw_value(), "Backquote");
+    assert_eq!(Hotkey::ArrowUp.raw_value(), "ArrowUp");
+}
+
+/// fn cannot be delivered to apps off macOS, so only macOS offers it. Every
+/// other platform leads with the same three keys (default first) and then
+/// adds what its hook can deliver.
 #[test]
 fn available_hotkeys_depend_on_the_platform() {
     let available = Hotkey::available();
-    if cfg!(target_os = "macos") {
-        assert_eq!(
-            available,
-            vec![Hotkey::RightOption, Hotkey::RightCommand, Hotkey::Fn]
-        );
+    let leading: &[Hotkey] = if cfg!(target_os = "macos") {
+        &[Hotkey::RightOption, Hotkey::RightCommand, Hotkey::Fn]
     } else {
-        assert_eq!(
-            available,
-            vec![
-                Hotkey::RightOption,
-                Hotkey::RightControl,
-                Hotkey::RightCommand
-            ]
-        );
-    }
+        &[
+            Hotkey::RightOption,
+            Hotkey::RightControl,
+            Hotkey::RightCommand,
+        ]
+    };
+    assert_eq!(&available[..3], leading);
+    let unique: HashSet<Hotkey> = available.iter().copied().collect();
+    assert_eq!(unique.len(), available.len());
     for hk in &available {
         assert!(Hotkey::ALL.contains(hk));
+    }
+    if cfg!(target_os = "macos") {
+        // Apple keyboards have no right Control.
+        assert!(!available.contains(&Hotkey::RightControl));
+    } else {
+        assert!(!available.contains(&Hotkey::Fn));
+    }
+}
+
+/// rdev's X11 `listen` cannot swallow events, so on Linux a text key as the
+/// talk key would type into the focused app on every press. Only modifiers
+/// and F-keys may be offered there.
+#[test]
+fn linux_offers_only_modifiers_and_function_keys() {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    for hk in Hotkey::available() {
+        let function_key = matches!(
+            hk,
+            Hotkey::F1
+                | Hotkey::F2
+                | Hotkey::F3
+                | Hotkey::F4
+                | Hotkey::F5
+                | Hotkey::F6
+                | Hotkey::F7
+                | Hotkey::F8
+                | Hotkey::F9
+                | Hotkey::F10
+                | Hotkey::F11
+                | Hotkey::F12
+        );
+        assert!(hk.is_modifier() || function_key, "{hk:?}");
+        assert!(!hk.types_text(), "{hk:?}");
+    }
+}
+
+#[test]
+fn modifiers_are_the_option_command_control_shift_keys_and_fn() {
+    let modifiers: Vec<Hotkey> = Hotkey::ALL
+        .into_iter()
+        .filter(|hk| hk.is_modifier())
+        .collect();
+    assert_eq!(
+        modifiers,
+        [
+            Hotkey::RightOption,
+            Hotkey::RightCommand,
+            Hotkey::Fn,
+            Hotkey::RightControl,
+            Hotkey::LeftOption,
+            Hotkey::LeftCommand,
+            Hotkey::LeftControl,
+            Hotkey::LeftShift,
+            Hotkey::RightShift,
+        ]
+    );
+}
+
+/// The picker warns about keys that would stop typing while they are the
+/// talk key, so the flag must cover every key that types or moves the caret
+/// and nothing else.
+#[test]
+fn text_keys_are_flagged_and_modifiers_and_function_keys_are_not() {
+    for hk in [
+        Hotkey::A,
+        Hotkey::Digit1,
+        Hotkey::Backquote,
+        Hotkey::Space,
+        Hotkey::Tab,
+        Hotkey::Enter,
+        Hotkey::Backspace,
+        Hotkey::ArrowLeft,
+    ] {
+        assert!(hk.types_text(), "{hk:?}");
+    }
+    for hk in [
+        Hotkey::RightOption,
+        Hotkey::LeftShift,
+        Hotkey::Fn,
+        Hotkey::F5,
+    ] {
+        assert!(!hk.types_text(), "{hk:?}");
     }
 }
 
@@ -411,21 +540,38 @@ fn available_hotkeys_depend_on_the_platform() {
 /// elsewhere, and the Command key is "Win" on Windows but "Super" on Linux.
 #[test]
 fn hotkey_labels_use_the_platform_key_names() {
-    let labels: Vec<String> = Hotkey::ALL.iter().map(|hk| hk.label()).collect();
-    let short: Vec<String> = Hotkey::ALL.iter().map(|hk| hk.short_label()).collect();
+    let legacy = [
+        Hotkey::RightOption,
+        Hotkey::RightCommand,
+        Hotkey::Fn,
+        Hotkey::RightControl,
+    ];
+    let labels: Vec<String> = legacy.iter().map(|hk| hk.label()).collect();
+    let short: Vec<String> = legacy.iter().map(|hk| hk.short_label()).collect();
     if cfg!(target_os = "macos") {
         assert_eq!(
             labels,
             ["Right ⌥ Option", "Right ⌘ Command", "fn", "Right ⌃ Control"]
         );
         assert_eq!(short, ["Right ⌥", "Right ⌘", "fn", "Right ⌃"]);
+        assert_eq!(Hotkey::LeftCommand.label(), "Left ⌘ Command");
+        assert_eq!(Hotkey::RightShift.short_label(), "Right ⇧");
+        assert_eq!(Hotkey::Enter.label(), "Return");
+        assert_eq!(Hotkey::Backspace.label(), "Delete");
     } else if cfg!(target_os = "windows") {
         assert_eq!(labels, ["Right Alt", "Right Win", "fn", "Right Ctrl"]);
         assert_eq!(short, labels);
+        assert_eq!(Hotkey::LeftCommand.label(), "Left Win");
+        assert_eq!(Hotkey::Enter.label(), "Enter");
+        assert_eq!(Hotkey::Backspace.label(), "Backspace");
     } else {
         assert_eq!(labels, ["Right Alt", "Right Super", "fn", "Right Ctrl"]);
         assert_eq!(short, labels);
+        assert_eq!(Hotkey::LeftCommand.label(), "Left Super");
     }
+    assert_eq!(Hotkey::F5.label(), "F5");
+    assert_eq!(Hotkey::Digit1.label(), "1");
+    assert_eq!(Hotkey::Space.label(), "Space");
 }
 
 // MARK: - Settings-backed config (Swift read UserDefaults directly; these pin

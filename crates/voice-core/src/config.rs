@@ -7,93 +7,286 @@ use std::path::{Path, PathBuf};
 use crate::polish::{DEFAULT_POLISH_MODEL, DEFAULT_POLISH_URL};
 use crate::settings::Settings;
 
-/// The hold-to-talk key. Raw values are the Swift `UserDefaults` strings so a
-/// settings file written by the Swift app keeps its meaning.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum Hotkey {
+/// One row of the talk-key table behind `Hotkey`.
+struct Row {
+    /// The Swift `UserDefaults` string for the four legacy keys; the W3C
+    /// `KeyboardEvent.code` for every other key.
+    raw: &'static str,
+    /// W3C `KeyboardEvent.code` as the webview reports it. `None` for fn,
+    /// which never reaches a webview.
+    code: Option<&'static str>,
+    /// macOS virtual keycode (`kVK_*`, as in rdev's macOS table).
+    key_code: i64,
+    class: Class,
+    /// Label on macOS, and the short form of it.
+    mac: &'static str,
+    mac_short: &'static str,
+    /// Label on Windows and Linux. The Command key reads "Win" here and is
+    /// renamed to "Super" on Linux by `pc_name`.
+    pc: &'static str,
+}
+
+/// What a key does to the rest of the desktop, which decides whether the
+/// picker warns about it and which platforms can offer it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Class {
+    /// Option, Command, Control, Shift (left and right) and fn. These only
+    /// change modifier state, so they are safe to hold.
+    Modifier,
+    /// F1 to F12.
+    Function,
+    /// Keys that type a character or move the caret.
+    Text,
+}
+
+/// Declares `Hotkey` and its row table from one list, so a variant, its raw
+/// value, keycode, class and labels are written once and cannot drift. Rows
+/// are in declaration order, which is what `Hotkey::row` indexes by.
+macro_rules! hotkeys {
+    ($(#[$enum_doc:meta])* enum Hotkey; $(
+        $(#[$doc:meta])*
+        $variant:ident = ($raw:literal, $code:expr, $key_code:expr, $class:ident,
+            [$mac:literal, $mac_short:literal, $pc:literal])
+    ),* $(,)?) => {
+        $(#[$enum_doc])*
+        #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+        pub enum Hotkey {
+            $( $(#[$doc])* $variant, )*
+        }
+
+        const HOTKEY_COUNT: usize = [$(stringify!($variant)),*].len();
+
+        impl Hotkey {
+            /// Every key, in the declaration order of the enum.
+            pub const ALL: [Hotkey; HOTKEY_COUNT] = [$(Hotkey::$variant),*];
+
+            const ROWS: [Row; HOTKEY_COUNT] = [$(
+                Row {
+                    raw: $raw,
+                    code: $code,
+                    key_code: $key_code,
+                    class: Class::$class,
+                    mac: $mac,
+                    mac_short: $mac_short,
+                    pc: $pc,
+                },
+            )*];
+        }
+    };
+}
+
+hotkeys! {
+    /// The hold-to-talk key: one key from the keyboard the talk-key picker
+    /// draws (ui/keyboard.js). Escape (the cancel key) and Caps Lock (a toggle
+    /// that cannot be swallowed cleanly) are deliberately not offered.
+    ///
+    /// Raw values are the Swift `UserDefaults` strings for the four keys the
+    /// Swift app could record, so a migrated settings file keeps its meaning.
+    /// Every other key's raw value is its W3C `KeyboardEvent.code`.
+    enum Hotkey;
+
     /// macOS Right ⌥ Option; Windows/Linux Right Alt (AltGr).
-    RightOption,
+    RightOption = ("rightOption", Some("AltRight"), 61, Modifier,
+        ["Right ⌥ Option", "Right ⌥", "Right Alt"]),
     /// macOS Right ⌘ Command; Windows Right Win; Linux Right Super.
-    RightCommand,
+    RightCommand = ("rightCommand", Some("MetaRight"), 54, Modifier,
+        ["Right ⌘ Command", "Right ⌘", "Right Win"]),
     /// macOS fn/🌐. Not deliverable to apps on Windows/Linux, so not offered there.
-    Fn,
+    Fn = ("fn", None, 63, Modifier, ["fn", "fn", "fn"]),
     /// Right Control. Offered on Windows/Linux only.
-    RightControl,
+    RightControl = ("rightControl", Some("ControlRight"), 62, Modifier,
+        ["Right ⌃ Control", "Right ⌃", "Right Ctrl"]),
+
+    LeftOption = ("AltLeft", Some("AltLeft"), 58, Modifier,
+        ["Left ⌥ Option", "Left ⌥", "Left Alt"]),
+    LeftCommand = ("MetaLeft", Some("MetaLeft"), 55, Modifier,
+        ["Left ⌘ Command", "Left ⌘", "Left Win"]),
+    LeftControl = ("ControlLeft", Some("ControlLeft"), 59, Modifier,
+        ["Left ⌃ Control", "Left ⌃", "Left Ctrl"]),
+    LeftShift = ("ShiftLeft", Some("ShiftLeft"), 56, Modifier,
+        ["Left ⇧ Shift", "Left ⇧", "Left Shift"]),
+    RightShift = ("ShiftRight", Some("ShiftRight"), 60, Modifier,
+        ["Right ⇧ Shift", "Right ⇧", "Right Shift"]),
+
+    F1 = ("F1", Some("F1"), 122, Function, ["F1", "F1", "F1"]),
+    F2 = ("F2", Some("F2"), 120, Function, ["F2", "F2", "F2"]),
+    F3 = ("F3", Some("F3"), 99, Function, ["F3", "F3", "F3"]),
+    F4 = ("F4", Some("F4"), 118, Function, ["F4", "F4", "F4"]),
+    F5 = ("F5", Some("F5"), 96, Function, ["F5", "F5", "F5"]),
+    F6 = ("F6", Some("F6"), 97, Function, ["F6", "F6", "F6"]),
+    F7 = ("F7", Some("F7"), 98, Function, ["F7", "F7", "F7"]),
+    F8 = ("F8", Some("F8"), 100, Function, ["F8", "F8", "F8"]),
+    F9 = ("F9", Some("F9"), 101, Function, ["F9", "F9", "F9"]),
+    F10 = ("F10", Some("F10"), 109, Function, ["F10", "F10", "F10"]),
+    F11 = ("F11", Some("F11"), 103, Function, ["F11", "F11", "F11"]),
+    F12 = ("F12", Some("F12"), 111, Function, ["F12", "F12", "F12"]),
+
+    A = ("KeyA", Some("KeyA"), 0, Text, ["A", "A", "A"]),
+    B = ("KeyB", Some("KeyB"), 11, Text, ["B", "B", "B"]),
+    C = ("KeyC", Some("KeyC"), 8, Text, ["C", "C", "C"]),
+    D = ("KeyD", Some("KeyD"), 2, Text, ["D", "D", "D"]),
+    E = ("KeyE", Some("KeyE"), 14, Text, ["E", "E", "E"]),
+    F = ("KeyF", Some("KeyF"), 3, Text, ["F", "F", "F"]),
+    G = ("KeyG", Some("KeyG"), 5, Text, ["G", "G", "G"]),
+    H = ("KeyH", Some("KeyH"), 4, Text, ["H", "H", "H"]),
+    I = ("KeyI", Some("KeyI"), 34, Text, ["I", "I", "I"]),
+    J = ("KeyJ", Some("KeyJ"), 38, Text, ["J", "J", "J"]),
+    K = ("KeyK", Some("KeyK"), 40, Text, ["K", "K", "K"]),
+    L = ("KeyL", Some("KeyL"), 37, Text, ["L", "L", "L"]),
+    M = ("KeyM", Some("KeyM"), 46, Text, ["M", "M", "M"]),
+    N = ("KeyN", Some("KeyN"), 45, Text, ["N", "N", "N"]),
+    O = ("KeyO", Some("KeyO"), 31, Text, ["O", "O", "O"]),
+    P = ("KeyP", Some("KeyP"), 35, Text, ["P", "P", "P"]),
+    Q = ("KeyQ", Some("KeyQ"), 12, Text, ["Q", "Q", "Q"]),
+    R = ("KeyR", Some("KeyR"), 15, Text, ["R", "R", "R"]),
+    S = ("KeyS", Some("KeyS"), 1, Text, ["S", "S", "S"]),
+    T = ("KeyT", Some("KeyT"), 17, Text, ["T", "T", "T"]),
+    U = ("KeyU", Some("KeyU"), 32, Text, ["U", "U", "U"]),
+    V = ("KeyV", Some("KeyV"), 9, Text, ["V", "V", "V"]),
+    W = ("KeyW", Some("KeyW"), 13, Text, ["W", "W", "W"]),
+    X = ("KeyX", Some("KeyX"), 7, Text, ["X", "X", "X"]),
+    Y = ("KeyY", Some("KeyY"), 16, Text, ["Y", "Y", "Y"]),
+    Z = ("KeyZ", Some("KeyZ"), 6, Text, ["Z", "Z", "Z"]),
+
+    Digit0 = ("Digit0", Some("Digit0"), 29, Text, ["0", "0", "0"]),
+    Digit1 = ("Digit1", Some("Digit1"), 18, Text, ["1", "1", "1"]),
+    Digit2 = ("Digit2", Some("Digit2"), 19, Text, ["2", "2", "2"]),
+    Digit3 = ("Digit3", Some("Digit3"), 20, Text, ["3", "3", "3"]),
+    Digit4 = ("Digit4", Some("Digit4"), 21, Text, ["4", "4", "4"]),
+    Digit5 = ("Digit5", Some("Digit5"), 23, Text, ["5", "5", "5"]),
+    Digit6 = ("Digit6", Some("Digit6"), 22, Text, ["6", "6", "6"]),
+    Digit7 = ("Digit7", Some("Digit7"), 26, Text, ["7", "7", "7"]),
+    Digit8 = ("Digit8", Some("Digit8"), 28, Text, ["8", "8", "8"]),
+    Digit9 = ("Digit9", Some("Digit9"), 25, Text, ["9", "9", "9"]),
+
+    Backquote = ("Backquote", Some("Backquote"), 50, Text, ["`", "`", "`"]),
+    Minus = ("Minus", Some("Minus"), 27, Text, ["-", "-", "-"]),
+    Equal = ("Equal", Some("Equal"), 24, Text, ["=", "=", "="]),
+    BracketLeft = ("BracketLeft", Some("BracketLeft"), 33, Text, ["[", "[", "["]),
+    BracketRight = ("BracketRight", Some("BracketRight"), 30, Text, ["]", "]", "]"]),
+    Backslash = ("Backslash", Some("Backslash"), 42, Text, ["\\", "\\", "\\"]),
+    Semicolon = ("Semicolon", Some("Semicolon"), 41, Text, [";", ";", ";"]),
+    Quote = ("Quote", Some("Quote"), 39, Text, ["'", "'", "'"]),
+    Comma = ("Comma", Some("Comma"), 43, Text, [",", ",", ","]),
+    Period = ("Period", Some("Period"), 47, Text, [".", ".", "."]),
+    Slash = ("Slash", Some("Slash"), 44, Text, ["/", "/", "/"]),
+
+    Space = ("Space", Some("Space"), 49, Text, ["Space", "Space", "Space"]),
+    Tab = ("Tab", Some("Tab"), 48, Text, ["Tab", "Tab", "Tab"]),
+    Enter = ("Enter", Some("Enter"), 36, Text, ["Return", "Return", "Enter"]),
+    Backspace = ("Backspace", Some("Backspace"), 51, Text, ["Delete", "Delete", "Backspace"]),
+    ArrowUp = ("ArrowUp", Some("ArrowUp"), 126, Text, ["↑", "↑", "↑"]),
+    ArrowDown = ("ArrowDown", Some("ArrowDown"), 125, Text, ["↓", "↓", "↓"]),
+    ArrowLeft = ("ArrowLeft", Some("ArrowLeft"), 123, Text, ["←", "←", "←"]),
+    ArrowRight = ("ArrowRight", Some("ArrowRight"), 124, Text, ["→", "→", "→"]),
+}
+
+/// The Command key is the Windows key on Windows and Super on Linux.
+fn pc_name(name: &'static str) -> String {
+    if cfg!(target_os = "windows") {
+        name.to_string()
+    } else {
+        name.replace("Win", "Super")
+    }
 }
 
 impl Hotkey {
-    pub const ALL: [Hotkey; 4] = [
-        Hotkey::RightOption,
-        Hotkey::RightCommand,
-        Hotkey::Fn,
-        Hotkey::RightControl,
-    ];
+    fn row(self) -> &'static Row {
+        // `ROWS` is generated from the same list as the enum, so the index of
+        // a variant is its row.
+        &Hotkey::ROWS[self as usize]
+    }
+
+    /// Whether this platform can hook the key. macOS offers every key but
+    /// Right Control, which Apple keyboards do not have. Windows lacks fn. Linux offers only modifiers and F-keys:
+    /// rdev's `listen` on X11 uses XRecord, which cannot swallow events, so
+    /// a letter, digit or Space as the talk key would type into the focused
+    /// app on every press.
+    fn offered_here(self) -> bool {
+        if cfg!(target_os = "macos") {
+            self != Hotkey::RightControl
+        } else if cfg!(target_os = "windows") {
+            self != Hotkey::Fn
+        } else {
+            (self.is_modifier() && self != Hotkey::Fn) || self.row().class == Class::Function
+        }
+    }
 
     /// Hotkeys the current platform can actually hook, in the order the UI lists them.
+    /// Index 0 is the platform default and the fallback everywhere else.
     pub fn available() -> Vec<Hotkey> {
-        if cfg!(target_os = "macos") {
-            vec![Hotkey::RightOption, Hotkey::RightCommand, Hotkey::Fn]
+        let leading = if cfg!(target_os = "macos") {
+            [Hotkey::RightOption, Hotkey::RightCommand, Hotkey::Fn]
         } else {
-            vec![
+            [
                 Hotkey::RightOption,
                 Hotkey::RightControl,
                 Hotkey::RightCommand,
             ]
+        };
+        let mut out = leading.to_vec();
+        for hk in Hotkey::ALL {
+            if !out.contains(&hk) && hk.offered_here() {
+                out.push(hk);
+            }
         }
+        out
     }
 
+    /// The Swift `UserDefaults` string for the four legacy keys, the W3C
+    /// `KeyboardEvent.code` for every other key.
     pub fn raw_value(self) -> &'static str {
-        match self {
-            Hotkey::RightOption => "rightOption",
-            Hotkey::RightCommand => "rightCommand",
-            Hotkey::Fn => "fn",
-            Hotkey::RightControl => "rightControl",
-        }
+        self.row().raw
     }
 
+    /// Accepts every `raw_value`, and also the W3C code of a key: the codes
+    /// `AltRight`, `MetaRight` and `ControlRight` therefore name the legacy
+    /// right-hand keys, so a code sent from the picker normalises.
     pub fn from_raw(raw: &str) -> Option<Hotkey> {
-        Hotkey::ALL.into_iter().find(|hk| hk.raw_value() == raw)
+        Hotkey::ALL
+            .into_iter()
+            .find(|hk| hk.raw_value() == raw || hk.code() == Some(raw))
     }
 
-    /// macOS virtual key code (61 / 54 / 63 / 62). Kept for parity and tests.
+    /// The W3C `KeyboardEvent.code` the webview reports for this key. `None`
+    /// for fn, which never reaches a webview.
+    pub fn code(self) -> Option<&'static str> {
+        self.row().code
+    }
+
+    /// macOS virtual keycode (`kVK_*`). Modifiers arrive as `flagsChanged`
+    /// with this code; other keys as `keyDown`/`keyUp`.
     pub fn key_code(self) -> i64 {
-        match self {
-            Hotkey::RightOption => 61,
-            Hotkey::RightCommand => 54,
-            Hotkey::Fn => 63,
-            Hotkey::RightControl => 62,
-        }
+        self.row().key_code
+    }
+
+    /// Option, Command, Control, Shift (left and right) and fn. On macOS these
+    /// arrive as `flagsChanged` and are never swallowed, so holding one as the
+    /// talk key does not stop it working as a modifier in other apps. Every
+    /// other talk key is swallowed while held.
+    pub fn is_modifier(self) -> bool {
+        self.row().class == Class::Modifier
+    }
+
+    /// True for keys that type a character or move the caret. Holding one as
+    /// the talk key swallows it, so it no longer does its usual job while
+    /// it is the talk key; the picker warns about that.
+    pub fn types_text(self) -> bool {
+        self.row().class == Class::Text
     }
 
     pub fn label(self) -> String {
-        let s = if cfg!(target_os = "macos") {
-            match self {
-                Hotkey::RightOption => "Right ⌥ Option",
-                Hotkey::RightCommand => "Right ⌘ Command",
-                Hotkey::Fn => "fn",
-                Hotkey::RightControl => "Right ⌃ Control",
-            }
+        let row = self.row();
+        if cfg!(target_os = "macos") {
+            row.mac.to_string()
         } else {
-            match self {
-                Hotkey::RightOption => "Right Alt",
-                Hotkey::RightCommand if cfg!(target_os = "windows") => "Right Win",
-                Hotkey::RightCommand => "Right Super",
-                Hotkey::Fn => "fn",
-                Hotkey::RightControl => "Right Ctrl",
-            }
-        };
-        s.to_string()
+            pc_name(row.pc)
+        }
     }
 
     pub fn short_label(self) -> String {
         if cfg!(target_os = "macos") {
-            match self {
-                Hotkey::RightOption => "Right ⌥",
-                Hotkey::RightCommand => "Right ⌘",
-                Hotkey::Fn => "fn",
-                Hotkey::RightControl => "Right ⌃",
-            }
-            .to_string()
+            self.row().mac_short.to_string()
         } else {
             // The Windows/Linux names have no glyph form to shorten to.
             self.label()
