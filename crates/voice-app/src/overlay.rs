@@ -1,7 +1,7 @@
 //! Floating pill overlay (Wisprflow-style). Reference: `BarsView` / `Overlay`
 //! in Sources/VoiceCore/core.swift.
 //!
-//! The pill is the `overlay` Tauri window (192×44, transparent, always on top,
+//! The pill is the `overlay` Tauri window (192×32, transparent, always on top,
 //! non-focusable, ignores the cursor). Rust only positions/shows/hides it and
 //! emits events; ui/overlay.js draws the bars and text:
 //!
@@ -27,7 +27,7 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
 const WINDOW: &str = "overlay";
 /// Logical size from tauri.conf.json; the pill is positioned from it.
 const WIDTH: f64 = 192.0;
-const HEIGHT: f64 = 44.0;
+const HEIGHT: f64 = 32.0;
 /// Gap between the pill and the bottom of the work area (Dock/taskbar).
 const BOTTOM_MARGIN: f64 = 28.0;
 const LEVEL_INTERVAL: Duration = Duration::from_millis(1000 / 30);

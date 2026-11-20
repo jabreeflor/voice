@@ -282,15 +282,18 @@ body.onboarding { align-items: center; justify-content: center; }
 
 /* ══ OVERLAY ══ */
 body.overlay { background: transparent; }
-.pill { width: 192px; height: 44px; border-radius: 22px; background: var(--hud);
+.pill { width: 144px; height: 32px; margin: 0 auto; border-radius: 16px; background: var(--hud);
   border: 1px solid rgba(255,255,255,.18); position: relative; overflow: hidden;
   opacity: 0; transition: opacity .18s; } /* hide: matches FADE_OUT in overlay.rs */
 .pill.show { opacity: 1; transition: opacity .15s; } /* show: Overlay.show() 0.15 s */
-.pill canvas { position: absolute; left: 18px; top: 6px; width: 156px; height: 32px; }
-.pill .label { position: absolute; left: 10px; right: 10px; top: 12px; text-align: center;
-  font: 500 13px var(--sans); color: #fff; white-space: nowrap; overflow: hidden;
+.pill canvas { position: absolute; left: 14px; top: 4px; width: 116px; height: 24px; }
+.pill .label { position: absolute; left: 8px; right: 8px; top: 0; bottom: 0; text-align: center;
+  font: 500 11px/30px var(--sans); color: #fff; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; display: none; }
 .pill.flash .label { display: block; } .pill.flash canvas { display: none; }
+/* The talk-key pill is 144 wide, centred in the 192-wide window; a text flash
+   ("Voice is still setting up", "Typed: …") uses the full window width. */
+.pill.flash { width: 192px; }
 /* The overlay page is transparent around the pill; a dark color-scheme would
    paint the webview canvas behind it. */
 :root.hud-root { color-scheme: normal; }

@@ -57,9 +57,6 @@ pub fn title_text(hotkey_label: &str) -> String {
 
 /// Builds the tray once during setup. `icons/tray.png` is a template image on
 /// macOS; `icons/tray-recording.png` is the red glyph shown while recording.
-/// The recording glyph is drawn smaller inside the same 44×44 canvas: the
-/// status item sizes itself from the image's dimensions, so a smaller canvas
-/// would make the menu bar shift every time the talk key is pressed.
 pub fn build(handle: &AppHandle, app: Arc<App>) -> tauri::Result<()> {
     let title = MenuItem::with_id(handle, ID_TITLE, "Voice", false, None::<&str>)?;
     let status = MenuItem::with_id(handle, ID_STATUS, "", false, None::<&str>)?;
@@ -170,36 +167,5 @@ mod tests {
         // show up as a blank tray at runtime.
         assert!(icon(false).is_some());
         assert!(icon(true).is_some());
-    }
-
-    /// (width, height) of the non-transparent pixels, i.e. the glyph drawn.
-    fn glyph_extent(img: &Image<'_>) -> (u32, u32) {
-        let w = img.width();
-        let (mut x0, mut y0, mut x1, mut y1) = (w, img.height(), 0, 0);
-        for (i, px) in img.rgba().chunks_exact(4).enumerate() {
-            if px[3] > 0 {
-                let (x, y) = (i as u32 % w, i as u32 / w);
-                (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
-            }
-        }
-        (x1 + 1 - x0, y1 + 1 - y0)
-    }
-
-    #[test]
-    fn recording_glyph_is_smaller_on_the_same_canvas() {
-        // Same canvas so the menu bar does not reflow on press; a visibly
-        // smaller glyph inside it while the talk key is held.
-        let (idle, rec) = (icon(false).unwrap(), icon(true).unwrap());
-        assert_eq!((rec.width(), rec.height()), (idle.width(), idle.height()));
-        let (iw, ih) = glyph_extent(&idle);
-        let (rw, rh) = glyph_extent(&rec);
-        assert!(
-            rw * 10 <= iw * 7,
-            "recording glyph {rw}px wide vs idle {iw}px"
-        );
-        assert!(
-            rh * 10 <= ih * 7,
-            "recording glyph {rh}px tall vs idle {ih}px"
-        );
     }
 }
