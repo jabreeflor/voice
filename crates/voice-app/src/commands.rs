@@ -9,6 +9,7 @@
 //! - `dictation-landed` (no payload)         a dictation was pasted (onboarding step 4)
 //! - `window-visible`   (bool, per window)    main/onboarding shown or hidden: start/stop UI timers
 //! - `appearance-changed` ("system" | "light" | "dark")  Settings changed the colour scheme
+//! - `app-update`       (`updates::UpdateStatus`) self-update state changed (updates.rs)
 //! - `overlay`, `level`, `sound`             see overlay.rs
 //!
 //! Sync commands run on the main thread. Each one takes at most one `App`
@@ -21,12 +22,13 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Local, TimeZone};
 use serde::Serialize;
-use tauri::{Emitter, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_autostart::ManagerExt;
 use voice_core::{Appearance, Config, HistoryStore, Hotkey, Settings, StatusColor};
 
 use crate::app::App;
 use crate::platform;
+use crate::updates::{self, UpdateStatus};
 
 /// Ledger rows shown on the Dictations tab (Swift `grouped(max: 40)`).
 const LEDGER_ENTRIES: usize = 40;
@@ -485,6 +487,34 @@ pub async fn copy_text(text: String) {
     }
 }
 
+/// Settings → Version row and the main-window update banner.
+#[derive(Serialize, Clone, Debug)]
+pub struct UpdateDto {
+    /// The running version (tauri.conf.json, stamped by the release workflow).
+    pub version: String,
+    pub status: UpdateStatus,
+}
+
+#[tauri::command]
+pub fn get_update(app: AppHandle) -> UpdateDto {
+    UpdateDto {
+        version: app.package_info().version.to_string(),
+        status: updates::status(&app),
+    }
+}
+
+/// Starts a check the user asked for; the result arrives as `app-update`.
+#[tauri::command]
+pub fn check_for_updates(app: AppHandle) {
+    updates::check_now(&app);
+}
+
+/// Installs the staged update and relaunches. Errors when nothing is staged.
+#[tauri::command]
+pub fn restart_to_update(app: AppHandle) -> Result<(), String> {
+    updates::restart(&app)
+}
+
 /// Hands every command to the builder in one place.
 pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
@@ -512,7 +542,10 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         request_accessibility,
         open_accessibility_settings,
         finish_onboarding,
-        copy_text
+        copy_text,
+        get_update,
+        check_for_updates,
+        restart_to_update
     ]
 }
 

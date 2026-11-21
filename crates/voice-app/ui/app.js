@@ -366,6 +366,65 @@
     await invoke('open_accessibility_settings');
   });
 
+  // ── updates ───────────────────────────────────────────────────────────
+  // src/updates.rs checks the release feed, downloads and verifies the
+  // update, and reports an UpdateStatus ({state: "disabled" | "idle" |
+  // "checking" | "current" | "ready" | "failed", ...}) on `app-update`. This
+  // only draws it: the Version row in Settings and the banner once an update
+  // is ready. Dismissal is per version, so a newer update shows again.
+  let update = { state: 'disabled', reason: '' };
+  let dismissedVersion = null;
+  let restarting = false;
+
+  function renderUpdate() {
+    const s = update;
+    const note = $('update-note');
+    const check = $('update-check');
+    note.classList.toggle('error', s.state === 'failed' && s.manual);
+    check.hidden = s.state === 'disabled';
+    check.disabled = s.state === 'checking' || restarting;
+    check.classList.toggle('lav', s.state !== 'ready');
+    check.textContent = s.state === 'ready' ? 'Restart to update' : 'Check for updates';
+    switch (s.state) {
+      case 'disabled': note.textContent = s.reason; break;
+      case 'checking': note.textContent = 'Checking…'; break;
+      case 'current': note.textContent = s.manual ? 'Up to date' : ''; break;
+      case 'ready': note.textContent = `${s.version} is ready`; break;
+      case 'failed': note.textContent = s.manual ? "Couldn't check for updates" : ''; break;
+      default: note.textContent = '';
+    }
+    note.title = s.state === 'failed' ? s.message : '';
+
+    const banner = $('update-banner');
+    banner.hidden = s.state !== 'ready' || s.version === dismissedVersion;
+    if (s.state === 'ready') $('update-title').textContent = `Voice ${s.version} is ready`;
+    $('update-restart').disabled = restarting;
+    $('update-restart').textContent = restarting ? 'Restarting…' : 'Restart';
+  }
+
+  async function restartToUpdate() {
+    restarting = true;
+    renderUpdate();
+    try {
+      await invoke('restart_to_update');
+    } catch (err) {
+      restarting = false;
+      const sub = $('update-sub');
+      sub.textContent = String(err);
+      sub.classList.add('error');
+      renderUpdate();
+    }
+  }
+  $('update-restart').addEventListener('click', restartToUpdate);
+  $('update-dismiss').addEventListener('click', () => {
+    dismissedVersion = update.version;
+    renderUpdate();
+  });
+  $('update-check').addEventListener('click', () => {
+    if (update.state === 'ready') restartToUpdate();
+    else invoke('check_for_updates');
+  });
+
   // ── refresh ───────────────────────────────────────────────────────────
   // Timer tick: the history only changes from inside the app, so the
   // Dictations tab renders on `history-changed` (and when entered) rather
@@ -398,6 +457,16 @@
     });
     listen('snippets-changed', () => { if (visible && current === 'snippets') renderSnippets(); });
     listen('vocabulary-changed', () => { if (visible && current === 'snippets') renderVocabulary(); });
+    // Cheap DOM updates, so these render even while hidden: the banner must
+    // already be up when the window next shows. The query after the listen
+    // covers a check that finished before this page loaded.
+    let updateEvents = 0;
+    await listen('app-update', (e) => { updateEvents++; update = e.payload; renderUpdate(); });
+    const info = await invoke('get_update');
+    $('version-text').textContent = info.version;
+    // An event that raced the query is newer than its answer.
+    if (updateEvents === 0) update = info.status;
+    renderUpdate();
     // Edits made by voicectl (or by hand) are picked up by the backend on each
     // read, so a 1 s timer keeps the visible tab in sync with the file, the
     // same way the AppKit window did. Like that window's timer it only runs

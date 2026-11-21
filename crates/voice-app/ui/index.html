@@ -28,6 +28,18 @@
   </button>
 </nav>
 
+<!-- Self-update (src/updates.rs): shown once an update is downloaded and
+     verified, so the one action is the restart. Dismissing only hides it;
+     quitting Voice still installs the update on the way out. -->
+<div class="update-banner sticker" id="update-banner" role="status" hidden>
+  <div class="update-text">
+    <strong id="update-title"></strong>
+    <span id="update-sub">Restart to finish updating.</span>
+  </div>
+  <button class="cap-btn" id="update-restart">Restart</button>
+  <button class="update-dismiss" id="update-dismiss" title="Dismiss" aria-label="Dismiss">✕</button>
+</div>
+
 <main class="main">
   <!-- dictations -->
   <div class="view visible" id="view-dictations">
@@ -102,6 +114,7 @@
       <div class="set-row"><span>Sound effects</span><button class="switch" id="sounds-switch" role="switch" aria-checked="true" aria-label="Sound effects"><i></i></button></div>
       <div class="set-row"><span>Start at login</span><button class="switch" id="login-switch" role="switch" aria-checked="false" aria-label="Start at login"><i></i></button></div>
       <div class="set-row"><span>Microphone check</span><button class="cap-btn lav" style="padding:8px 16px; font-size:12px" id="mic-test">Run 3-second test</button></div>
+      <div class="set-row"><span>Version <span class="version" id="version-text"></span></span><span class="update-row"><span class="update-note" id="update-note"></span><button class="cap-btn lav" style="padding:8px 16px; font-size:12px" id="update-check" hidden>Check for updates</button></span></div>
     </div>
     <p class="footnote" id="footnote">Everything runs on this computer — audio, transcription, history. Nothing leaves your machine.</p>
   </div>

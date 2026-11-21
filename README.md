@@ -46,6 +46,27 @@ not verify Voice". Open **System Settings → Privacy & Security** and click
 **Open Anyway**, or run
 `xattr -dr com.apple.quarantine /Applications/Voice.app`.
 
+#### Updates
+
+The downloaded app keeps itself up to date. Every push to `main` is
+published as a new release (`v2.0.1`, `v2.0.2`, …), and Voice checks for
+one a minute after launch and every four hours, or right away from
+**Check for Updates…** in the menu-bar menu (or **Settings → Version**).
+A newer version is downloaded in the background and checked against
+Voice's own signing key; the menu item then reads **Restart to Update to
+x.y.z** and the window shows a banner. Restart whenever it suits you, or
+just quit: the update is installed on the way out.
+
+Only the downloaded app updates. Copies built from source (`build.sh`, the
+one-line installer, `cargo tauri dev`) never replace themselves; rebuild
+them to update.
+
+Releases are ad-hoc signed until a signing identity is configured
+(see [Shipping releases](#shipping-releases)), and macOS ties the
+**Accessibility** grant to the exact build, so after an update you may
+need to toggle Voice off and on in **System Settings → Privacy & Security
+→ Accessibility** again. Microphone permission survives.
+
 ### Prebuilt bundles from CI (Windows, Linux)
 
 Every push to `main` builds installers on the [CI workflow](https://github.com/jabreeflor/voice/actions/workflows/ci.yml)
@@ -233,7 +254,8 @@ environment, hence `--env`; running
 ## ⚙️ Tray menu and window
 
 The tray (menu-bar) icon offers **Open Voice**, **Copy Last Dictation**
-(if a paste didn't land where you wanted), **Setup Assistant…** and **Quit
+(if a paste didn't land where you wanted), **Setup Assistant…**, **Check for
+Updates…** (the downloaded Mac app only, see [Updates](#updates)) and **Quit
 Voice**, with the engine status as the second line.
 
 The main window has three tabs:
@@ -246,7 +268,8 @@ The main window has three tabs:
   [`voicectl`](#️-command-line-voicectl).
 - **Settings** — permission status, talk key, appearance, the
   [accuracy and cleanup](#-accuracy-and-cleanup) switches, sound effects,
-  start at login, and a 3-second microphone check.
+  start at login, a 3-second microphone check, and the version (with
+  **Check for updates** in the downloaded Mac app).
 
 The windows follow the system's light or dark appearance; **Settings →
 Appearance** can pin either one instead (Match system / Light / Dark).
@@ -369,8 +392,11 @@ graph LR
   Voice knows whether the paste was taken.
 
 **Privacy:** the server binds to localhost only. No telemetry, no accounts,
-no network calls except model downloads from Hugging Face. The optional
-LLM polish talks only to a loopback address you run yourself.
+no network calls except model downloads from Hugging Face and, in the
+downloaded Mac app, update checks against this repository's GitHub
+releases (a plain download of `latest.json`; nothing about you or your
+dictations is sent). The optional LLM polish talks only to a loopback
+address you run yourself.
 
 ## 🛠️ Development
 
@@ -408,17 +434,46 @@ re-grant **Accessibility** (toggle Voice off/on in the list). Microphone
 permission survives. Signing with a real identity in your keychain
 (`build.sh` picks it up automatically) avoids this.
 
-### Cutting a release
+### Shipping releases
 
-Bump `version` in `crates/voice-app/tauri.conf.json`, merge, then push a
-matching tag (`git tag v2.0.1 && git push origin v2.0.1`). The
-[Release workflow](.github/workflows/release.yml) builds whisper-server
-from source, bundles it into `Voice.app`, and attaches the Apple silicon and
-Intel `.dmg` files to a GitHub Release. Running the workflow by hand builds
-the same `.dmg` files as artifacts without publishing. With the
-`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`
-(and, for notarization, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`)
-repository secrets set, the app is signed with your Developer ID and
-notarized; without them it is ad-hoc signed.
+Merging to `main` is shipping. The
+[Release workflow](.github/workflows/release.yml) runs on every push to
+`main` that touches the app (docs-only pushes are skipped):
+
+1. `scripts/release-version.mjs next` picks the version: the next patch
+   above the highest `v*` tag, or `version` in
+   `crates/voice-app/tauri.conf.json` when that is higher. That field is a
+   floor, not the release number: raise it (say to `2.1.0`) in a PR to
+   start a new minor or major line. Nothing is committed back to `main`.
+2. Each architecture builds whisper-server from source, bundles it into
+   `Voice.app` with the version stamped in, and produces the `.dmg` plus the
+   updater archive `Voice_x.y.z_<arch>.app.tar.gz`, signed with the updater
+   key.
+3. `scripts/release-feed.mjs` writes `latest.json` and checks that both
+   architectures are there and that each signature verifies against the
+   pubkey compiled into the app. Only then is the GitHub Release (and its
+   `vX.Y.Z` tag) created, which is the moment installed copies see it.
+
+A failed run publishes nothing and leaves no tag; the next push reuses the
+number. Running the workflow by hand re-ships `main`; a pull request that
+edits the release files builds both architectures without publishing.
+
+Secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (set):
+  the updater's minisign key, the pair of `plugins.updater.pubkey` in
+  `crates/voice-app/tauri.release.conf.json`. Back it up: losing it means
+  installed copies can never be updated again, only reinstalled.
+- `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+  `APPLE_SIGNING_IDENTITY` (optional): sign with a real identity instead of
+  ad-hoc, which also lets macOS keep the Accessibility grant across updates.
+  Add `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` to notarize.
+
+To pull a bad release, delete it on GitHub (or mark the previous one as
+latest): installed copies only ever move to a higher version, so push a fix
+to roll forward.
+
+`node --test scripts/tests/release.test.mjs` covers the version and feed
+scripts (CI runs it).
 
 See [`AGENTS.md`](AGENTS.md) for the layout, invariants and conventions.

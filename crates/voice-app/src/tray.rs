@@ -3,7 +3,8 @@
 //!
 //! Menu: "<Voice — hold <label> to dictate>" (disabled), "<status text>"
 //! (disabled), separator, "Open Voice", "Copy Last Dictation" (disabled while
-//! history is empty), "Setup Assistant…", separator, "Quit Voice".
+//! history is empty), "Setup Assistant…", "Check for Updates…" (release
+//! builds only; retitled by updates.rs), separator, "Quit Voice".
 //!
 //! `MenuItem::set_text` / `set_enabled` and `TrayIcon::set_icon` round-trip
 //! to the main thread, so callers must not hold any `App` mutex (see the
@@ -13,12 +14,13 @@
 use std::sync::{Arc, OnceLock};
 
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::app::{App, TrayItems};
 use crate::commands::effective_hotkey;
+use crate::updates::{self, UpdateStatus};
 
 pub const TRAY_ID: &str = "voice-tray";
 
@@ -27,6 +29,7 @@ const ID_STATUS: &str = "status";
 const ID_OPEN: &str = "open";
 const ID_COPY_LAST: &str = "copy-last";
 const ID_SETUP: &str = "setup";
+const ID_UPDATE: &str = "update";
 const ID_QUIT: &str = "quit";
 
 const IDLE_PNG: &[u8] = include_bytes!("../icons/tray.png");
@@ -69,25 +72,32 @@ pub fn build(handle: &AppHandle, app: Arc<App>) -> tauri::Result<()> {
         None::<&str>,
     )?;
     let setup = MenuItem::with_id(handle, ID_SETUP, "Setup Assistant…", true, None::<&str>)?;
+    let update = match updates::menu_item(&updates::status(handle)) {
+        Some((text, enabled)) => Some(MenuItem::with_id(
+            handle,
+            ID_UPDATE,
+            text,
+            enabled,
+            None::<&str>,
+        )?),
+        None => None,
+    };
     let quit = MenuItem::with_id(handle, ID_QUIT, "Quit Voice", true, Some("CmdOrCtrl+Q"))?;
-    let menu = Menu::with_items(
-        handle,
-        &[
-            &title,
-            &status,
-            &PredefinedMenuItem::separator(handle)?,
-            &open,
-            &copy_last,
-            &setup,
-            &PredefinedMenuItem::separator(handle)?,
-            &quit,
-        ],
-    )?;
+    let separator_top = PredefinedMenuItem::separator(handle)?;
+    let separator_bottom = PredefinedMenuItem::separator(handle)?;
+    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> =
+        vec![&title, &status, &separator_top, &open, &copy_last, &setup];
+    if let Some(update) = &update {
+        items.push(update);
+    }
+    items.extend([&separator_bottom as &dyn IsMenuItem<tauri::Wry>, &quit]);
+    let menu = Menu::with_items(handle, &items)?;
 
     *app.tray_items.lock().unwrap_or_else(|e| e.into_inner()) = Some(TrayItems {
         title,
         status,
         copy_last,
+        update,
     });
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
@@ -103,6 +113,7 @@ pub fn build(handle: &AppHandle, app: Arc<App>) -> tauri::Result<()> {
         ID_OPEN => menu_app.show_main_window(),
         ID_COPY_LAST => menu_app.copy_last(),
         ID_SETUP => menu_app.show_onboarding(),
+        ID_UPDATE => updates::menu_clicked(handle),
         ID_QUIT => handle.exit(0),
         _ => {}
     });
@@ -136,6 +147,23 @@ pub fn refresh(app: &App) {
     let _ = title_item.set_text(title);
     let _ = status_item.set_text(status);
     let _ = copy_item.set_enabled(has_history);
+}
+
+/// Retitles Check for Updates… for `status` (updates.rs). A no-op before the
+/// tray exists and in builds that do not update. Only macOS ever updates.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn set_update_item(handle: &AppHandle, status: &UpdateStatus) {
+    let Some(app) = handle.try_state::<Arc<App>>() else {
+        return;
+    };
+    let item = {
+        let guard = app.tray_items.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().and_then(|t| t.update.clone())
+    };
+    if let (Some(item), Some((text, enabled))) = (item, updates::menu_item(status)) {
+        let _ = item.set_text(text);
+        let _ = item.set_enabled(enabled);
+    }
 }
 
 pub fn set_recording(handle: &AppHandle, recording: bool) {

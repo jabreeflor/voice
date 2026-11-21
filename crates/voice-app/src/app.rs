@@ -90,6 +90,9 @@ pub struct TrayItems {
     pub title: MenuItem<tauri::Wry>,
     pub status: MenuItem<tauri::Wry>,
     pub copy_last: MenuItem<tauri::Wry>,
+    /// Check for Updates… / Restart to Update; absent when this build does
+    /// not update itself (updates.rs).
+    pub update: Option<MenuItem<tauri::Wry>>,
 }
 
 pub struct App {

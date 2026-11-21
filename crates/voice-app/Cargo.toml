@@ -50,6 +50,9 @@ block2.workspace = true
 # Overlay window: collection behaviour + status-bar level (see overlay.rs);
 # promised pasteboard item for paste-landing detection (macos_pasteboard.rs).
 objc2-app-kit.workspace = true
+# Self-update from the release feed (updates.rs). Release builds only: the
+# feed and its pubkey live in tauri.release.conf.json.
+tauri-plugin-updater.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # Microphone consent lives in the CapabilityAccessManager registry store.
