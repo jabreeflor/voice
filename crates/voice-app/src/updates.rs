@@ -38,7 +38,9 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-/// Event carrying an [`UpdateStatus`] to every window.
+/// Event carrying an [`UpdateStatus`] to every window (only macOS ever
+/// changes status after startup, so only macOS emits it).
+#[cfg(target_os = "macos")]
 pub const UPDATE_EVENT: &str = "app-update";
 
 #[cfg(target_os = "macos")]
