@@ -9,6 +9,7 @@
 //! - `tray`      status-bar icon and menu
 //! - `overlay`   floating pill window driver
 //! - `commands`  #[tauri::command] handlers for the HTML UI
+//! - `updates`   self-update from the GitHub release feed (release builds)
 //! - `platform`  OS-specific permission and settings-pane shims
 
 #![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
@@ -21,6 +22,7 @@ mod overlay;
 mod paste;
 mod platform;
 mod tray;
+mod updates;
 
 use std::sync::Arc;
 
@@ -33,11 +35,21 @@ use crate::app::{App, MAIN_WINDOW, ONBOARDING_WINDOW};
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let tauri_app = tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            None,
-        ))
+    let context = tauri::generate_context!();
+    let builder = tauri::Builder::default().plugin(tauri_plugin_autostart::init(
+        MacosLauncher::LaunchAgent,
+        None,
+    ));
+    // Only a release build (`--config tauri.release.conf.json`) carries the
+    // feed and pubkey; the plugin refuses to start without them, and a local
+    // build must never replace itself with what is on main (updates.rs).
+    #[cfg(target_os = "macos")]
+    let builder = if updates::feed_configured(context.config()) {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    } else {
+        builder
+    };
+    let tauri_app = builder
         .invoke_handler(commands::handler())
         .setup(|app| {
             // Menu-bar accessory until a window is shown (LSUIElement in the
@@ -50,6 +62,9 @@ fn main() {
             commands::apply_appearance(app.handle(), Config::appearance(&state.settings));
             state.overlay.configure_window();
             app.manage(state.clone());
+            // Before the tray: it adds Check for Updates… only when this
+            // build updates.
+            updates::start(app.handle());
             tray::build(app.handle(), state.clone())?;
             state.launch();
             Ok(())
@@ -67,7 +82,7 @@ fn main() {
                 }
             }
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building Voice");
 
     tauri_app.run(|handle, event| match event {
@@ -82,6 +97,9 @@ fn main() {
             if let Some(app) = handle.try_state::<Arc<App>>() {
                 app.shutdown();
             }
+            // Quitting with an update staged installs it, so the next launch
+            // is the new version even without Restart to Update.
+            updates::install_pending(handle);
         }
         // Dock icon click / second launch: `applicationShouldHandleReopen` in
         // the Swift app (bring back onboarding if it is up or never finished,

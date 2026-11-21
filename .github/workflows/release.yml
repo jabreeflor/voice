@@ -1,32 +1,68 @@
 name: Release
 
-# Builds a self-contained macOS app: Voice.app with whisper-server inside
-# Contents/MacOS (where WhisperEngine::find_binary looks first), packed into a
-# .dmg. Pushing a tag `vX.Y.Z` publishes the .dmg files to a GitHub Release;
-# running the workflow by hand, or a pull request that edits the release
-# files, only uploads them as workflow artifacts.
+# Every push to main ships: version -> build (arm64 + x86_64) -> write and
+# verify the update feed -> publish. Installed copies pick the release up from
+# `releases/latest/download/latest.json` within a few hours (or at once from
+# the tray's Check for Updates…), so publishing *is* shipping.
 #
-# Signing: without secrets the app is ad-hoc signed (`signingIdentity: "-"`
-# in tauri.release.conf.json), so Gatekeeper asks once on first launch. Add
-# APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD and
-# APPLE_SIGNING_IDENTITY to sign with a Developer ID, plus APPLE_ID,
-# APPLE_PASSWORD (app-specific password) and APPLE_TEAM_ID to notarize;
-# tauri-bundler picks all of them up from the environment.
+#   version  computes the next X.Y.Z (scripts/release-version.mjs: the next
+#            patch above the highest v* tag, or tauri.conf.json's version when
+#            that is higher). Nothing is committed back to main; each build
+#            job stamps the version into its own checkout.
+#   macos    one job per architecture: Voice.app with whisper-server inside
+#            Contents/MacOS (where WhisperEngine::find_binary looks first),
+#            packed into a .dmg, plus the updater archive
+#            (`Voice_<v>_<arch>.app.tar.gz`) signed with the updater key.
+#   publish  writes latest.json from both archives, checks that each
+#            signature verifies against the pubkey compiled into the app, and
+#            only then creates the release and its tag.
+#
+# A pull request that edits the release files builds both architectures
+# (with the version it would get) and stops there; nothing is tagged or
+# published.
+#
+# Secrets:
+#   TAURI_SIGNING_PRIVATE_KEY (+ _PASSWORD) is the updater's minisign key,
+#   the pair of plugins.updater.pubkey in tauri.release.conf.json. Without it
+#   nothing can be published: installed copies refuse unsigned updates.
+#   APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD and
+#   APPLE_SIGNING_IDENTITY sign with a real identity instead of ad-hoc
+#   (`signingIdentity: "-"`); APPLE_ID, APPLE_PASSWORD (app-specific
+#   password) and APPLE_TEAM_ID add notarization. tauri-bundler picks all of
+#   them up from the environment. A stable identity is what lets macOS keep
+#   Voice's Accessibility grant across updates; ad-hoc builds lose it on
+#   every update (README.md, "Updates").
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    # Changes that cannot alter the shipped app are not a new version.
+    paths-ignore:
+      - "**/*.md"
+      - "assets/**"
+      - "scripts/install.sh"
+      - "scripts/e2e-smoke.sh"
+      - "scripts/tests/**"
+      - ".github/workflows/ci.yml"
+      - "LICENSE"
   pull_request:
     paths:
       - .github/workflows/release.yml
       - crates/voice-app/tauri.release.conf.json
+      - scripts/release-*.mjs
+  # Re-ship main by hand (e.g. after fixing a secret). Publishes from main only.
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# One release at a time, in push order. A run that is building is never
+# cancelled; a newer push waits, and if several pile up only the newest
+# waiting one runs. The next version is computed from the tags when a run
+# starts, and the previous run's tag exists by then. Pull requests queue on
+# their own ref so they never hold a release up.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
   cancel-in-progress: false
 
 env:
@@ -37,30 +73,48 @@ env:
   MACOSX_DEPLOYMENT_TARGET: "13.0"
 
 jobs:
+  version:
+    name: Next version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Every tag, so the next version is computed from all of them.
+          fetch-depth: 0
+
+      - id: next
+        name: Next version
+        run: node scripts/release-version.mjs next | tee -a "$GITHUB_OUTPUT"
+
   macos:
     name: Build Voice.app (${{ matrix.target }})
+    needs: version
     runs-on: macos-15
     timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: aarch64-apple-darwin
             arch: arm64
+            # tauri-bundler's arch suffix for the .dmg; the archive copies it.
+            bundle_arch: aarch64
           - target: x86_64-apple-darwin
             arch: x86_64
+            bundle_arch: x64
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check tag matches app version
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          VERSION=$(python3 -c 'import json; print(json.load(open("crates/voice-app/tauri.conf.json"))["version"])')
-          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match tauri.conf.json version $VERSION"
-            exit 1
-          fi
+      # tauri.conf.json's version is what lands in Info.plist and what the
+      # updater compares against latest.json.
+      - name: Stamp the version
+        run: node scripts/release-version.mjs stamp "$VERSION"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -119,8 +173,11 @@ jobs:
 
       # Secrets that are not configured arrive as empty strings, which
       # tauri-bundler would treat as set; unset them so it falls back to the
-      # ad-hoc identity and skips notarization.
-      - name: Build app and dmg
+      # ad-hoc identity and skips notarization. tauri.release.conf.json turns
+      # on createUpdaterArtifacts, which hard-errors without the updater key:
+      # a pull request from a fork (no secrets) builds without the archive
+      # and can never reach publish anyway.
+      - name: Build app, dmg and updater archive
         working-directory: crates/voice-app
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -129,13 +186,21 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
-                   APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+                   APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
             if [ -z "${!v}" ]; then unset "$v"; fi
           done
+          extra=()
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            unset TAURI_SIGNING_PRIVATE_KEY
+            echo "::warning::no updater signing key: building without the updater archive"
+            extra=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
+          fi
           cargo tauri build --target ${{ matrix.target }} --bundles app,dmg \
-            --config tauri.release.conf.json
+            --config tauri.release.conf.json "${extra[@]}"
 
       - name: Verify bundle
         run: |
@@ -146,43 +211,97 @@ jobs:
           if [ "$(uname -m)" = "${{ matrix.arch }}" ]; then
             "$APP/Contents/MacOS/whisper-server" --help >/dev/null
           fi
+          # The updater compares this against latest.json; a stale value would
+          # make every installed copy offer the same update forever.
+          plist_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")
+          if [ "$plist_version" != "$VERSION" ]; then
+            echo "::error::Info.plist says $plist_version, expected $VERSION"
+            exit 1
+          fi
           ls -l target/${{ matrix.target }}/release/bundle/dmg/
+
+      # Both architectures' archives are called Voice.app.tar.gz; name them
+      # like the .dmg so they can sit side by side on one release. The
+      # signature covers the bytes, not the name.
+      - name: Stage release files
+        run: |
+          set -euo pipefail
+          BUNDLE="target/${{ matrix.target }}/release/bundle"
+          mkdir -p dist
+          cp "$BUNDLE"/dmg/*.dmg dist/
+          if [ -f "$BUNDLE/macos/Voice.app.tar.gz" ]; then
+            test -s "$BUNDLE/macos/Voice.app.tar.gz.sig"
+            NAME="Voice_${VERSION}_${{ matrix.bundle_arch }}.app.tar.gz"
+            cp "$BUNDLE/macos/Voice.app.tar.gz" "dist/$NAME"
+            cp "$BUNDLE/macos/Voice.app.tar.gz.sig" "dist/$NAME.sig"
+          fi
+          ls -l dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: voice-macos-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          path: dist/*
           if-no-files-found: error
 
+  # The last gate before every installed copy fetches this build. Runs on a
+  # runner that never saw the signing key, against what was actually built.
   publish:
     name: Publish GitHub Release
-    needs: macos
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [version, macos]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
+      # Creates the release and, with it, the tag.
       contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: voice-macos-*
           path: dist
           merge-multiple: true
 
+      - name: Write the update feed
+        run: node scripts/release-feed.mjs write dist "$VERSION" "$GITHUB_REPOSITORY"
+
+      # Version matches, both darwin entries exist, and each signature
+      # verifies against plugins.updater.pubkey — i.e. an installed Voice
+      # will accept this, rather than silently refuse it forever.
+      - name: Verify the update feed
+        run: node scripts/release-feed.mjs verify dist "$VERSION"
+
       - name: Checksums
         working-directory: dist
-        run: sha256sum *.dmg | tee SHA256SUMS.txt
+        run: sha256sum *.dmg *.app.tar.gz | tee SHA256SUMS.txt
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.dmg
-            dist/SHA256SUMS.txt
-          generate_release_notes: true
-          body: |
-            ## Install on macOS
+      # `gh release create` uploads every asset to a draft and publishes it
+      # last, so latest.json never points at an archive that is not there
+      # yet. The tag is created here, on this commit, only once everything
+      # above passed: a failed run leaves no tag, and the next push reuses
+      # the number.
+      - name: Publish
+        run: |
+          set -euo pipefail
+          NOTES=$(cat <<EOF
+          Built from ${GITHUB_SHA} on main.
 
-            1. Download the `_aarch64.dmg` for Apple silicon (M1 and later) or the `_x64.dmg` for Intel Macs.
-            2. Open the .dmg and drag **Voice** into **Applications**.
-            3. Launch Voice. If macOS says it cannot verify the developer, open **System Settings → Privacy & Security** and click **Open Anyway** (or run `xattr -dr com.apple.quarantine /Applications/Voice.app`).
+          ## Install on macOS
 
-            The transcription engine (`whisper-server`) is included; on first launch Voice downloads the speech model (142 MB) and asks for Microphone and Accessibility access.
+          1. Download the \`_aarch64.dmg\` for Apple silicon (M1 and later) or the \`_x64.dmg\` for Intel Macs.
+          2. Open the .dmg and drag **Voice** into **Applications**.
+          3. Launch Voice. If macOS says it cannot verify the developer, open **System Settings → Privacy & Security** and click **Open Anyway** (or run \`xattr -dr com.apple.quarantine /Applications/Voice.app\`).
+
+          The transcription engine (\`whisper-server\`) is included; on first launch Voice downloads the speech model (142 MB) and asks for Microphone and Accessibility access.
+
+          Installed copies update themselves from this release: Voice checks a minute after launch and every four hours (or from **Check for Updates…** in the menu-bar menu), downloads the update, and checks it against Voice's own signing key before offering **Restart to Update**.
+          EOF
+          )
+          gh release create "$TAG" dist/*.dmg dist/*.app.tar.gz dist/*.app.tar.gz.sig \
+            dist/latest.json dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "Voice $TAG" \
+            --notes "$NOTES" --generate-notes --latest
