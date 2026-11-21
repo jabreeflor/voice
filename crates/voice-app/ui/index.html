@@ -7,22 +7,26 @@
 <link rel="stylesheet" href="app.css">
 <script src="theme.js"></script>
 </head>
-<body>
+<body class="app-shell">
 
-<!-- "deep": the whole bar drags, including the wordmark's children; the
-     tab/gear buttons still block the drag (clickable elements do). -->
-<div class="topbar" data-tauri-drag-region="deep">
-  <div class="brand">
+<nav class="sidebar" aria-label="Voice navigation">
+  <div class="brand" data-tauri-drag-region="deep">
     <div class="cap"><div class="wave"><b></b><b></b><b></b><b></b></div></div>
     <span>Voice</span>
   </div>
-  <button class="tab active" data-view="dictations">Dictations</button>
-  <button class="tab" data-view="snippets">Snippets</button>
-  <div class="top-spacer"></div>
-  <button class="gear" data-view="settings" title="Settings" aria-label="Settings">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
+  <button class="sidebar-link" type="button" data-view="dictations" aria-controls="view-dictations" title="Dictations" aria-current="page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3"/></svg>
+    <span>Dictations</span>
   </button>
-</div>
+  <button class="sidebar-link" type="button" data-view="snippets" aria-controls="view-snippets" title="Snippets">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM7 9h10m-10 4h6"/></svg>
+    <span>Snippets</span>
+  </button>
+  <button class="sidebar-link" type="button" data-view="settings" aria-controls="view-settings" title="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
+    <span>Settings</span>
+  </button>
+</nav>
 
 <!-- Self-update (src/updates.rs): shown once an update is downloaded and
      verified, so the one action is the restart. Dismissing only hides it;
@@ -36,7 +40,7 @@
   <button class="update-dismiss" id="update-dismiss" title="Dismiss" aria-label="Dismiss">✕</button>
 </div>
 
-<div class="main">
+<main class="main">
   <!-- dictations -->
   <div class="view visible" id="view-dictations">
     <h1>Dictations</h1>
@@ -114,7 +118,7 @@
     </div>
     <p class="footnote" id="footnote">Everything runs on this computer — audio, transcription, history. Nothing leaves your machine.</p>
   </div>
-</div>
+</main>
 
 <!-- Screen-reader announcement for the ledger row copy (the AppKit row posted
      an accessibility announcement); visually hidden. -->

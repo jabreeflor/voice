@@ -84,30 +84,41 @@ button, input, select, textarea { -webkit-app-region: no-drag; }
            white-space: nowrap; }
 
 /* ══ MAIN WINDOW ══ */
-.topbar { height: 62px; flex: none; border-bottom: 1px solid var(--line);
-  display: flex; align-items: center; padding: 0 20px 0 24px; gap: 8px; }
-/* macOS draws the traffic lights over the content (titleBarStyle Overlay). */
-body.macos .topbar { padding-left: 92px; }
-.brand { display: flex; align-items: center; gap: 10px; margin-right: 14px; }
+.app-shell { flex-direction: row; }
+.sidebar { flex: 0 0 168px; display: flex; flex-direction: column; gap: 5px;
+  padding: 12px; background: var(--panel); border-right: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; padding: 8px 6px; margin-bottom: 12px; }
+/* Leave space above the wordmark for the native traffic lights. */
+body.macos .brand { padding-top: 32px; }
 .brand .cap { background: var(--orange); color: #fff; border-radius: 50%; width: 30px; height: 30px;
               display: flex; align-items: center; justify-content: center; }
 .brand .cap .wave b { width: 3px; }
 .brand .cap .wave { gap: 3px; transform: scale(.7); }
 .brand span { font-weight: 700; font-size: 17px; }
-.tab { font: 600 13.5px var(--sans); color: var(--soft); background: none; border: none;
-  padding: 7px 14px; border-radius: 15px; }
-.tab.active { color: var(--ink); background: var(--panel); }
-.top-spacer { flex: 1; }
-.gear { background: none; border: none; color: var(--ink); padding: 7px; border-radius: 8px; }
-.gear:hover, .gear.active { background: var(--panel); }
-.gear svg { width: 17px; height: 17px; display: block; }
+.sidebar-link { display: flex; align-items: center; gap: 10px; min-height: 40px;
+  padding: 0 10px; border: none; border-radius: 10px; background: transparent;
+  color: var(--soft); text-align: left; font: 600 13.5px var(--sans); }
+.sidebar-link svg { width: 18px; height: 18px; flex: none; }
+.sidebar-link:hover { color: var(--ink); background: var(--panel-deep); }
+.sidebar-link[aria-current="page"] { color: var(--ink); background: var(--accent-tint); }
+.sidebar-link[aria-current="page"] svg { color: var(--accent); }
+.sidebar-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sidebar-link:last-child { margin-top: auto; }
 
-.main { flex: 1; overflow-y: auto; padding: 30px 44px 44px; }
+.main { flex: 1; min-width: 0; overflow-y: auto; padding: 36px 32px 44px; }
+@media (max-width: 850px) {
+  .sidebar { flex-basis: 88px; }
+  .brand { justify-content: center; }
+  .brand span { display: none; }
+  .sidebar-link { flex-direction: column; justify-content: center; gap: 4px;
+    min-height: 52px; padding: 4px 0; font-size: 11px; }
+  .main { padding-inline: 24px; }
+}
 .view { display: none; } .view.visible { display: block; }
 .main h1 { font-size: 28px; font-weight: 700; letter-spacing: -.01em; margin-bottom: 18px; }
 
 /* dictations */
-.statrip { display: flex; gap: 12px; margin-bottom: 26px; align-items: stretch; }
+.statrip { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 26px; align-items: stretch; }
 .statchip { padding: 12px 20px 12px 18px; display: flex; flex-direction: column; gap: 2px; }
 .statchip .n { font-size: 24px; font-weight: 700; }
 .statchip .l { font-size: 12px; color: var(--soft); display: flex; align-items: center; gap: 6px; }
@@ -248,9 +259,8 @@ body.macos .topbar { padding-left: 92px; }
 .update-note { font-size: 12px; color: var(--soft); }
 .update-note.error { color: var(--red); }
 
-/* Self-update banner (src/updates.rs): top-right under the top bar, over the
-   page, quiet. The update is already downloaded and verified and nothing is
-   wrong, so it waits for a good moment instead of taking over the window. */
+/* Self-update banner (src/updates.rs): floats over the top-right of the content
+   once the update has been downloaded and verified. */
 .update-banner { position: fixed; z-index: 20; top: 74px; right: 20px; max-width: 380px;
   display: flex; align-items: center; gap: 14px; padding: 12px 12px 12px 18px;
   border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }

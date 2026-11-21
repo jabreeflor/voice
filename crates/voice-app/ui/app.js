@@ -16,16 +16,18 @@
   let lastSnippetStamp = null;
   let lastVocabStamp = null;
 
-  // ── tabs ──────────────────────────────────────────────────────────────
+  // ── navigation ──────────────────────────────────────────────────────────────
   function select(view) {
     current = view;
-    document.querySelectorAll('.tab, .gear').forEach((b) =>
-      b.classList.toggle('active', b.dataset.view === view));
+    document.querySelectorAll('.sidebar-link').forEach((b) => {
+      if (b.dataset.view === view) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
     document.querySelectorAll('.view').forEach((v) =>
       v.classList.toggle('visible', v.id === 'view-' + view));
     refresh(true);
   }
-  document.querySelectorAll('.tab, .gear').forEach((b) =>
+  document.querySelectorAll('.sidebar-link').forEach((b) =>
     b.addEventListener('click', () => select(b.dataset.view)));
 
   // ── dictations ────────────────────────────────────────────────────────
