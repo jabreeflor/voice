@@ -312,13 +312,16 @@ body.onboarding { align-items: center; justify-content: center; }
 
 /* ══ OVERLAY ══ */
 body.overlay { background: transparent; }
-.pill { width: 192px; height: 44px; border-radius: 22px; background: var(--hud);
+/* The pill fills the window; overlay.rs sizes the window per mode (compact
+   73×30 for bars, 232×30 for a flash), so the pill never sets its own width. */
+.pill { width: 100%; height: 100%; border-radius: 15px; background: var(--hud);
   border: 1px solid rgba(255,255,255,.18); position: relative; overflow: hidden;
   opacity: 0; transition: opacity .18s; } /* hide: matches FADE_OUT in overlay.rs */
 .pill.show { opacity: 1; transition: opacity .15s; } /* show: Overlay.show() 0.15 s */
-.pill canvas { position: absolute; left: 18px; top: 6px; width: 156px; height: 32px; }
-.pill .label { position: absolute; left: 10px; right: 10px; top: 12px; text-align: center;
-  font: 500 13px var(--sans); color: #fff; white-space: nowrap; overflow: hidden;
+.pill canvas { position: absolute; left: 50%; top: 50%; width: 53px; height: 16px;
+  transform: translate(-50%, -50%); }
+.pill .label { position: absolute; left: 10px; right: 10px; top: 0; bottom: 0;
+  text-align: center; font: 500 12px/28px var(--sans); color: #fff; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; display: none; }
 .pill.flash .label { display: block; } .pill.flash canvas { display: none; }
 /* The overlay page is transparent around the pill; a dark color-scheme would

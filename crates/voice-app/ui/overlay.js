@@ -10,9 +10,10 @@
   const ctx = canvas.getContext('2d');
   const scale = 2; // canvas is drawn at 2x for crisp bars on HiDPI screens
 
-  const BAR_COUNT = 17;
-  const BAR_W = 3.5;
-  const GAP = 4.5;
+  // Sized for the compact 53×16 canvas (see .pill canvas in app.css).
+  const BAR_COUNT = 10;
+  const BAR_W = 2;
+  const GAP = 2.5;
   let mode = 'hidden';
   let history = new Array(BAR_COUNT).fill(0);
   let phase = 0;
@@ -28,9 +29,9 @@
     let x = (w - totalW) / 2;
     const midY = h / 2;
     for (let i = 0; i < BAR_COUNT; i++) {
-      let bh = 3;
-      if (mode === 'listening') bh = 3 + Math.min(1, history[i]) * (h - 14);
-      else if (mode === 'processing') bh = 4 + (Math.sin(phase + i * 0.55) * 0.5 + 0.5) * 13;
+      let bh = 2;
+      if (mode === 'listening') bh = 2 + Math.min(1, history[i]) * (h - 2);
+      else if (mode === 'processing') bh = 2 + (Math.sin(phase + i * 0.7) * 0.5 + 0.5) * 8;
       roundRect(x, midY - bh / 2, BAR_W, bh, BAR_W / 2);
       x += BAR_W + GAP;
     }

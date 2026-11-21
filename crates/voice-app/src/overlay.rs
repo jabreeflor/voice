@@ -1,9 +1,13 @@
 //! Floating pill overlay (Wisprflow-style). Reference: `BarsView` / `Overlay`
 //! in Sources/VoiceCore/core.swift.
 //!
-//! The pill is the `overlay` Tauri window (192×44, transparent, always on top,
-//! non-focusable, ignores the cursor). Rust only positions/shows/hides it and
-//! emits events; ui/overlay.js draws the bars and text:
+//! The pill is the `overlay` Tauri window (transparent, always on top,
+//! non-focusable, ignores the cursor). It is a compact 73×30 while
+//! listening/processing (the size of Wispr Flow's hold-to-talk bar) and widens
+//! to 232×30 for a flash message, so the bars stay small without cutting off
+//! "Not pasted, copied to clipboard". Rust only
+//! sizes/positions/shows/hides it and emits events; ui/overlay.js draws the
+//! bars and text:
 //!
 //! - event `overlay`  payload `{ "mode": "listening" | "processing" | "flash" | "hidden",
 //!                              "message": String, "duration_ms": u64 }`
@@ -22,12 +26,17 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition};
 
 const WINDOW: &str = "overlay";
-/// Logical size from tauri.conf.json; the pill is positioned from it.
-const WIDTH: f64 = 192.0;
-const HEIGHT: f64 = 44.0;
+/// Logical size of the bars pill (also the initial size in tauri.conf.json):
+/// Wispr Flow's bottom bar is 73×30 while push-to-talk is held.
+/// ui/app.css sizes the pill to fill the window, so only these change it.
+const COMPACT: (f64, f64) = (73.0, 30.0);
+/// Logical size while a message is flashed: wide enough at the label's 12 px
+/// for "Not pasted, copied to clipboard" (~182 px in SF) and a full
+/// `typed_flash` preview (~206 px) inside the label's 10 px insets.
+const FLASH: (f64, f64) = (232.0, 30.0);
 /// Gap between the pill and the bottom of the work area (Dock/taskbar).
 const BOTTOM_MARGIN: f64 = 28.0;
 const LEVEL_INTERVAL: Duration = Duration::from_millis(1000 / 30);
@@ -87,6 +96,15 @@ pub struct Overlay {
     /// `None` when the worker thread could not be spawned; the pill is then
     /// simply never shown (dictation itself still works).
     tx: Option<mpsc::Sender<Command>>,
+}
+
+/// Logical window size for an overlay `mode`.
+pub fn size_for(mode: &str) -> (f64, f64) {
+    if mode == "flash" {
+        FLASH
+    } else {
+        COMPACT
+    }
 }
 
 /// Where to put a `w`×`h` window so it sits centred `margin` above the bottom
@@ -287,7 +305,7 @@ impl Worker {
         }
     }
 
-    fn position(&self, window: &tauri::WebviewWindow) {
+    fn position(&self, window: &tauri::WebviewWindow, (w, h): (f64, f64)) {
         // Ask the window, not the AppHandle: the window getter marshals to
         // the main thread, whereas `AppHandle::primary_monitor` reads
         // `NSScreen.screens` on the calling (worker) thread.
@@ -310,15 +328,7 @@ impl Worker {
                 area.size.height,
             )
         };
-        let (x, y) = bottom_centre(
-            ax,
-            ay,
-            aw,
-            ah,
-            WIDTH * scale,
-            HEIGHT * scale,
-            BOTTOM_MARGIN * scale,
-        );
+        let (x, y) = bottom_centre(ax, ay, aw, ah, w * scale, h * scale, BOTTOM_MARGIN * scale);
         if let Err(e) = window.set_position(PhysicalPosition::new(x, y)) {
             log::warn!("overlay position: {e}");
         }
@@ -335,12 +345,16 @@ impl Worker {
         }
     }
 
-    /// Repositions and shows the window (it is `focusable: false`, so this
-    /// does not steal the caret from the app being dictated into), then tells
-    /// the webview which face to wear.
+    /// Resizes, repositions and shows the window (it is `focusable: false`,
+    /// so this does not steal the caret from the app being dictated into),
+    /// then tells the webview which face to wear.
     fn show(&self, mode: &'static str, message: &str, duration: Duration) {
         if let Some(window) = self.window() {
-            self.position(&window);
+            let size = size_for(mode);
+            if let Err(e) = window.set_size(LogicalSize::new(size.0, size.1)) {
+                log::warn!("overlay size: {e}");
+            }
+            self.position(&window, size);
             if let Err(e) = window.show() {
                 log::warn!("overlay show: {e}");
             }
@@ -389,5 +403,32 @@ mod tests {
         // A secondary-origin work area (e.g. a Dock on the left) is honoured.
         let (x, y) = bottom_centre(70, 25, 1850, 1055, 192.0, 44.0, 28.0);
         assert_eq!((x, y), (70 + 829, 25 + 1055 - 44 - 28));
+    }
+
+    #[test]
+    fn bars_pill_is_compact_and_flash_widens_to_fit_text() {
+        // The bars pill was 192×44; it now matches Wispr Flow's
+        // hold-to-talk bar.
+        assert_eq!(size_for("listening"), (73.0, 30.0));
+        assert_eq!(size_for("processing"), size_for("listening"));
+        // A flash keeps the compact height so the pill does not jump
+        // vertically, and only grows sideways.
+        let (fw, fh) = size_for("flash");
+        assert_eq!(fh, size_for("listening").1);
+        assert!(fw >= 192.0, "flash text needs at least the old width");
+    }
+
+    #[test]
+    fn initial_window_size_matches_compact() {
+        // tauri.conf.json creates the window before the first show; keep it
+        // equal to COMPACT so nothing flickers at the old size.
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
+        let overlay = conf["app"]["windows"]
+            .as_array()
+            .and_then(|w| w.iter().find(|w| w["label"] == "overlay"))
+            .expect("overlay window");
+        assert_eq!(overlay["width"].as_f64(), Some(COMPACT.0));
+        assert_eq!(overlay["height"].as_f64(), Some(COMPACT.1));
     }
 }
