@@ -140,6 +140,12 @@ jobs:
           fi
           ls -lh "$MODEL_PATH"
 
+      # The push-to-main release's version and update-feed scripts
+      # (scripts/release-*.mjs); plain node, once is enough.
+      - name: Release scripts
+        if: runner.os == 'Linux'
+        run: node --test scripts/tests/release.test.mjs
+
       - name: Format
         run: cargo fmt --all --check
 

@@ -34,7 +34,8 @@ crates/voicectl/src/main.rs      thin entry: exit(VoiceCli::main())
 crates/voice-app/                Tauri 2 desktop app
   Cargo.toml build.rs            tauri-build; binary is `voice` (bundled as Voice / voice)
   tauri.conf.json                windows (main, onboarding, overlay), bundle targets, CSP
-  tauri.release.conf.json        release-only overlay: whisper-server sidecar, ad-hoc signing
+  tauri.release.conf.json        release-only overlay: whisper-server sidecar, ad-hoc signing,
+                                 updater archive + feed URL/pubkey (enables self-update)
   Info.plist                     merged into the macOS bundle (LSUIElement, mic usage string)
   capabilities/default.json      what the webviews may call
   icons/                         app + tray icons
@@ -46,6 +47,7 @@ crates/voice-app/                Tauri 2 desktop app
                                  paste_outcome (platform-neutral landed/not-landed decision)
   src/tray.rs                    tray icon + menu
   src/overlay.rs                 floating pill window driver
+  src/updates.rs                 self-update from the release feed (macOS release builds)
   src/commands.rs                #[tauri::command] handlers + DTOs used by ui/
   src/platform/{mod,macos,windows,linux}.rs  permissions, settings panes, relaunch
   src/platform/macos_pasteboard.rs  macOS only: promised pasteboard item (paste-landed check)
@@ -57,8 +59,12 @@ assets/screenshots/              README images (dark-mode/, talk-key/: UI eviden
 build.sh                         macOS wrapper: cargo tauri build → ./Voice.app (+ voicectl) + codesign
 scripts/install.sh               curl | bash installer for macOS and Linux
 scripts/e2e-smoke.sh             tier-4 GUI smoke (macOS, manual)
+scripts/release-version.mjs      next release version (floor + tags) / stamp it into a checkout
+scripts/release-feed.mjs         write + verify latest.json (minisign) before publishing
+scripts/tests/release.test.mjs   node --test for both (CI ubuntu job)
 .github/workflows/ci.yml         ubuntu / macos / windows: fmt, clippy, build, test, bundle
-.github/workflows/release.yml    tag v*: self-contained macOS .dmg (arm64 + x64) → GitHub Release
+.github/workflows/release.yml    push to main: next vX.Y.Z → .dmg + signed updater archive (arm64 +
+                                 x64) → verified latest.json → GitHub Release
 ```
 
 Keep related types in the existing modules behind `// MARK:` sections. Do
@@ -89,6 +95,8 @@ app needs `cargo install tauri-cli --version "^2" --locked`.
 - `scripts/e2e-smoke.sh` — manual GUI end-to-end dictation on a logged-in
   Mac with Accessibility + Microphone granted. Never runs in CI.
 - `VOICE_ENGINE_LOG=1` — let `whisper-server`'s stdio through (CI sets it).
+- `node --test scripts/tests/release.test.mjs` — the release version and
+  update-feed scripts (no dependencies; CI runs it on ubuntu).
 
 Ad-hoc signing (`codesign --sign -`) drops Accessibility after every
 rebuild on macOS; a keychain identity keeps grants. Microphone survives
@@ -241,8 +249,10 @@ Rules:
 
 - Privacy: `whisper-server` must bind `127.0.0.1` only. No analytics,
   accounts, or sending audio or text off-device. Hugging Face is used only
-  for model downloads. `polish::polish` refuses any non-loopback URL before
-  connecting and its agent ignores proxy env vars; keep both.
+  for model downloads; this repo's GitHub releases only for update checks,
+  and only in release builds (`updates.rs`). `polish::polish` refuses any
+  non-loopback URL before connecting and its agent ignores proxy env vars;
+  keep both.
 - Production inference stays on port 8178; tests stay on 18178.
 - `clean_transcript` only strips the listed artifacts. Unknown `[brackets]`
   are left alone.
@@ -261,19 +271,41 @@ Rules:
   `<platform data dir>/Voice` (`~/Library/Application Support/Voice` on
   macOS).
 - `scripts/install.sh` must stay ASCII-safe for macOS bash 3.2.
+- Self-update stays release-only: `plugins.updater` lives in
+  `tauri.release.conf.json`, never `tauri.conf.json`, so a source build
+  (`build.sh`, `install.sh`, `cargo tauri dev`) never replaces itself with
+  `main`. Release versions only ever increase (the updater ignores anything
+  not semver-greater). `TAURI_SIGNING_PRIVATE_KEY` must stay the pair of
+  `plugins.updater.pubkey`; rotating the key strands every installed copy.
 - Do not add tier-4 e2e to CI (no mic, no GUI session, no TCC grants).
 
 ## Releases
 
-`release.yml` runs on a `vX.Y.Z` tag (which must equal `version` in
-`tauri.conf.json`) or by hand. It builds `whisper-server` statically with
-the Metal library embedded, stages it as
+Every push to `main` that touches the app ships a release (`release.yml`;
+docs, assets and test-only paths are ignored). `version` computes the next
+`X.Y.Z` with `scripts/release-version.mjs next`: the next patch above the
+highest `v*` tag, or `tauri.conf.json`'s `version` when higher, so that
+field is a floor that a PR raises to start a new minor/major. Each `macos`
+matrix job stamps the version into its checkout (`tauri.conf.json` and the
+workspace `Cargo.toml`, never committed), builds `whisper-server` statically
+with the Metal library embedded, stages it as
 `crates/voice-app/binaries/whisper-server-<triple>` (gitignored), and runs
 `cargo tauri build --config tauri.release.conf.json`, which puts it in
-`Contents/MacOS/` next to `voice`, where `find_binary` looks first. Keep the
-sidecar out of `tauri.conf.json`: `tauri-build` fails every other build if
-an `externalBin` file is missing. Apple signing/notarization secrets are
-optional; unset, the bundle is ad-hoc signed.
+`Contents/MacOS/` next to `voice`, where `find_binary` looks first, and
+writes the signed updater archive (renamed `Voice_<v>_<arch>.app.tar.gz`).
+`publish` writes `latest.json` with `scripts/release-feed.mjs write`,
+verifies it (`verify`: version, both darwin targets, minisign against the
+pubkey) and only then runs `gh release create`, which creates the tag. Keep
+the sidecar out of `tauri.conf.json`: `tauri-build` fails every other build
+if an `externalBin` file is missing. Apple signing/notarization secrets are
+optional; unset, the bundle is ad-hoc signed, which costs users their
+Accessibility grant on every update.
+
+`updates.rs` registers `tauri-plugin-updater` only when the compiled config
+has `plugins.updater` (main.rs), checks 60 s after launch and every 4 h,
+downloads + verifies into memory, and installs on **Restart to Update** or
+on exit. Its pure pieces (`disabled_reason`, `menu_item`, `result_flash`)
+carry the copy and are unit-tested; the UI only draws `UpdateStatus`.
 
 ## PR notes
 
