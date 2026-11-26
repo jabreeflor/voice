@@ -163,7 +163,7 @@ body.macos .brand { padding-top: 32px; }
 
 /* snippets */
 .snip-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-.snip-head h1 { margin: 0; }
+.snip-head h1, .snip-head h2 { margin: 0; }
 .snip-promo { padding: 22px 26px; margin-bottom: 22px; }
 .snip-promo h3 { font-size: var(--type-subheading); font-weight: 700; margin-bottom: 6px; }
 .snip-promo h3 em { font-style: normal; color: var(--accent); }
@@ -194,8 +194,17 @@ body.macos .brand { padding-top: 32px; }
 .snew input:focus { border-color: var(--accent); }
 .snew input.trig { width: 150px; font-weight: 500; }
 .snew input.body { flex: 1; }
-.vocab-head { margin: 34px 0 6px; }
+.vocab-head { margin: 34px 0 14px; }
 .vocab-hint { font-size: var(--type-label); color: var(--soft); margin-bottom: 14px; max-width: 560px; }
+
+#vocab-rows .t { max-width: 100%; overflow-wrap: anywhere; }
+#vocab-rows .srow { padding-right: 44px; }
+#csv-status { margin: 12px 0; }
+#csv-status:empty { margin: 0; }
+.csv-preview { padding: 14px 20px; margin-bottom: 14px; }
+.csv-preview ul { margin: 0 0 12px; padding-left: 20px; max-height: 180px;
+                  overflow: auto; overflow-wrap: anywhere; }
+.csv-preview ul:empty { display: none; }
 
 /* settings */
 .status { display: flex; align-items: center; gap: 10px; font: 500 var(--type-label)/var(--leading-ui) var(--sans);

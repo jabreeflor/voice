@@ -285,6 +285,24 @@ pub fn add_vocabulary(app: State<'_, Arc<App>>, word: String) -> bool {
     added
 }
 
+#[tauri::command]
+pub fn import_vocabulary_csv(
+    app: State<'_, Arc<App>>,
+    csv: String,
+    stamp: Option<u64>,
+) -> Result<voice_core::store::VocabularyCsv, String> {
+    let report = app
+        .vocabulary
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .import_csv(&csv, stamp)
+        .map_err(|err| err.to_string())?;
+    if stamp.is_some() && !report.words.is_empty() {
+        let _ = app.handle.emit("vocabulary-changed", ());
+    }
+    Ok(report)
+}
+
 /// By spelling rather than index: voicectl may have reordered the file
 /// since the list was drawn.
 #[tauri::command]
@@ -525,6 +543,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         remove_snippet,
         get_vocabulary,
         add_vocabulary,
+        import_vocabulary_csv,
         remove_vocabulary,
         get_settings,
         set_hotkey,

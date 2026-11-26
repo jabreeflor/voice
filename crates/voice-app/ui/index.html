@@ -18,9 +18,9 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3"/></svg>
     <span>Dictations</span>
   </button>
-  <button class="sidebar-link" type="button" data-view="snippets" aria-controls="view-snippets" title="Snippets">
+  <button class="sidebar-link" type="button" data-view="vocab" aria-controls="view-vocab" title="Vocab">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM7 9h10m-10 4h6"/></svg>
-    <span>Snippets</span>
+    <span>Vocab</span>
   </button>
   <button class="sidebar-link" type="button" data-view="settings" aria-controls="view-settings" title="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
@@ -56,10 +56,30 @@
     <div id="dictation-groups"></div>
   </div>
 
-  <!-- snippets -->
-  <div class="view" id="view-snippets">
+  <!-- vocab -->
+  <div class="view" id="view-vocab">
     <div class="snip-head">
-      <h1>Snippets</h1>
+      <h1>Vocab</h1>
+      <button class="cap-btn lav" type="button" id="choose-csv">Import CSV…</button>
+      <input type="file" id="vocab-csv" accept=".csv,text/csv" hidden>
+    </div>
+    <p class="vocab-hint">Names and terms the transcriber should spell your way. They go to the local
+       engine, with your snippet triggers, as a hint before each dictation.</p>
+    <p class="vocab-hint" id="csv-status" role="status"></p>
+    <section class="slist sticker csv-preview" id="csv-preview" aria-label="CSV preview" hidden>
+      <ul id="csv-words" aria-label="Words to add"></ul>
+      <button class="cap-btn" type="button" id="commit-csv">Import words</button>
+      <button class="cap-btn ghost" type="button" id="cancel-csv">Cancel</button>
+    </section>
+    <div class="slist sticker">
+      <div class="snew visible">
+        <input class="body" placeholder="Add a word or name…" aria-label="Vocabulary word" id="new-word" spellcheck="false">
+        <button class="cap-btn" style="padding:8px 18px" id="save-word">Add</button>
+      </div>
+      <div id="vocab-rows"></div>
+    </div>
+    <div class="snip-head vocab-head">
+      <h2>Snippets</h2>
       <button class="cap-btn" id="new-snippet">+ New snippet</button>
     </div>
     <div class="snip-promo sticker-lav">
@@ -76,18 +96,6 @@
         <button class="cap-btn" style="padding:8px 18px" id="save-snippet">Save</button>
       </div>
       <div id="snippet-rows"></div>
-    </div>
-    <div class="snip-head vocab-head">
-      <h1>Vocabulary</h1>
-    </div>
-    <p class="vocab-hint">Names and terms the transcriber should spell your way. They go to the local
-       engine, with your snippet triggers, as a hint before each dictation.</p>
-    <div class="slist sticker">
-      <div class="snew visible">
-        <input class="body" placeholder="Add a word or name…" aria-label="Vocabulary word" id="new-word" spellcheck="false">
-        <button class="cap-btn" style="padding:8px 18px" id="save-word">Add</button>
-      </div>
-      <div id="vocab-rows"></div>
     </div>
   </div>
 
