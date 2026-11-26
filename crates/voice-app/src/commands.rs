@@ -24,6 +24,7 @@ use chrono::{DateTime, Local, TimeZone};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_autostart::ManagerExt;
+use voice_core::config::CleanupPreset;
 use voice_core::{Appearance, Config, HistoryStore, Hotkey, Settings, StatusColor};
 
 use crate::app::App;
@@ -305,6 +306,17 @@ pub fn set_context_prompt(app: State<'_, Arc<App>>, enabled: bool) {
 }
 
 #[tauri::command]
+pub fn set_cleanup_preset(app: State<'_, Arc<App>>, preset: CleanupPreset) {
+    Config::set_cleanup_preset(&app.settings, preset);
+}
+
+#[tauri::command]
+pub fn get_cleanup_preset(app: State<'_, Arc<App>>) -> Option<CleanupPreset> {
+    let (remove_fillers, llm_polish) = Config::cleanup_options(&app.settings);
+    CleanupPreset::from_options(remove_fillers, llm_polish)
+}
+
+#[tauri::command]
 pub fn set_remove_fillers(app: State<'_, Arc<App>>, enabled: bool) {
     Config::set_remove_fillers(&app.settings, enabled);
 }
@@ -338,6 +350,7 @@ pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
         log::warn!("autostart query: {e}");
         false
     });
+    let (remove_fillers, llm_polish) = Config::cleanup_options(&app.settings);
     SettingsDto {
         hotkey: effective_hotkey(&app.settings).raw_value().to_string(),
         hotkeys: Hotkey::available()
@@ -354,8 +367,8 @@ pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
         start_at_login,
         trailing_space: Config::trailing_space(&app.settings),
         context_prompt: Config::context_prompt(&app.settings),
-        remove_fillers: Config::remove_fillers(&app.settings),
-        llm_polish: Config::llm_polish(&app.settings),
+        remove_fillers,
+        llm_polish,
         llm_polish_url: Config::llm_polish_url(&app.settings),
         llm_polish_model: Config::llm_polish_model(&app.settings),
         appearance: Config::appearance(&app.settings).raw_value().to_string(),
@@ -530,6 +543,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         set_hotkey,
         set_sounds,
         set_context_prompt,
+        set_cleanup_preset,
+        get_cleanup_preset,
         set_remove_fillers,
         set_llm_polish,
         set_llm_polish_url,

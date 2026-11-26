@@ -197,6 +197,21 @@ body.macos .brand { padding-top: 32px; }
 .vocab-head { margin: 34px 0 6px; }
 .vocab-hint { font-size: var(--type-label); color: var(--soft); margin-bottom: 14px; max-width: 560px; }
 
+/* style */
+.style-presets { display: grid; gap: 10px; max-width: 560px; min-width: 0; padding: 0; border: 0; }
+.style-preset { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px;
+                align-items: baseline; padding: 14px 18px; cursor: pointer; }
+.style-preset:has(input:checked) { background: var(--accent-tint); }
+.style-preset input { margin: 0; accent-color: var(--accent); cursor: inherit; }
+.style-preset input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.style-title { font-size: var(--type-body); font-weight: 600; }
+.style-example, .style-model-note { grid-column: 2; color: var(--soft);
+                                   font-size: var(--type-label); line-height: var(--leading-reading); }
+.style-model-note { margin-top: 4px; }
+.style-settings { margin-top: 12px; padding: 8px 16px; font-size: var(--type-caption); }
+.style-settings[hidden] { display: none; }
+.style-message:not(:empty) { margin-top: 10px; font-size: var(--type-label); color: var(--soft); }
+
 /* settings */
 .status { display: flex; align-items: center; gap: 10px; font: 500 var(--type-label)/var(--leading-ui) var(--sans);
           margin-bottom: 18px; max-width: 640px; }

@@ -1,4 +1,4 @@
-// Main window: Dictations / Snippets / Settings. Talks to the Rust side only
+// Main window: Dictations / Snippets / Style / Settings. Talks to the Rust side only
 // through the commands and events documented in src/commands.rs.
 (() => {
   const { invoke } = window.__TAURI__.core;
@@ -25,7 +25,7 @@
     });
     document.querySelectorAll('.view').forEach((v) =>
       v.classList.toggle('visible', v.id === 'view-' + view));
-    refresh(true);
+    return refresh(true);
   }
   document.querySelectorAll('.sidebar-link').forEach((b) =>
     b.addEventListener('click', () => select(b.dataset.view)));
@@ -257,6 +257,59 @@
   $('save-word').addEventListener('click', saveWord);
   $('new-word').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveWord(); });
 
+  // ── style ─────────────────────────────────────────────────────────────
+  const stylePresets = $('style-presets');
+  let savedPreset = null;
+  let styleBusy = false;
+
+  function showPreset(preset) {
+    for (const radio of stylePresets.querySelectorAll('input')) {
+      radio.checked = radio.value === preset;
+    }
+    $('style-settings').hidden = preset !== 'polish' && preset !== null;
+    $('style-message').textContent = preset === null
+      ? 'Custom cleanup is active. Choose a preset here or adjust the switches in Settings.'
+      : '';
+  }
+
+  async function renderStyle() {
+    if (styleBusy) return;
+    styleBusy = true;
+    stylePresets.disabled = true;
+    try {
+      savedPreset = await invoke('get_cleanup_preset');
+      showPreset(savedPreset);
+      stylePresets.disabled = false;
+    } catch {
+      $('style-message').textContent = 'Could not load the cleanup preset. Reopen Style to try again.';
+    } finally {
+      styleBusy = false;
+    }
+  }
+
+  stylePresets.addEventListener('change', async (e) => {
+    const preset = e.target.value;
+    styleBusy = true;
+    stylePresets.disabled = true;
+    try {
+      await invoke('set_cleanup_preset', { preset });
+      savedPreset = preset;
+      showPreset(savedPreset);
+      if (current === 'settings') renderSettings();
+    } catch {
+      showPreset(savedPreset);
+      $('style-message').textContent = 'Could not save the cleanup preset. Try again.';
+    } finally {
+      styleBusy = false;
+      stylePresets.disabled = false;
+      if (current === 'style') e.target.focus();
+    }
+  });
+  $('style-settings').addEventListener('click', async () => {
+    await select('settings');
+    if (current === 'settings') $('polish-url').focus();
+  });
+
   // ── settings ──────────────────────────────────────────────────────────
   async function renderSettings() {
     const [status, settings] = await Promise.all([invoke('get_status'), invoke('get_settings')]);
@@ -436,8 +489,10 @@
     } else if (current === 'snippets') {
       renderSnippets(entering);
       renderVocabulary(entering);
+    } else if (current === 'style') {
+      if (entering) renderStyle();
     } else {
-      renderSettings();
+      return renderSettings();
     }
   }
 

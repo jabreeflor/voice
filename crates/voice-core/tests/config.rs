@@ -686,3 +686,33 @@ fn unknown_appearance_falls_back_to_system() {
     fx.settings.set("appearance", "sepia");
     assert_eq!(Config::appearance(&fx.settings), Appearance::System);
 }
+
+#[test]
+fn cleanup_presets_persist_and_preserve_legacy_custom_settings() {
+    use voice_core::config::CleanupPreset;
+
+    let dir = tempfile::tempdir().unwrap();
+    let settings = Settings::in_dir(dir.path());
+    let (fillers, polish) = Config::cleanup_options(&settings);
+    assert_eq!(
+        CleanupPreset::from_options(fillers, polish),
+        Some(CleanupPreset::RemoveFillers)
+    );
+
+    Config::set_remove_fillers(&settings, false);
+    Config::set_llm_polish(&settings, true);
+    let (fillers, polish) = Config::cleanup_options(&Settings::in_dir(dir.path()));
+    assert_eq!((fillers, polish), (false, true));
+    assert_eq!(CleanupPreset::from_options(fillers, polish), None);
+
+    for (preset, expected) in [
+        (CleanupPreset::AsSpoken, (false, false)),
+        (CleanupPreset::RemoveFillers, (true, false)),
+        (CleanupPreset::Polish, (true, true)),
+    ] {
+        Config::set_cleanup_preset(&settings, preset);
+        let (fillers, polish) = Config::cleanup_options(&Settings::in_dir(dir.path()));
+        assert_eq!((fillers, polish), expected);
+        assert_eq!(CleanupPreset::from_options(fillers, polish), Some(preset));
+    }
+}
