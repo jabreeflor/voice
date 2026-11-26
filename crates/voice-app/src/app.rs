@@ -117,6 +117,7 @@ pub struct App {
     pub overlay: Overlay,
     pub tray_items: Mutex<Option<TrayItems>>,
     main_visible: AtomicBool,
+    settings_requested: AtomicBool,
     onboarding_visible: AtomicBool,
     /// Set once the onboarding page has been shown, so later shows can
     /// reload it (the Swift wizard restarted at step 1 on every `show()`).
@@ -249,6 +250,7 @@ impl App {
             setup_failed: Mutex::new(false),
             tray_items: Mutex::new(None),
             main_visible: AtomicBool::new(false),
+            settings_requested: AtomicBool::new(false),
             onboarding_visible: AtomicBool::new(false),
             onboarding_shown: AtomicBool::new(false),
             hotkey_retry_running: AtomicBool::new(false),
@@ -467,6 +469,19 @@ impl App {
         self.main_visible.store(true, Ordering::SeqCst);
         self.apply_activation_policy();
         self.show_window(MAIN_WINDOW);
+    }
+
+    pub fn show_settings(&self) {
+        self.settings_requested.store(true, Ordering::SeqCst);
+        self.show_main_window();
+        if let Err(e) = self.handle.emit_to(MAIN_WINDOW, "open-settings", ()) {
+            log::warn!("open-settings: {e}");
+        }
+    }
+
+    /// Keep a tray request until the main webview has registered its listener.
+    pub fn take_settings_request(&self) -> bool {
+        self.settings_requested.swap(false, Ordering::SeqCst)
     }
 
     pub fn show_onboarding(&self) {

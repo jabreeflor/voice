@@ -2,9 +2,9 @@
 //! and `setIcon` in Sources/VoiceCore/app.swift.
 //!
 //! Menu: "<Voice — hold <label> to dictate>" (disabled), "<status text>"
-//! (disabled), separator, "Open Voice", "Copy Last Dictation" (disabled while
-//! history is empty), "Setup Assistant…", "Check for Updates…" (release
-//! builds only; retitled by updates.rs), separator, "Quit Voice".
+//! (disabled), separator, "Open Voice", "Settings…", "Copy Last Dictation"
+//! (disabled while history is empty), "Setup Assistant…", "Check for Updates…"
+//! (release builds only; retitled by updates.rs), separator, "Quit Voice".
 //!
 //! `MenuItem::set_text` / `set_enabled` and `TrayIcon::set_icon` round-trip
 //! to the main thread, so callers must not hold any `App` mutex (see the
@@ -27,6 +27,7 @@ pub const TRAY_ID: &str = "voice-tray";
 const ID_TITLE: &str = "title";
 const ID_STATUS: &str = "status";
 const ID_OPEN: &str = "open";
+const ID_SETTINGS: &str = "settings";
 const ID_COPY_LAST: &str = "copy-last";
 const ID_SETUP: &str = "setup";
 const ID_UPDATE: &str = "update";
@@ -64,6 +65,7 @@ pub fn build(handle: &AppHandle, app: Arc<App>) -> tauri::Result<()> {
     let title = MenuItem::with_id(handle, ID_TITLE, "Voice", false, None::<&str>)?;
     let status = MenuItem::with_id(handle, ID_STATUS, "", false, None::<&str>)?;
     let open = MenuItem::with_id(handle, ID_OPEN, "Open Voice", true, None::<&str>)?;
+    let settings = MenuItem::with_id(handle, ID_SETTINGS, "Settings…", true, None::<&str>)?;
     let copy_last = MenuItem::with_id(
         handle,
         ID_COPY_LAST,
@@ -85,8 +87,15 @@ pub fn build(handle: &AppHandle, app: Arc<App>) -> tauri::Result<()> {
     let quit = MenuItem::with_id(handle, ID_QUIT, "Quit Voice", true, Some("CmdOrCtrl+Q"))?;
     let separator_top = PredefinedMenuItem::separator(handle)?;
     let separator_bottom = PredefinedMenuItem::separator(handle)?;
-    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> =
-        vec![&title, &status, &separator_top, &open, &copy_last, &setup];
+    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
+        &title,
+        &status,
+        &separator_top,
+        &open,
+        &settings,
+        &copy_last,
+        &setup,
+    ];
     if let Some(update) = &update {
         items.push(update);
     }
@@ -111,6 +120,7 @@ pub fn build(handle: &AppHandle, app: Arc<App>) -> tauri::Result<()> {
     let menu_app = app.clone();
     builder = builder.on_menu_event(move |handle, event| match event.id.as_ref() {
         ID_OPEN => menu_app.show_main_window(),
+        ID_SETTINGS => menu_app.show_settings(),
         ID_COPY_LAST => menu_app.copy_last(),
         ID_SETUP => menu_app.show_onboarding(),
         ID_UPDATE => updates::menu_clicked(handle),
