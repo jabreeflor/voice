@@ -1,0 +1,26 @@
+/* Figtree is bundled under the SIL OFL 1.1. See fonts/OFL-Figtree.txt. */
+@font-face {
+  font-family: Figtree;
+  src: url("fonts/Figtree.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+}
+
+:root {
+  --sans: Figtree, -apple-system, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+
+  --type-caption: 12px;
+  --type-label: 13px;
+  --type-body: 14px;
+  --type-reading: 15px;
+  --type-brand: 18px;
+  --type-subheading: 22px;
+  --type-stat: 24px;
+  --type-title: 30px;
+  --type-display: 36px;
+
+  --leading-tight: 1.15;
+  --leading-ui: 1.35;
+  --leading-reading: 1.5;
+}
