@@ -221,6 +221,17 @@ pub fn get_dictations(app: State<'_, Arc<App>>) -> DictationsDto {
 }
 
 #[tauri::command]
+pub fn get_insights(app: State<'_, Arc<App>>) -> voice_core::insights::Insights {
+    let entries = app
+        .history
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entries()
+        .to_vec();
+    voice_core::insights::summarize(&entries, Local::now())
+}
+
+#[tauri::command]
 pub fn get_snippets(app: State<'_, Arc<App>>) -> SnippetsDto {
     // voicectl (or a text editor) may have rewritten snippets.json since the
     // last read; the file is the source of truth.
@@ -520,6 +531,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
     tauri::generate_handler![
         get_status,
         get_dictations,
+        get_insights,
         get_snippets,
         add_snippet,
         remove_snippet,

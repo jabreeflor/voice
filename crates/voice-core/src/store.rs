@@ -82,7 +82,7 @@ fn file_fingerprint(path: &Path) -> Fingerprint {
 
 /// Swift's `split(separator: " ")` drops empty pieces, so runs of spaces and
 /// an empty string both count as zero extra words.
-fn word_count(text: &str) -> i64 {
+pub(crate) fn word_count(text: &str) -> i64 {
     text.split(' ').filter(|w| !w.is_empty()).count() as i64
 }
 
@@ -98,8 +98,10 @@ pub struct DictationEntry {
     pub text: String,
     pub date: f64,
     /// seconds of speech
+    #[serde(default)]
     pub duration: f64,
     /// seconds from key-release to paste
+    #[serde(default)]
     pub latency: f64,
 }
 

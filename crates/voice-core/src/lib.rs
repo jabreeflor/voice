@@ -18,6 +18,7 @@ pub mod cli;
 pub mod config;
 pub mod download;
 pub mod engine;
+pub mod insights;
 pub mod polish;
 pub mod settings;
 pub mod status;
