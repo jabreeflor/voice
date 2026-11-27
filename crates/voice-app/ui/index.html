@@ -26,7 +26,7 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM7 9h10m-10 4h6"/></svg>
     <span>Snippets</span>
   </button>
-  <button class="sidebar-link" type="button" data-view="settings" aria-controls="view-settings" title="Settings">
+  <button class="sidebar-link" type="button" id="open-settings" aria-haspopup="dialog" aria-controls="settings-dialog" title="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
     <span>Settings</span>
   </button>
@@ -138,35 +138,57 @@
       <div id="vocab-rows"></div>
     </div>
   </div>
+</main>
 
-  <!-- settings -->
-  <div class="view" id="view-settings">
-    <h1>Settings</h1>
+<dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+  <header class="settings-header">
+    <h1 id="settings-title">Settings</h1>
+    <button type="button" class="cap-btn lav settings-close" id="close-settings" aria-label="Close Settings" autofocus>Close</button>
+  </header>
+  <div class="settings-body" id="settings-body">
     <div class="status">
       <span class="dot" id="status-dot" aria-hidden="true"></span>
       <span id="status-text"></span>
       <button class="cap-btn lav fix" id="fix-accessibility">Open Settings…</button>
     </div>
-    <div class="set-card sticker">
-      <div class="set-row set-key">
-        <div class="set-row"><span>Talk key</span><span class="kb-current" id="hotkey-current"></span></div>
-        <div id="hotkey-keyboard"></div>
-        <p class="kb-hint">Click a highlighted key, or press it, to hold it for dictation.</p>
+    <section class="settings-section">
+      <h2 class="section-header">Dictation</h2>
+      <div class="set-card sticker">
+        <div class="set-row set-key">
+          <div class="set-row"><span>Talk key</span><span class="kb-current" id="hotkey-current"></span></div>
+          <div id="hotkey-keyboard"></div>
+          <p class="kb-hint">Click a highlighted key, or press it, to hold it for dictation.</p>
+        </div>
+        <div class="set-row"><span>Microphone check</span><button class="cap-btn lav" style="padding:8px 16px; font-size:12px" id="mic-test">Run 3-second test</button></div>
       </div>
-      <div class="set-row"><span>Appearance</span><select id="appearance-select" aria-label="Appearance"></select></div>
-      <div class="set-row"><span>Remove filler words</span><button class="switch" id="fillers-switch" role="switch" aria-checked="true" aria-label="Remove filler words"><i></i></button></div>
-      <div class="set-row"><span>Polish with a local LLM</span><button class="switch" id="polish-switch" role="switch" aria-checked="false" aria-label="Polish with a local LLM"><i></i></button></div>
-      <div class="set-row polish-opt"><span>LLM endpoint</span><input type="text" id="polish-url" aria-label="LLM endpoint URL" spellcheck="false"></div>
-      <div class="set-row polish-opt"><span>LLM model</span><input type="text" id="polish-model" aria-label="LLM model" spellcheck="false"></div>
-      <div class="set-row"><span>Use vocabulary as a hint</span><button class="switch" id="context-switch" role="switch" aria-checked="true" aria-label="Use vocabulary as a hint"><i></i></button></div>
-      <div class="set-row"><span>Sound effects</span><button class="switch" id="sounds-switch" role="switch" aria-checked="true" aria-label="Sound effects"><i></i></button></div>
-      <div class="set-row"><span>Start at login</span><button class="switch" id="login-switch" role="switch" aria-checked="false" aria-label="Start at login"><i></i></button></div>
-      <div class="set-row"><span>Microphone check</span><button class="cap-btn lav" style="padding:8px 16px; font-size:12px" id="mic-test">Run 3-second test</button></div>
-      <div class="set-row"><span>Version <span class="version" id="version-text"></span></span><span class="update-row"><span class="update-note" id="update-note"></span><button class="cap-btn lav" style="padding:8px 16px; font-size:12px" id="update-check" hidden>Check for updates</button></span></div>
-    </div>
+    </section>
+    <section class="settings-section">
+      <h2 class="section-header">Transcription</h2>
+      <div class="set-card sticker">
+        <div class="set-row"><span>Remove filler words</span><button class="switch" id="fillers-switch" role="switch" aria-checked="true" aria-label="Remove filler words"><i></i></button></div>
+        <div class="set-row"><span>Polish with a local LLM</span><button class="switch" id="polish-switch" role="switch" aria-checked="false" aria-label="Polish with a local LLM"><i></i></button></div>
+        <div class="set-row polish-opt"><span>LLM endpoint</span><input type="text" id="polish-url" aria-label="LLM endpoint URL" spellcheck="false"></div>
+        <div class="set-row polish-opt"><span>LLM model</span><input type="text" id="polish-model" aria-label="LLM model" spellcheck="false"></div>
+        <div class="set-row"><span>Use vocabulary as a hint</span><button class="switch" id="context-switch" role="switch" aria-checked="true" aria-label="Use vocabulary as a hint"><i></i></button></div>
+      </div>
+    </section>
+    <section class="settings-section">
+      <h2 class="section-header">General</h2>
+      <div class="set-card sticker">
+        <div class="set-row"><span>Appearance</span><select id="appearance-select" aria-label="Appearance"></select></div>
+        <div class="set-row"><span>Sound effects</span><button class="switch" id="sounds-switch" role="switch" aria-checked="true" aria-label="Sound effects"><i></i></button></div>
+        <div class="set-row"><span>Start at login</span><button class="switch" id="login-switch" role="switch" aria-checked="false" aria-label="Start at login"><i></i></button></div>
+      </div>
+    </section>
+    <section class="settings-section">
+      <h2 class="section-header">About Voice</h2>
+      <div class="set-card sticker">
+        <div class="set-row"><span>Version <span class="version" id="version-text"></span></span><span class="update-row"><span class="update-note" id="update-note"></span><button class="cap-btn lav" style="padding:8px 16px; font-size:12px" id="update-check" hidden>Check for updates</button></span></div>
+      </div>
+    </section>
     <p class="footnote" id="footnote">Everything runs on this computer — audio, transcription, history. Nothing leaves your machine.</p>
   </div>
-</main>
+</dialog>
 
 <!-- Screen-reader announcement for the ledger row copy (the AppKit row posted
      an accessibility announcement); visually hidden. -->

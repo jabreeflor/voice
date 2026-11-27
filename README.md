@@ -182,7 +182,7 @@ downloads the default speech model. What each OS needs:
 |---|---|---|
 | macOS | **Microphone** and **Accessibility** (System Settings → Privacy & Security) | Accessibility is what lets Voice see the talk key in other apps and type for you. Rebuilding with an ad-hoc signature drops the grant — toggle Voice off/on in the list. |
 | Windows | **Microphone** (Settings → Privacy & security → Microphone, "Let desktop apps access your microphone") | The keyboard hook needs no permission. If the installer is flagged by SmartScreen, choose "Run anyway". |
-| Linux | An **X11** session | The global talk key is read through XRecord. Wayland sessions are not supported yet — the Settings tab says so, and the app otherwise runs but never hears the key. Microphone access has no per-app gate. |
+| Linux | An **X11** session | The global talk key is read through XRecord. Wayland sessions are not supported yet — the Settings dialog says so, and the app otherwise runs but never hears the key. Microphone access has no per-app gate. |
 
 Then click into any text field, **hold the talk key, speak, release**. The
 transcript appears at your cursor.
@@ -211,8 +211,9 @@ transcript appears at your cursor.
 | Windows | <kbd>Right Alt</kbd> | <kbd>Right Ctrl</kbd>, <kbd>Right Win</kbd>, or any other key except Esc and Caps Lock |
 | Linux | <kbd>Right Alt</kbd> | <kbd>Right Ctrl</kbd>, <kbd>Right Super</kbd>, the other modifiers, or an F-key |
 
-Change it in the Settings tab, or in onboarding, by clicking a key on the
-drawn keyboard (a modifier or F-key can also be picked by pressing it). A letter, digit, Space or Enter as the talk
+Open **Settings** from the sidebar or the tray menu. Pick a talk key on the
+drawn keyboard in Settings or onboarding. You can also press a modifier or
+F-key to select it. A letter, digit, Space or Enter as the talk
 key is swallowed while you hold it, so it will not type; on Linux only
 modifiers and F-keys are offered because the X11 hook cannot swallow keys.
 On a Mac, F-keys reach voice only when they act as standard function keys
@@ -283,7 +284,7 @@ Appearance** can pin either one instead (Match system / Light / Dark).
 
 <div align="center">
 <img src="assets/screenshots/main-snippets.png" width="440" alt="Snippets tab">
-<img src="assets/screenshots/main-settings.png" width="440" alt="Settings tab">
+<img src="assets/screenshots/main-settings.png" width="440" alt="Settings">
 </div>
 
 ## 🎯 Accuracy and cleanup

@@ -8,6 +8,7 @@
 //! - `vocabulary-changed` (no payload)       vocabulary.json changed from the app
 //! - `dictation-landed` (no payload)         a dictation was pasted (onboarding step 4)
 //! - `window-visible`   (bool, per window)    main/onboarding shown or hidden: start/stop UI timers
+//! - `open-settings`    (no payload, main)    tray requested the Settings dialog
 //! - `appearance-changed` ("system" | "light" | "dark")  Settings changed the colour scheme
 //! - `app-update`       (`updates::UpdateStatus`) self-update state changed (updates.rs)
 //! - `overlay`, `level`, `sound`             see overlay.rs
@@ -344,6 +345,11 @@ pub fn set_llm_polish_model(app: State<'_, Arc<App>>, model: String) {
 }
 
 #[tauri::command]
+pub fn take_settings_request(app: State<'_, Arc<App>>) -> bool {
+    app.take_settings_request()
+}
+
+#[tauri::command]
 pub fn get_settings(app: State<'_, Arc<App>>) -> SettingsDto {
     let start_at_login = app.handle.autolaunch().is_enabled().unwrap_or_else(|e| {
         log::warn!("autostart query: {e}");
@@ -539,6 +545,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         add_vocabulary,
         remove_vocabulary,
         get_settings,
+        take_settings_request,
         set_hotkey,
         set_sounds,
         set_context_prompt,
