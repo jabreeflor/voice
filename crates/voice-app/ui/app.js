@@ -1,4 +1,4 @@
-// Main window: Dictations / Snippets / Style / Settings. Talks to the Rust side only
+// Main window: Dictations / Insights / Vocab / Style / Settings. Talks to the Rust side only
 // through the commands and events documented in src/commands.rs.
 (() => {
   const { invoke } = window.__TAURI__.core;
@@ -19,7 +19,7 @@
   // ── navigation ──────────────────────────────────────────────────────────────
   function select(view) {
     current = view;
-    document.querySelectorAll('.sidebar-link').forEach((b) => {
+    document.querySelectorAll('.sidebar-link[data-view]').forEach((b) => {
       if (b.dataset.view === view) b.setAttribute('aria-current', 'page');
       else b.removeAttribute('aria-current');
     });
@@ -27,7 +27,7 @@
       v.classList.toggle('visible', v.id === 'view-' + view));
     return refresh(true);
   }
-  document.querySelectorAll('.sidebar-link').forEach((b) =>
+  document.querySelectorAll('.sidebar-link[data-view]').forEach((b) =>
     b.addEventListener('click', () => select(b.dataset.view)));
 
   // ── dictations ────────────────────────────────────────────────────────
@@ -38,6 +38,10 @@
   async function renderDictations() {
     dictationsDirty = false;
     const d = await invoke('get_dictations');
+    if (settingsDialog.open) {
+      dictationsDirty = true;
+      return;
+    }
     $('stat-words').textContent = d.total_words.toLocaleString();
     $('stat-wpm').textContent = d.average_wpm > 0 ? String(d.average_wpm) : '—';
     $('stat-latency').textContent = formatLatency(d.average_latency);
@@ -62,6 +66,116 @@
       for (const e of group.entries) card.appendChild(ledgerRow(e));
       root.appendChild(card);
     }
+  }
+
+  // ── insights ─────────────────────────────────────────────────────────
+  let insightsRequest = 0;
+  let insightsDay = '';
+  let insightsReady = false;
+  const insightsButtons = [...document.querySelectorAll('.insights-switch button')];
+  const dayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' });
+  const hourLabel = new Intl.DateTimeFormat(undefined, { hour: 'numeric', timeZone: 'UTC' });
+  const number = (value) => value.toLocaleString();
+  const countLabel = (count, unit) => `${number(count)} ${unit}${count === 1 ? '' : 's'}`;
+
+  function showInsightsPanel() {
+    for (const button of insightsButtons) {
+      $(button.getAttribute('aria-controls')).hidden =
+        !insightsReady || button.getAttribute('aria-pressed') !== 'true';
+    }
+  }
+
+  for (const button of insightsButtons) {
+    button.addEventListener('click', () => {
+      for (const option of insightsButtons) option.setAttribute('aria-pressed', String(option === button));
+      showInsightsPanel();
+    });
+  }
+  showInsightsPanel();
+
+  function insightRow(label, value) {
+    const row = document.createElement('div');
+    const term = document.createElement('dt');
+    const detail = document.createElement('dd');
+    term.textContent = label;
+    detail.textContent = value;
+    row.append(term, detail);
+    return row;
+  }
+
+  function dailyActivity(days) {
+    const peak = Math.max(1, ...days.map(day => day.dictations));
+    return days.map(({ date, dictations }) => {
+      const cell = document.createElement('li');
+      const count = document.createElement('strong');
+      const track = document.createElement('div');
+      const bar = document.createElement('span');
+      const label = document.createElement('time');
+      count.textContent = number(dictations);
+      track.className = 'insights-track';
+      track.setAttribute('aria-hidden', 'true');
+      bar.style.height = `${100 * dictations / peak}%`;
+      track.append(bar);
+      label.dateTime = date;
+      label.textContent = dayLabel.format(new Date(date + 'T00:00:00Z'));
+      cell.title = `${date} · ${countLabel(dictations, 'dictation')}`;
+      cell.append(count, track, label);
+      return cell;
+    });
+  }
+
+  function localHour(hour) {
+    return hourLabel.format(new Date(Date.UTC(2000, 0, 1, hour % 24)));
+  }
+
+  function insightsCalendarKey() {
+    const now = new Date();
+    return `${now.toDateString()} ${now.getTimezoneOffset()}`;
+  }
+
+  async function renderInsights() {
+    const request = ++insightsRequest;
+    insightsDay = insightsCalendarKey();
+    if (!insightsReady) $('insights-status').textContent = 'Loading insights…';
+    let data;
+    try {
+      data = await invoke('get_insights');
+    } catch {
+      if (request !== insightsRequest) return;
+      if (settingsDialog.open) {
+        insightsDay = '';
+        return;
+      }
+      insightsReady = false;
+      showInsightsPanel();
+      $('insights-status').textContent = 'Could not load insights. Open Insights again to retry.';
+      return;
+    }
+    if (request !== insightsRequest) return;
+    if (settingsDialog.open) {
+      insightsDay = '';
+      return;
+    }
+    $('insights-count').textContent = number(data.dictations);
+    $('insights-words').textContent = number(data.words);
+    $('insights-wpm').textContent = data.words_per_minute == null ? '—' : number(data.words_per_minute);
+    $('insights-current').textContent = countLabel(data.current_streak, 'day');
+    $('insights-longest').textContent = countLabel(data.longest_streak, 'day');
+    $('insights-activity').replaceChildren(...dailyActivity(data.activity));
+    $('insights-recurring').replaceChildren(...data.recurring_words.map(({ word, dictations }) =>
+      insightRow(word, countLabel(dictations, 'dictation'))));
+    $('insights-words-empty').hidden = data.recurring_words.length > 0;
+
+    const peak = Math.max(...data.hours);
+    const busiest = data.hours.flatMap((count, hour) =>
+      count > 0 && count === peak
+        ? [insightRow(`${localHour(hour)}–${localHour(hour + 1)}`, countLabel(count, 'dictation'))]
+        : []);
+    $('insights-hours').replaceChildren(...busiest);
+    $('insights-hours-empty').hidden = busiest.length > 0;
+    $('insights-status').textContent = '';
+    insightsReady = true;
+    showInsightsPanel();
   }
 
   // The row itself is the button, labelled "Copy dictation" with the text as
@@ -161,7 +275,7 @@
   // when the tab is (re)entered.
   async function renderSnippets(force) {
     const { stamp, snippets: list } = await invoke('get_snippets');
-    if (!force && stamp === lastSnippetStamp) return;
+    if (settingsDialog.open || (!force && stamp === lastSnippetStamp)) return;
     lastSnippetStamp = stamp;
     const root = $('snippet-rows');
     root.textContent = '';
@@ -216,10 +330,10 @@
   }
 
   // ── vocabulary ────────────────────────────────────────────────────────
-  // Same stamp guard as the snippet list; lives on the Snippets tab.
+  // Same stamp guard as the snippet list; lives on the Vocab tab.
   async function renderVocabulary(force) {
     const { stamp, words } = await invoke('get_vocabulary');
-    if (!force && stamp === lastVocabStamp) return;
+    if (settingsDialog.open || (!force && stamp === lastVocabStamp)) return;
     lastVocabStamp = stamp;
     const root = $('vocab-rows');
     root.textContent = '';
@@ -256,6 +370,80 @@
   }
   $('save-word').addEventListener('click', saveWord);
   $('new-word').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveWord(); });
+
+  const csvInput = $('vocab-csv');
+  let csvPreview;
+  let csvBusy = false;
+
+  function showCsvPreview(preview) {
+    csvPreview = preview;
+    $('csv-preview').hidden = !preview;
+    $('commit-csv').disabled = !preview?.report.words.length;
+    $('csv-words').replaceChildren();
+    for (const word of preview?.report.words ?? []) {
+      const row = document.createElement('li');
+      row.textContent = word;
+      $('csv-words').appendChild(row);
+    }
+  }
+
+  function csvCounts(report, action) {
+    return `${report.words.length} ${action} · ${report.duplicates} duplicate · ${report.invalid} invalid`;
+  }
+
+  function setCsvBusy(busy) {
+    csvBusy = busy;
+    $('choose-csv').disabled = busy;
+    $('commit-csv').disabled = busy || !csvPreview?.report.words.length;
+    $('cancel-csv').disabled = busy;
+  }
+
+  $('choose-csv').addEventListener('click', () => csvInput.click());
+  csvInput.addEventListener('change', async () => {
+    const file = csvInput.files[0];
+    csvInput.value = '';
+    if (!file || csvBusy) return;
+    showCsvPreview(null);
+    setCsvBusy(true);
+    try {
+      const csv = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+      const report = await invoke('import_vocabulary_csv', { csv });
+      showCsvPreview({ csv, report });
+      $('csv-status').textContent = csvCounts(report, 'ready to add');
+    } catch (error) {
+      $('csv-status').textContent = `Could not preview CSV. ${error}`;
+    } finally {
+      setCsvBusy(false);
+      if (csvPreview) {
+        $(csvPreview.report.words.length ? 'commit-csv' : 'cancel-csv').focus();
+      } else {
+        $('choose-csv').focus();
+      }
+    }
+  });
+
+  $('cancel-csv').addEventListener('click', () => {
+    showCsvPreview(null);
+    $('csv-status').textContent = '';
+    $('choose-csv').focus();
+  });
+
+  $('commit-csv').addEventListener('click', async () => {
+    if (csvBusy || !csvPreview?.report.words.length) return;
+    setCsvBusy(true);
+    const { csv, report: { stamp } } = csvPreview;
+    try {
+      const report = await invoke('import_vocabulary_csv', { csv, stamp });
+      $('csv-status').textContent = csvCounts(report, 'added');
+      renderVocabulary();
+    } catch (error) {
+      $('csv-status').textContent = `Could not import CSV. ${error}`;
+    } finally {
+      showCsvPreview(null);
+      setCsvBusy(false);
+      $('choose-csv').focus();
+    }
+  });
 
   // ── style ─────────────────────────────────────────────────────────────
   const stylePresets = $('style-presets');
@@ -295,24 +483,71 @@
       await invoke('set_cleanup_preset', { preset });
       savedPreset = preset;
       showPreset(savedPreset);
-      if (current === 'settings') renderSettings();
+      if (settingsDialog.open) renderSettings();
     } catch {
       showPreset(savedPreset);
       $('style-message').textContent = 'Could not save the cleanup preset. Try again.';
     } finally {
       styleBusy = false;
       stylePresets.disabled = false;
-      if (current === 'style') e.target.focus();
+      if (current === 'style' && !settingsDialog.open) e.target.focus();
     }
   });
-  $('style-settings').addEventListener('click', async () => {
-    await select('settings');
-    if (current === 'settings') $('polish-url').focus();
+  $('style-settings').addEventListener('click', async (e) => {
+    await openSettings(e.currentTarget);
+    if (settingsDialog.open) $('polish-url').focus();
   });
 
   // ── settings ──────────────────────────────────────────────────────────
+  const settingsDialog = $('settings-dialog');
+  const settingsTrigger = $('open-settings');
+  const main = document.querySelector('main');
+  let settingsReturnFocus;
+  let settingsReturnScroll;
+
+  function openSettings(opener) {
+    if (settingsDialog.open) return;
+    settingsReturnFocus = opener;
+    settingsReturnScroll = main.scrollTop;
+    settingsDialog.showModal();
+    $('settings-body').scrollTop = 0;
+    return renderSettings();
+  }
+
+  async function openTraySettings() {
+    if (await invoke('take_settings_request')) openSettings(document.activeElement);
+  }
+
+  settingsTrigger.addEventListener('click', () => openSettings(settingsTrigger));
+  $('close-settings').addEventListener('click', () => settingsDialog.close());
+  settingsDialog.addEventListener('close', () => {
+    if (settingsDialog.open) return;
+    const opener = settingsReturnFocus;
+    const fallback = document.querySelector('.sidebar-link[aria-current="page"]');
+    const target = opener instanceof HTMLElement && opener !== document.body &&
+      opener.getClientRects().length && !opener.matches(':disabled') ? opener : fallback;
+    target.focus({ preventScroll: true });
+    main.scrollTop = settingsReturnScroll;
+    if (current === 'style') renderStyle();
+  });
+
+  // Keep Tab in the dialog even when the webview would move focus to native
+  // chrome or skip buttons under the system's keyboard navigation settings.
+  document.addEventListener('keydown', (e) => {
+    if (!settingsDialog.open || e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+    const stops = [...settingsDialog.querySelectorAll('button, input, select')]
+      .filter((el) => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
+    if (!stops.length) return;
+    const index = stops.indexOf(document.activeElement);
+    const next = index === -1 ? (e.shiftKey ? stops.length - 1 : 0) :
+      (index + (e.shiftKey ? -1 : 1) + stops.length) % stops.length;
+    e.preventDefault();
+    stops[next].focus();
+  });
+
   async function renderSettings() {
     const [status, settings] = await Promise.all([invoke('get_status'), invoke('get_settings')]);
+    if (!settingsDialog.open) return;
     const dot = $('status-dot');
     dot.className = 'dot ' + status.color;
     $('status-text').textContent = status.text;
@@ -482,17 +717,20 @@
   // Timer tick: the history only changes from inside the app, so the
   // Dictations tab renders on `history-changed` (and when entered) rather
   // than every second, keeping the row's 1.4 s "Copied" hold and keyboard
-  // focus intact; the file-backed snippets and the status line still poll.
+  // focus intact. While Settings is open, poll its controls and defer
+  // background renders so they cannot replace the focus restoration target.
   function refresh(entering) {
-    if (current === 'dictations') {
+    if (settingsDialog.open) {
+      renderSettings();
+    } else if (current === 'dictations') {
       if (entering || dictationsDirty) renderDictations();
-    } else if (current === 'snippets') {
+    } else if (current === 'insights') {
+      if (entering || insightsDay !== insightsCalendarKey()) renderInsights();
+    } else if (current === 'vocab') {
       renderSnippets(entering);
       renderVocabulary(entering);
     } else if (current === 'style') {
       if (entering) renderStyle();
-    } else {
-      return renderSettings();
     }
   }
 
@@ -502,16 +740,24 @@
     if (settings.platform === 'macos') {
       $('footnote').textContent = 'Everything runs on this Mac — audio, transcription, history. Nothing leaves your computer.';
     }
-    // Event renders are skipped while the window is hidden (a dictation
-    // pasted with the window closed would otherwise rebuild an invisible
-    // page); the dirty flag replays them on the next show.
-    listen('status-changed', () => { if (visible && current === 'settings') renderSettings(); });
+    // The next poll replays updates deferred while the window is hidden or
+    // while Settings covers the current page.
+    listen('status-changed', () => { if (visible && settingsDialog.open) renderSettings(); });
     listen('history-changed', () => {
       dictationsDirty = true;
-      if (visible && current === 'dictations') renderDictations();
+      insightsDay = '';
+      if (!visible || settingsDialog.open) return;
+      if (current === 'dictations') renderDictations();
+      if (current === 'insights') renderInsights();
     });
-    listen('snippets-changed', () => { if (visible && current === 'snippets') renderSnippets(); });
-    listen('vocabulary-changed', () => { if (visible && current === 'snippets') renderVocabulary(); });
+    listen('snippets-changed', () => { if (visible && !settingsDialog.open && current === 'vocab') renderSnippets(); });
+    listen('vocabulary-changed', () => { if (visible && !settingsDialog.open && current === 'vocab') renderVocabulary(); });
+    // Populate the default screen before opening Settings from a queued tray
+    // request. The request is retained until the webview starts listening.
+    if (current === 'dictations' && dictationsDirty) await renderDictations();
+    const mainTarget = { target: getCurrentWindow().label };
+    await listen('open-settings', openTraySettings, mainTarget);
+    await openTraySettings();
     // Cheap DOM updates, so these render even while hidden: the banner must
     // already be up when the window next shows. The query after the listen
     // covers a check that finished before this page loaded.
@@ -534,16 +780,15 @@
     // regardless of label, so a default `listen` would also react to the
     // onboarding window's show/hide.
     await listen('window-visible', (e) => setPolling(Boolean(e.payload)),
-      { target: getCurrentWindow().label });
+      mainTarget);
     const shown = await getCurrentWindow().isVisible().catch(() => true);
     setPolling(shown);
-    select('dictations');
   }
   function setPolling(on) {
     visible = on;
     if (on && !refreshTimer) {
       refreshTimer = setInterval(() => refresh(false), 1000);
-      refresh(false);
+      refresh(current === 'insights');
     } else if (!on && refreshTimer) {
       clearInterval(refreshTimer);
       refreshTimer = null;

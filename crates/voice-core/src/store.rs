@@ -2,13 +2,15 @@
 //! Files stay byte-compatible with the Swift app (same directory, same JSON
 //! shapes) so an existing history.json / snippets.json carries over.
 
-use std::fs;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{fs, io};
 
 use chrono::{DateTime, Local};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::settings::Settings;
@@ -48,25 +50,28 @@ const MAX_UNIX_SECS: f64 = 8.0e11;
 /// a half-written file. The temp name carries the pid *and* a process-wide
 /// counter: two stores on the same file inside one process must not share a
 /// temp path, or one's `fs::write` truncates the file the other is about to
-/// rename over. Failures are swallowed; the in-memory list stays
-/// authoritative for this process.
-fn write_atomically(path: &Path, bytes: &[u8]) {
+/// rename over.
+fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     static SEQ: AtomicU64 = AtomicU64::new(0);
-    let Some(dir) = path.parent() else {
-        return;
-    };
-    let _ = fs::create_dir_all(dir);
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-        return;
-    };
+    let dir = path
+        .parent()
+        .ok_or_else(|| io::Error::other("Missing parent directory"))?;
+    fs::create_dir_all(dir)?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| io::Error::other("Missing file name"))?;
     let n = SEQ.fetch_add(1, Ordering::Relaxed);
-    let tmp = dir.join(format!(".{}-{}-{}.tmp", name, std::process::id(), n));
-    // Whether the write or the rename fails, remove the temp file so a full
-    // disk does not litter the data directory with one orphan per save.
-    let ok = fs::write(&tmp, bytes).is_ok() && fs::rename(&tmp, path).is_ok();
-    if !ok {
+    let tmp = dir.join(format!(
+        ".{}-{}-{}.tmp",
+        name.to_string_lossy(),
+        std::process::id(),
+        n
+    ));
+    let result = fs::write(&tmp, bytes).and_then(|()| fs::rename(&tmp, path));
+    if result.is_err() {
         let _ = fs::remove_file(&tmp);
     }
+    result
 }
 
 /// (mtime, size) of a user-editable file, `None` when it does not exist.
@@ -82,7 +87,7 @@ fn file_fingerprint(path: &Path) -> Fingerprint {
 
 /// Swift's `split(separator: " ")` drops empty pieces, so runs of spaces and
 /// an empty string both count as zero extra words.
-fn word_count(text: &str) -> i64 {
+pub(crate) fn word_count(text: &str) -> i64 {
     text.split(' ').filter(|w| !w.is_empty()).count() as i64
 }
 
@@ -98,8 +103,10 @@ pub struct DictationEntry {
     pub text: String,
     pub date: f64,
     /// seconds of speech
+    #[serde(default)]
     pub duration: f64,
     /// seconds from key-release to paste
+    #[serde(default)]
     pub latency: f64,
 }
 
@@ -256,7 +263,7 @@ impl HistoryStore {
 
     fn save(&self) {
         if let Ok(bytes) = serde_json::to_vec(&self.entries) {
-            write_atomically(&self.file_path(), &bytes);
+            let _ = write_atomically(&self.file_path(), &bytes);
         }
     }
 
@@ -456,7 +463,7 @@ impl SnippetStore {
 
     fn save(&mut self) {
         if let Ok(bytes) = serde_json::to_vec(&self.snippets) {
-            write_atomically(&self.file_path(), &bytes);
+            let _ = write_atomically(&self.file_path(), &bytes);
         }
         // Record our own write so it is not later mistaken for an external edit.
         self.fingerprint = self.current_fingerprint();
@@ -477,6 +484,14 @@ pub struct VocabularyStore {
     directory: PathBuf,
     stamp: u64,
     fingerprint: Fingerprint,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VocabularyCsv {
+    pub words: Vec<String>,
+    pub duplicates: usize,
+    pub invalid: usize,
+    pub stamp: u64,
 }
 
 impl VocabularyStore {
@@ -544,6 +559,57 @@ impl VocabularyStore {
         true
     }
 
+    /// Preview when `stamp` is absent. A commit must use the preview's stamp
+    /// so any intervening edit requires a fresh review.
+    pub fn import_csv(&mut self, csv: &str, stamp: Option<u64>) -> io::Result<VocabularyCsv> {
+        // This format uses one physical line per entry, so a bad row cannot
+        // consume the following entries. Quoted fields can contain commas
+        // and escaped quotes.
+        static FIELD: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"^(?:"((?:[^"]|"")*)"|([^",]*))$"#).expect("CSV field regex")
+        });
+        self.reload_if_changed();
+        if stamp.is_some_and(|stamp| stamp != self.stamp) {
+            return Err(io::Error::other(
+                "Vocabulary changed since the preview. Choose the CSV again to review it.",
+            ));
+        }
+        let mut report = VocabularyCsv {
+            words: Vec::new(),
+            duplicates: 0,
+            invalid: 0,
+            stamp: self.stamp,
+        };
+        let mut seen: HashSet<_> = self.words.iter().map(|word| word.to_lowercase()).collect();
+        for row in csv.strip_prefix('\u{feff}').unwrap_or(csv).lines() {
+            let Some(field) = FIELD.captures(row.trim()) else {
+                report.invalid += 1;
+                continue;
+            };
+            let word = match field.get(1) {
+                Some(quoted) => Self::normalize_word(&quoted.as_str().replace("\"\"", "\"")),
+                None => Self::normalize_word(&field[2]),
+            };
+            if word.is_empty() || word.chars().any(char::is_control) {
+                report.invalid += 1;
+            } else if seen.insert(word.to_lowercase()) {
+                report.words.push(word);
+            } else {
+                report.duplicates += 1;
+            }
+        }
+        if stamp.is_some() && !report.words.is_empty() {
+            let mut words = self.words.clone();
+            words.extend(report.words.iter().cloned());
+            let path = self.file_path();
+            write_atomically(&path, &serde_json::to_vec(&words)?)?;
+            self.words = words;
+            self.fingerprint = file_fingerprint(&path);
+            self.stamp += 1;
+        }
+        Ok(report)
+    }
+
     /// Case-insensitive. Returns false when there is no such word.
     pub fn remove(&mut self, word: &str) -> bool {
         self.reload_if_changed();
@@ -600,7 +666,7 @@ impl VocabularyStore {
 
     fn save(&mut self) {
         if let Ok(bytes) = serde_json::to_vec(&self.words) {
-            write_atomically(&self.file_path(), &bytes);
+            let _ = write_atomically(&self.file_path(), &bytes);
         }
         // Record our own write so it is not later mistaken for an external edit.
         self.fingerprint = file_fingerprint(&self.file_path());
