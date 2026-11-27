@@ -259,10 +259,17 @@ The tray (menu-bar) icon offers **Open Voice**, **Copy Last Dictation**
 Updates…** (the downloaded Mac app only, see [Updates](#updates)) and **Quit
 Voice**, with the engine status as the second line.
 
-The main window has three tabs:
+The main window has four tabs:
 
 - **Dictations** — words spoken, words per minute, average latency, and a
   day-grouped ledger of everything you dictated (click a row to copy it).
+- **Insights** — Usage shows dictations, words, and recording pace for today
+  and the previous six local calendar dates. Streaks use consecutive dates
+  in saved history, and a streak stays current through the day after the
+  last dictation. Your voice shows recurring words and the local clock
+  hours with the most dictations. Voice calculates these on-device from
+  retained transcripts. Entries without recording durations still count
+  toward volume, activity, streaks, and voice patterns.
 - **Snippets** — say a trigger phrase, paste a longer text; below it, the
   **Vocabulary** list (see [Accuracy and cleanup](#-accuracy-and-cleanup)).
   Both are also editable from a terminal with

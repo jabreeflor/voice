@@ -1,4 +1,4 @@
-// Main window: Dictations / Snippets / Settings. Talks to the Rust side only
+// Main window: Dictations / Insights / Snippets / Settings. Talks to the Rust side only
 // through the commands and events documented in src/commands.rs.
 (() => {
   const { invoke } = window.__TAURI__.core;
@@ -66,6 +66,116 @@
       for (const e of group.entries) card.appendChild(ledgerRow(e));
       root.appendChild(card);
     }
+  }
+
+  // ── insights ─────────────────────────────────────────────────────────
+  let insightsRequest = 0;
+  let insightsDay = '';
+  let insightsReady = false;
+  const insightsButtons = [...document.querySelectorAll('.insights-switch button')];
+  const dayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' });
+  const hourLabel = new Intl.DateTimeFormat(undefined, { hour: 'numeric', timeZone: 'UTC' });
+  const number = (value) => value.toLocaleString();
+  const countLabel = (count, unit) => `${number(count)} ${unit}${count === 1 ? '' : 's'}`;
+
+  function showInsightsPanel() {
+    for (const button of insightsButtons) {
+      $(button.getAttribute('aria-controls')).hidden =
+        !insightsReady || button.getAttribute('aria-pressed') !== 'true';
+    }
+  }
+
+  for (const button of insightsButtons) {
+    button.addEventListener('click', () => {
+      for (const option of insightsButtons) option.setAttribute('aria-pressed', String(option === button));
+      showInsightsPanel();
+    });
+  }
+  showInsightsPanel();
+
+  function insightRow(label, value) {
+    const row = document.createElement('div');
+    const term = document.createElement('dt');
+    const detail = document.createElement('dd');
+    term.textContent = label;
+    detail.textContent = value;
+    row.append(term, detail);
+    return row;
+  }
+
+  function dailyActivity(days) {
+    const peak = Math.max(1, ...days.map(day => day.dictations));
+    return days.map(({ date, dictations }) => {
+      const cell = document.createElement('li');
+      const count = document.createElement('strong');
+      const track = document.createElement('div');
+      const bar = document.createElement('span');
+      const label = document.createElement('time');
+      count.textContent = number(dictations);
+      track.className = 'insights-track';
+      track.setAttribute('aria-hidden', 'true');
+      bar.style.height = `${100 * dictations / peak}%`;
+      track.append(bar);
+      label.dateTime = date;
+      label.textContent = dayLabel.format(new Date(date + 'T00:00:00Z'));
+      cell.title = `${date} · ${countLabel(dictations, 'dictation')}`;
+      cell.append(count, track, label);
+      return cell;
+    });
+  }
+
+  function localHour(hour) {
+    return hourLabel.format(new Date(Date.UTC(2000, 0, 1, hour % 24)));
+  }
+
+  function insightsCalendarKey() {
+    const now = new Date();
+    return `${now.toDateString()} ${now.getTimezoneOffset()}`;
+  }
+
+  async function renderInsights() {
+    const request = ++insightsRequest;
+    insightsDay = insightsCalendarKey();
+    if (!insightsReady) $('insights-status').textContent = 'Loading insights…';
+    let data;
+    try {
+      data = await invoke('get_insights');
+    } catch {
+      if (request !== insightsRequest) return;
+      if (settingsDialog.open) {
+        insightsDay = '';
+        return;
+      }
+      insightsReady = false;
+      showInsightsPanel();
+      $('insights-status').textContent = 'Could not load insights. Open Insights again to retry.';
+      return;
+    }
+    if (request !== insightsRequest) return;
+    if (settingsDialog.open) {
+      insightsDay = '';
+      return;
+    }
+    $('insights-count').textContent = number(data.dictations);
+    $('insights-words').textContent = number(data.words);
+    $('insights-wpm').textContent = data.words_per_minute == null ? '—' : number(data.words_per_minute);
+    $('insights-current').textContent = countLabel(data.current_streak, 'day');
+    $('insights-longest').textContent = countLabel(data.longest_streak, 'day');
+    $('insights-activity').replaceChildren(...dailyActivity(data.activity));
+    $('insights-recurring').replaceChildren(...data.recurring_words.map(({ word, dictations }) =>
+      insightRow(word, countLabel(dictations, 'dictation'))));
+    $('insights-words-empty').hidden = data.recurring_words.length > 0;
+
+    const peak = Math.max(...data.hours);
+    const busiest = data.hours.flatMap((count, hour) =>
+      count > 0 && count === peak
+        ? [insightRow(`${localHour(hour)}–${localHour(hour + 1)}`, countLabel(count, 'dictation'))]
+        : []);
+    $('insights-hours').replaceChildren(...busiest);
+    $('insights-hours-empty').hidden = busiest.length > 0;
+    $('insights-status').textContent = '';
+    insightsReady = true;
+    showInsightsPanel();
   }
 
   // The row itself is the button, labelled "Copy dictation" with the text as
@@ -486,6 +596,8 @@
       renderSettings();
     } else if (current === 'dictations') {
       if (entering || dictationsDirty) renderDictations();
+    } else if (current === 'insights') {
+      if (entering || insightsDay !== insightsCalendarKey()) renderInsights();
     } else if (current === 'snippets') {
       renderSnippets(entering);
       renderVocabulary(entering);
@@ -503,7 +615,10 @@
     listen('status-changed', () => { if (visible && settingsDialog.open) renderSettings(); });
     listen('history-changed', () => {
       dictationsDirty = true;
-      if (visible && !settingsDialog.open && current === 'dictations') renderDictations();
+      insightsDay = '';
+      if (!visible || settingsDialog.open) return;
+      if (current === 'dictations') renderDictations();
+      if (current === 'insights') renderInsights();
     });
     listen('snippets-changed', () => { if (visible && !settingsDialog.open && current === 'snippets') renderSnippets(); });
     listen('vocabulary-changed', () => { if (visible && !settingsDialog.open && current === 'snippets') renderVocabulary(); });
@@ -543,7 +658,7 @@
     visible = on;
     if (on && !refreshTimer) {
       refreshTimer = setInterval(() => refresh(false), 1000);
-      refresh(false);
+      refresh(current === 'insights');
     } else if (!on && refreshTimer) {
       clearInterval(refreshTimer);
       refreshTimer = null;
