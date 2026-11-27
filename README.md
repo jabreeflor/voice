@@ -21,7 +21,7 @@ A [Wispr Flow](https://wisprflow.ai) alternative with no subscription, no cloud,
 ---
 
 <div align="center">
-<img src="assets/screenshots/main-dictations.png" width="720" alt="Dictations tab">
+<img src="assets/screenshots/main-dictations.png" width="720" alt="Home view with dictation history">
 </div>
 
 ## ⚡ Install
@@ -261,8 +261,9 @@ Voice**, with the engine status as the second line.
 
 The main window offers these views and controls:
 
-- **Dictations** — words spoken, words per minute, average latency, and a
-  day-grouped ledger of everything you dictated (click a row to copy it).
+- **Home** — the default view, your dictation history: words spoken, words
+  per minute, average latency, and a day-grouped ledger of everything you
+  dictated (click a row to copy it).
 - **Insights** — Usage shows dictations, words, and recording pace for today
   and the previous six local calendar dates. Streaks use consecutive dates
   in saved history, and a streak stays current through the day after the

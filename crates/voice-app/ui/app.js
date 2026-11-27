@@ -1,4 +1,4 @@
-// Main window: Dictations / Insights / Vocab / Style / Settings. Talks to the Rust side only
+// Main window: Home (dictation history) / Insights / Vocab / Style / Settings. Talks to the Rust side only
 // through the commands and events documented in src/commands.rs.
 (() => {
   const { invoke } = window.__TAURI__.core;
@@ -715,7 +715,7 @@
 
   // ── refresh ───────────────────────────────────────────────────────────
   // Timer tick: the history only changes from inside the app, so the
-  // Dictations tab renders on `history-changed` (and when entered) rather
+  // Home (dictation history) renders on `history-changed` (and when entered) rather
   // than every second, keeping the row's 1.4 s "Copied" hold and keyboard
   // focus intact. While Settings is open, poll its controls and defer
   // background renders so they cannot replace the focus restoration target.

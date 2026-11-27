@@ -32,7 +32,7 @@ use crate::app::App;
 use crate::platform;
 use crate::updates::{self, UpdateStatus};
 
-/// Ledger rows shown on the Dictations tab (Swift `grouped(max: 40)`).
+/// Ledger rows shown on the Home view (Swift `grouped(max: 40)`).
 const LEDGER_ENTRIES: usize = 40;
 
 #[derive(Serialize, Clone, Debug)]
@@ -179,7 +179,7 @@ pub fn effective_hotkey(settings: &Settings) -> Hotkey {
     }
 }
 
-/// Builds the Dictations tab payload from a store (split out so it can be
+/// Builds the Home view payload from a store (split out so it can be
 /// exercised against a throwaway `HistoryStore`).
 pub fn dictations_dto(history: &HistoryStore, hotkey: Hotkey) -> DictationsDto {
     let groups = history
@@ -671,6 +671,50 @@ mod tests {
         assert_eq!(color_name(StatusColor::Red), "red");
         assert_eq!(color_name(StatusColor::Orange), "orange");
         assert_eq!(color_name(StatusColor::Green), "green");
+    }
+
+    /// The first sidebar item is labelled Home (issue #23) but still opens
+    /// the dictation history, which `app.js` selects as `data-view` and
+    /// `view-dictations`; it is the page shown on launch, so it starts as
+    /// `aria-current`. Its accessible name is the visible "Home" text (the
+    /// glyph is `aria-hidden`), and the prototype must show the same item.
+    #[test]
+    fn home_is_the_default_sidebar_item_for_dictation_history() {
+        fn first_link(html: &str) -> &str {
+            let start = html
+                .find("<button class=\"sidebar-link\"")
+                .expect("sidebar link");
+            let body = &html[start..];
+            &body[..body.find("</button>").expect("button closed")]
+        }
+        for (name, html) in [
+            ("ui/index.html", include_str!("../ui/index.html")),
+            (
+                "app-prototype.html",
+                include_str!("../../../assets/app-prototype.html"),
+            ),
+        ] {
+            let link = first_link(html);
+            for needle in [
+                "data-view=\"dictations\"",
+                "aria-controls=\"view-dictations\"",
+                "title=\"Home\"",
+                "aria-current=\"page\"",
+                "aria-hidden=\"true\"",
+                "<span>Home</span>",
+            ] {
+                assert!(link.contains(needle), "{name}: Home link lacks {needle}");
+            }
+            assert!(
+                !link.contains("Dictations"),
+                "{name}: still labelled Dictations"
+            );
+            assert!(html.contains("<h1>Home</h1>"), "{name}: view heading");
+            assert!(
+                html.contains("<div class=\"view visible\" id=\"view-dictations\">"),
+                "{name}: history view must stay the visible default"
+            );
+        }
     }
 
     /// app.css repeats the dark tokens once under `prefers-color-scheme`
