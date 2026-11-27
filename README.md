@@ -259,7 +259,7 @@ The tray (menu-bar) icon offers **Open Voice**, **Copy Last Dictation**
 Updates…** (the downloaded Mac app only, see [Updates](#updates)) and **Quit
 Voice**, with the engine status as the second line.
 
-The main window has four tabs:
+The main window offers these views and controls:
 
 - **Dictations** — words spoken, words per minute, average latency, and a
   day-grouped ledger of everything you dictated (click a row to copy it).
@@ -270,9 +270,9 @@ The main window has four tabs:
   hours with the most dictations. Voice calculates these on-device from
   retained transcripts. Entries without recording durations still count
   toward volume, activity, streaks, and voice patterns.
-- **Snippets** — say a trigger phrase, paste a longer text; below it, the
-  **Vocabulary** list (see [Accuracy and cleanup](#-accuracy-and-cleanup)).
-  Both are also editable from a terminal with
+- **Vocab** — add words and names by hand or import a CSV. Manage snippets
+  below the vocabulary list to expand spoken triggers into longer text.
+  Both lists are also editable from a terminal with
   [`voicectl`](#️-command-line-voicectl).
 - **Settings** — permission status, talk key, appearance, the
   [accuracy and cleanup](#-accuracy-and-cleanup) switches, sound effects,
@@ -283,7 +283,7 @@ The windows follow the system's light or dark appearance; **Settings →
 Appearance** can pin either one instead (Match system / Light / Dark).
 
 <div align="center">
-<img src="assets/screenshots/main-snippets.png" width="440" alt="Snippets tab">
+<img src="assets/screenshots/main-snippets.png" width="440" alt="Earlier snippets and vocabulary screen">
 <img src="assets/screenshots/main-settings.png" width="440" alt="Settings">
 </div>
 
@@ -292,7 +292,7 @@ Appearance** can pin either one instead (Match system / Light / Dark).
 Everything here runs on your machine. Nothing below sends audio or text
 anywhere but the local whisper-server.
 
-- **Vocabulary** (Snippets tab, or `voicectl vocab`) — names and jargon
+- **Vocabulary** (Vocab tab, or `voicectl vocab`) — names and jargon
   whisper should spell your way: `Jabree`, `Tauri`, `whisper.cpp`. With
   **Settings → Use vocabulary as a hint** on (the default), every dictation
   sends your vocabulary, then your snippet triggers, to the local
@@ -324,12 +324,31 @@ anywhere but the local whisper-server.
   dictation never blocks on it. Snippets are expanded after the pass, so
   their text is pasted exactly as written.
 
+### Import vocabulary from CSV
+
+In **Vocab**, select **Import CSV…** and choose a local UTF-8 CSV file.
+Review the words Voice will add and the duplicate and invalid row counts,
+then select **Import words** to save. To enter a word by hand, type it in
+the vocabulary field and select **Add** or press Enter.
+
+Use one word or phrase per line with no header. Use double quotes around
+entries containing commas, and double any literal quote inside a quoted
+field. Blank lines, malformed quotes, and extra columns count as invalid.
+Existing entries and repeats in the file are counted as duplicates without
+regard to case. Each quoted field must fit on one line.
+
+```csv
+Tauri
+"Acme, Inc."
+"Dr. ""AJ"" Lee"
+```
+
 ## ⌨️ Command line: `voicectl`
 
 `voicectl` ships next to the app (inside `Voice.app` on macOS) and the
 installer links it onto your PATH. It edits the same snippets and
 vocabulary the app uses, so scripts and coding agents can manage them without clicking
-through the Snippets tab. The running app picks changes up immediately.
+through the Vocab tab. The running app picks changes up immediately.
 
 ```sh
 voicectl snippets add "my email" "you@example.com"   # say "my email" to paste it

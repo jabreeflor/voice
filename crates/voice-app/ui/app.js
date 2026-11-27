@@ -1,4 +1,4 @@
-// Main window: Dictations / Insights / Snippets / Settings. Talks to the Rust side only
+// Main window: Dictations / Insights / Vocab / Settings. Talks to the Rust side only
 // through the commands and events documented in src/commands.rs.
 (() => {
   const { invoke } = window.__TAURI__.core;
@@ -330,7 +330,7 @@
   }
 
   // ── vocabulary ────────────────────────────────────────────────────────
-  // Same stamp guard as the snippet list; lives on the Snippets tab.
+  // Same stamp guard as the snippet list; lives on the Vocab tab.
   async function renderVocabulary(force) {
     const { stamp, words } = await invoke('get_vocabulary');
     if (settingsDialog.open || (!force && stamp === lastVocabStamp)) return;
@@ -370,6 +370,80 @@
   }
   $('save-word').addEventListener('click', saveWord);
   $('new-word').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveWord(); });
+
+  const csvInput = $('vocab-csv');
+  let csvPreview;
+  let csvBusy = false;
+
+  function showCsvPreview(preview) {
+    csvPreview = preview;
+    $('csv-preview').hidden = !preview;
+    $('commit-csv').disabled = !preview?.report.words.length;
+    $('csv-words').replaceChildren();
+    for (const word of preview?.report.words ?? []) {
+      const row = document.createElement('li');
+      row.textContent = word;
+      $('csv-words').appendChild(row);
+    }
+  }
+
+  function csvCounts(report, action) {
+    return `${report.words.length} ${action} · ${report.duplicates} duplicate · ${report.invalid} invalid`;
+  }
+
+  function setCsvBusy(busy) {
+    csvBusy = busy;
+    $('choose-csv').disabled = busy;
+    $('commit-csv').disabled = busy || !csvPreview?.report.words.length;
+    $('cancel-csv').disabled = busy;
+  }
+
+  $('choose-csv').addEventListener('click', () => csvInput.click());
+  csvInput.addEventListener('change', async () => {
+    const file = csvInput.files[0];
+    csvInput.value = '';
+    if (!file || csvBusy) return;
+    showCsvPreview(null);
+    setCsvBusy(true);
+    try {
+      const csv = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+      const report = await invoke('import_vocabulary_csv', { csv });
+      showCsvPreview({ csv, report });
+      $('csv-status').textContent = csvCounts(report, 'ready to add');
+    } catch (error) {
+      $('csv-status').textContent = `Could not preview CSV. ${error}`;
+    } finally {
+      setCsvBusy(false);
+      if (csvPreview) {
+        $(csvPreview.report.words.length ? 'commit-csv' : 'cancel-csv').focus();
+      } else {
+        $('choose-csv').focus();
+      }
+    }
+  });
+
+  $('cancel-csv').addEventListener('click', () => {
+    showCsvPreview(null);
+    $('csv-status').textContent = '';
+    $('choose-csv').focus();
+  });
+
+  $('commit-csv').addEventListener('click', async () => {
+    if (csvBusy || !csvPreview?.report.words.length) return;
+    setCsvBusy(true);
+    const { csv, report: { stamp } } = csvPreview;
+    try {
+      const report = await invoke('import_vocabulary_csv', { csv, stamp });
+      $('csv-status').textContent = csvCounts(report, 'added');
+      renderVocabulary();
+    } catch (error) {
+      $('csv-status').textContent = `Could not import CSV. ${error}`;
+    } finally {
+      showCsvPreview(null);
+      setCsvBusy(false);
+      $('choose-csv').focus();
+    }
+  });
 
   // ── settings ──────────────────────────────────────────────────────────
   const settingsDialog = $('settings-dialog');
@@ -598,7 +672,7 @@
       if (entering || dictationsDirty) renderDictations();
     } else if (current === 'insights') {
       if (entering || insightsDay !== insightsCalendarKey()) renderInsights();
-    } else if (current === 'snippets') {
+    } else if (current === 'vocab') {
       renderSnippets(entering);
       renderVocabulary(entering);
     }
@@ -620,8 +694,8 @@
       if (current === 'dictations') renderDictations();
       if (current === 'insights') renderInsights();
     });
-    listen('snippets-changed', () => { if (visible && !settingsDialog.open && current === 'snippets') renderSnippets(); });
-    listen('vocabulary-changed', () => { if (visible && !settingsDialog.open && current === 'snippets') renderVocabulary(); });
+    listen('snippets-changed', () => { if (visible && !settingsDialog.open && current === 'vocab') renderSnippets(); });
+    listen('vocabulary-changed', () => { if (visible && !settingsDialog.open && current === 'vocab') renderVocabulary(); });
     // Populate the default screen before opening Settings from a queued tray
     // request. The request is retained until the webview starts listening.
     if (current === 'dictations' && dictationsDirty) await renderDictations();

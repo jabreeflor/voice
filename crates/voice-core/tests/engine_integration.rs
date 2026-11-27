@@ -339,14 +339,18 @@ fn test5_silence_cleans_to_empty_string() {
 fn test6_vocabulary_prompt_is_accepted_and_not_echoed() {
     let _done = Completion;
     let Some(b) = booted() else { return };
-    let prompt = voice_core::whisper_prompt(
-        &[
-            "Kennedy".to_string(),
-            "Jabree".to_string(),
-            "Tauri".to_string(),
-        ],
-        &["my email".to_string()],
-    );
+    let dir = tempfile::tempdir().expect("vocabulary directory");
+    {
+        let mut vocabulary = voice_core::VocabularyStore::new(dir.path().to_path_buf());
+        assert!(vocabulary.add("Kennedy"));
+        let csv = "Jabree\nTauri";
+        let preview = vocabulary.import_csv(csv, None).expect("preview");
+        vocabulary
+            .import_csv(csv, Some(preview.stamp))
+            .expect("import");
+    }
+    let reopened = voice_core::VocabularyStore::new(dir.path().to_path_buf());
+    let prompt = voice_core::whisper_prompt(reopened.words(), &["my email".to_string()]);
     assert_eq!(prompt, "Kennedy, Jabree, Tauri, my email.");
 
     let raw = transcribe_sync_with_prompt(&b.engine, &b.speech_wav, &prompt)

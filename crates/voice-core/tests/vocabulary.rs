@@ -118,3 +118,54 @@ fn find_returns_the_stored_spelling() {
     assert_eq!(store.find("postgresql"), Some("PostgreSQL"));
     assert_eq!(store.find("mysql"), None);
 }
+
+#[test]
+fn csv_preview_and_commit_preserve_existing_entries_and_reload_as_hints() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut store = store_in(&dir);
+    assert!(store.add("Tauri"));
+    let csv = "\u{feff}tauri\r\n\"Acme, Inc.\"\r\nLee \"broken\"\r\n\"Dr. \"\"AJ\"\" Lee\"\r\nACME, INC.\r\n\"acme, inc.\"\r\n\r\n\"unclosed\r\nZürich";
+    let preview = store.import_csv(csv, None).expect("preview");
+    assert_eq!(preview.words, ["Acme, Inc.", "Dr. \"AJ\" Lee", "Zürich"]);
+    assert_eq!(preview.duplicates, 2);
+    assert_eq!(preview.invalid, 4);
+    assert_eq!(store_in(&dir).words(), ["Tauri"]);
+
+    let committed = store.import_csv(csv, Some(preview.stamp)).expect("import");
+    assert_eq!(committed.words, preview.words);
+    assert_eq!(committed.duplicates, preview.duplicates);
+    assert_eq!(committed.invalid, preview.invalid);
+    let reopened = store_in(&dir);
+    assert_eq!(
+        reopened.words(),
+        ["Tauri", "Acme, Inc.", "Dr. \"AJ\" Lee", "Zürich"]
+    );
+    assert_eq!(
+        voice_core::engine::whisper_prompt(reopened.words(), &["my email".into()]),
+        "Tauri, Acme, Inc., Dr. \"AJ\" Lee, Zürich, my email."
+    );
+    let repeated = store.import_csv(csv, None).expect("preview");
+    assert!(repeated.words.is_empty());
+    assert_eq!(repeated.duplicates, 5);
+}
+
+#[test]
+fn csv_commit_requires_a_fresh_preview_after_external_changes() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut store = store_in(&dir);
+    let preview = store.import_csv("Tauri", None).expect("preview");
+    assert!(store_in(&dir).add("Whisper"));
+    assert!(store.import_csv("Tauri", Some(preview.stamp)).is_err());
+    assert_eq!(store_in(&dir).words(), ["Whisper"]);
+}
+
+#[test]
+fn failed_csv_write_keeps_the_store_unchanged() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut store = store_in(&dir);
+    fs::create_dir(store.file_path()).expect("block writes");
+    let preview = store.import_csv("Tauri", None).expect("preview");
+    assert!(store.import_csv("Tauri", Some(preview.stamp)).is_err());
+    assert!(store.words().is_empty());
+    assert_eq!(store.stamp(), preview.stamp);
+}
