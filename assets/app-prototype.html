@@ -215,6 +215,21 @@
   .snew input.body { flex: 1; }
 
   /* settings */
+  .settings-dialog { position: fixed; inset: 0; margin: auto; padding: 0;
+    width: min(640px, calc(100% - 48px)); max-height: calc(100% - 48px);
+    border: none; border-radius: 22px; background: var(--bg); color: var(--ink);
+    box-shadow: 0 16px 56px rgba(0,0,0,.24); overflow: hidden; }
+  .settings-dialog[open] { display: flex; flex-direction: column; }
+  .settings-dialog::backdrop { background: rgba(0,0,0,.4); }
+  .settings-header { display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--line); }
+  .settings-header h1 { font: 700 var(--type-title)/var(--leading-ui) var(--sans); }
+  .settings-close { padding: 7px 14px; }
+  .settings-dialog :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .settings-body { padding: 18px 24px 24px; overflow-y: auto; overscroll-behavior: contain; }
+  .settings-section .section-header { font: 600 var(--type-label)/var(--leading-ui) var(--sans);
+    color: var(--soft); margin-bottom: 8px; }
+  .settings-section .set-card { max-width: none; }
   .status { display: flex; align-items: center; gap: 8px; font: 500 var(--type-label)/var(--leading-ui) var(--sans);
             margin-bottom: 18px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
@@ -333,7 +348,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM7 9h10m-10 4h6"/></svg>
       <span>Snippets</span>
     </button>
-    <button class="sidebar-link" type="button" data-view="settings" aria-controls="view-settings" title="Settings" onclick="nav(this)">
+    <button class="sidebar-link" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" title="Settings" onclick="openSettings()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
       <span>Settings</span>
     </button>
@@ -396,24 +411,36 @@
       </div>
     </div>
 
-    <!-- settings -->
-    <div class="view" id="view-settings">
-      <h1>Settings</h1>
+  </div>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+    <header class="settings-header">
+      <h1 id="settings-title">Settings</h1>
+      <button type="button" class="cap-btn lav settings-close" aria-label="Close Settings" autofocus onclick="this.closest('dialog').close()">Close</button>
+    </header>
+    <div class="settings-body">
       <div class="status"><span class="dot"></span>Ready &mdash; hold Right &#8997; Option and speak</div>
-      <div class="set-card sticker">
-        <div class="set-row"><span>Talk key</span>
-          <select><option>Hold Right &#8997; Option</option><option>Hold Right &#8984; Command</option><option>Hold fn</option></select></div>
-        <div class="set-row"><span>Sound effects</span>
-          <button class="switch on" onclick="this.classList.toggle('on')"><i></i></button></div>
-        <div class="set-row"><span>Start at login</span>
-          <button class="switch" onclick="this.classList.toggle('on')"><i></i></button></div>
-        <div class="set-row"><span>Microphone check</span>
-          <button class="cap-btn lav" style="padding:8px 16px; font-size:var(--type-caption)" onclick="pillDemo()">Run 3-second test</button></div>
-      </div>
+      <section class="settings-section">
+        <h2 class="section-header">Dictation</h2>
+        <div class="set-card sticker">
+          <div class="set-row"><span>Talk key</span>
+            <select aria-label="Talk key"><option>Hold Right &#8997; Option</option><option>Hold Right &#8984; Command</option><option>Hold fn</option></select></div>
+          <div class="set-row"><span>Microphone check</span>
+            <button class="cap-btn lav" style="padding:8px 16px; font-size:var(--type-caption)" onclick="pillDemo()">Run 3-second test</button></div>
+        </div>
+      </section>
+      <section class="settings-section">
+        <h2 class="section-header">General</h2>
+        <div class="set-card sticker">
+          <div class="set-row"><span>Sound effects</span>
+            <button class="switch on" aria-label="Sound effects" onclick="this.classList.toggle('on')"><i></i></button></div>
+          <div class="set-row"><span>Start at login</span>
+            <button class="switch" aria-label="Start at login" onclick="this.classList.toggle('on')"><i></i></button></div>
+        </div>
+      </section>
       <p style="font-size:var(--type-caption); color:var(--faint); max-width:520px">
         Everything runs on this Mac — audio, transcription, history. Nothing leaves your computer.</p>
     </div>
-  </div>
+  </dialog>
 </div>
 
 <div id="pill"><div class="wave animated"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
@@ -471,6 +498,12 @@ Approve the flow and layout, and it gets implemented natively in Voice.app.</p>
   holdbtn.addEventListener('touchstart', startHold);
   window.addEventListener('mouseup', endHold);
   window.addEventListener('touchend', endHold);
+
+  function openSettings() {
+    const dialog = document.getElementById('settings-dialog');
+    dialog.showModal();
+    dialog.querySelector('.settings-body').scrollTop = 0;
+  }
 
   function nav(btn) {
     document.querySelectorAll('.sidebar-link').forEach(n => {
