@@ -239,7 +239,13 @@ Rules:
   `prefers-color-scheme` and under `:root[data-theme="dark"]`, set by
   `ui/theme.js` from `Settings → Appearance`; edit both together (a
   `commands.rs` test pins them equal) and never hardcode a colour that
-  should flip. The overlay HUD stays black (`--hud`) in both. System sans
+  should flip. Rules use the semantic tokens at the top of `app.css`
+  (`--surface*`, `--text*`, `--divider`, `--control-border`, `--selection`,
+  `--focus-ring`, `--accent`/`--on-accent`, `--action-primary*`, and
+  `--success`/`--warning`/`--danger` with a `-text` variant for words);
+  `commands.rs` tests pin light and dark to the same token names, the
+  prototype to the same values, and the WCAG pairs (4.5:1 text, 3:1
+  borders, focus and switch). The overlay HUD stays black (`--hud`) in both. System sans
   only: no serif, no italics, no uppercase microcaps (section headers are
   sentence case). Keep the prototype and `ui/app.css` tokens in sync.
 - Comments explain non-obvious constraints (ports, skip-vs-fail, TCC,

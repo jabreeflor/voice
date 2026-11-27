@@ -691,11 +691,116 @@ mod tests {
         let css = include_str!("../ui/app.css");
         let system = tokens_after(css, ":root:not([data-theme=\"light\"]) {");
         let pinned = tokens_after(css, ":root[data-theme=\"dark\"] {");
-        assert!(system.iter().any(|d| d.starts_with("--bg:")));
+        assert!(system.iter().any(|d| d.starts_with("--surface:")));
         assert_eq!(system, pinned);
         for appearance in [Appearance::Light, Appearance::Dark] {
             let attr = format!("[data-theme=\"{}\"]", appearance.raw_value());
             assert!(css.contains(&attr), "app.css keys on {attr}");
+        }
+    }
+
+    /// `--name: value` pairs of the token block opening with `selector`,
+    /// comments stripped.
+    fn token_map(css: &str, selector: &str) -> std::collections::BTreeMap<String, String> {
+        let start = css.find(selector).expect("selector present") + selector.len();
+        let mut body = css[start..][..css[start..].find('}').expect("block closed")].to_string();
+        while let Some(open) = body.find("/*") {
+            let close = body[open..].find("*/").expect("comment closed") + open + 2;
+            body.replace_range(open..close, "");
+        }
+        body.split(';')
+            .filter_map(|decl| decl.split_once(':'))
+            .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+            .filter(|(k, _)| k.starts_with("--"))
+            .collect()
+    }
+
+    fn light_and_dark(css: &str) -> [std::collections::BTreeMap<String, String>; 2] {
+        let light = token_map(css, ":root {");
+        let mut dark = light.clone();
+        dark.extend(token_map(css, ":root[data-theme=\"dark\"] {"));
+        [light, dark]
+    }
+
+    /// Every semantic token flips between the schemes except the HUD, which
+    /// stays black in both; a token added to only one scheme would leak the
+    /// light value into dark mode.
+    #[test]
+    fn light_and_dark_palettes_define_the_same_tokens() {
+        let css = include_str!("../ui/app.css");
+        let light = token_map(css, ":root {");
+        let dark = token_map(css, ":root[data-theme=\"dark\"] {");
+        let light_names: Vec<_> = light.keys().filter(|k| !k.starts_with("--hud")).collect();
+        let dark_names: Vec<_> = dark.keys().collect();
+        assert_eq!(light_names, dark_names);
+        assert!(light.contains_key("--hud"));
+    }
+
+    /// AGENTS.md: assets/app-prototype.html mirrors the app.css tokens.
+    #[test]
+    fn prototype_palette_matches_app_css() {
+        let css = include_str!("../ui/app.css");
+        let proto = include_str!("../../../assets/app-prototype.html");
+        assert_eq!(light_and_dark(css), light_and_dark(proto));
+        assert_eq!(
+            token_map(css, ":root:not([data-theme=\"light\"]) {"),
+            token_map(proto, ":root:not([data-theme=\"light\"]) {")
+        );
+    }
+
+    /// WCAG 2.x contrast of the pairs the UI actually draws: 4.5:1 for text,
+    /// 3:1 for control borders, focus rings and the switch knob on its track.
+    #[test]
+    fn palette_meets_wcag_contrast_in_both_schemes() {
+        fn luminance(hex: &str) -> f64 {
+            let hex = hex.trim_start_matches('#');
+            let channel = |i: usize| {
+                let c = f64::from(u8::from_str_radix(&hex[i..i + 2], 16).expect("hex")) / 255.0;
+                if c <= 0.039_28 {
+                    c / 12.92
+                } else {
+                    ((c + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
+        }
+        fn ratio(a: &str, b: &str) -> f64 {
+            let (a, b) = (luminance(a), luminance(b));
+            (a.max(b) + 0.05) / (a.min(b) + 0.05)
+        }
+        let mut pairs = Vec::new();
+        for fg in ["--text", "--text-secondary", "--text-tertiary", "--accent"] {
+            for bg in ["--surface", "--surface-card", "--selection"] {
+                pairs.push((fg, bg, 4.5));
+            }
+        }
+        pairs.extend([
+            ("--text-secondary", "--surface-strong", 4.5),
+            ("--on-accent", "--accent", 4.5),
+            ("--on-action-primary", "--action-primary", 4.5),
+            ("--success-text", "--surface", 4.5),
+            ("--success-text", "--success-tint", 4.5),
+            ("--success-text", "--selection", 4.5),
+            ("--danger-text", "--surface", 4.5),
+            ("--danger-text", "--surface-card", 4.5),
+            ("--hud-text", "--hud", 4.5),
+            ("--control-border", "--surface", 3.0),
+            ("--focus-ring", "--surface", 3.0),
+            ("--focus-ring", "--surface-card", 3.0),
+            ("--switch-knob", "--switch-off", 3.0),
+            ("--switch-knob", "--switch-on", 3.0),
+        ]);
+        for (scheme, tokens) in ["light", "dark"]
+            .iter()
+            .zip(light_and_dark(include_str!("../ui/app.css")))
+        {
+            for (fg, bg, min) in &pairs {
+                let r = ratio(&tokens[*fg], &tokens[*bg]);
+                assert!(
+                    r >= *min,
+                    "{scheme}: {fg} on {bg} is {r:.2}:1, needs {min}:1"
+                );
+            }
         }
     }
 
