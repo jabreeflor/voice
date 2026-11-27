@@ -1,0 +1,11 @@
+<!-- Tray glyph (idle). Black on transparent: macOS draws it as a template image, so the menu bar tints it for light/dark. Same five-bar V as icon.svg, without the tile and with
+     wider bars so it stays legible at 16-22 pt. Rendered by scripts/icons.sh. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <g fill="#000000">
+    <rect x="7.5" y="12" width="13" height="38" rx="6.5"/>
+    <rect x="25.5" y="26" width="13" height="46" rx="6.5"/>
+    <rect x="43.5" y="46" width="13" height="42" rx="6.5"/>
+    <rect x="61.5" y="26" width="13" height="46" rx="6.5"/>
+    <rect x="79.5" y="12" width="13" height="38" rx="6.5"/>
+  </g>
+</svg>

@@ -33,8 +33,18 @@ const ID_SETUP: &str = "setup";
 const ID_UPDATE: &str = "update";
 const ID_QUIT: &str = "quit";
 
-const IDLE_PNG: &[u8] = include_bytes!("../icons/tray.png");
+// Every tray PNG is rendered from the SVG next to it by scripts/icons.sh.
+const TEMPLATE_PNG: &[u8] = include_bytes!("../icons/tray.png");
+const COLOR_PNG: &[u8] = include_bytes!("../icons/tray-color.png");
 const RECORDING_PNG: &[u8] = include_bytes!("../icons/tray-recording.png");
+/// macOS tints the black template glyph for the menu bar's appearance.
+/// Windows and Linux have no template images and the taskbar can be light or
+/// dark, where a black glyph would vanish, so they get the full-colour mark.
+const IDLE_PNG: &[u8] = if cfg!(target_os = "macos") {
+    TEMPLATE_PNG
+} else {
+    COLOR_PNG
+};
 
 /// Decoded once; `Image::from_bytes` re-runs the PNG decoder otherwise.
 fn icon(recording: bool) -> Option<Image<'static>> {
@@ -205,5 +215,22 @@ mod tests {
         // show up as a blank tray at runtime.
         assert!(icon(false).is_some());
         assert!(icon(true).is_some());
+        // The other platform's idle glyph is compiled in too; check it here
+        // so a macOS run also catches a broken Windows/Linux asset.
+        for png in [TEMPLATE_PNG, COLOR_PNG] {
+            assert!(Image::from_bytes(png).is_ok());
+        }
+    }
+
+    #[test]
+    fn tray_glyphs_are_square_with_alpha() {
+        // A tray slot is square; a non-square or opaque PNG would be
+        // squashed or drawn as a solid block by the menu bar / taskbar.
+        for png in [TEMPLATE_PNG, COLOR_PNG, RECORDING_PNG] {
+            let img = Image::from_bytes(png).expect("decodes");
+            assert_eq!(img.width(), img.height());
+            assert!(img.width() >= 44);
+            assert!(img.rgba().chunks(4).any(|px| px[3] == 0));
+        }
     }
 }
