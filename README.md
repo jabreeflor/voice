@@ -182,7 +182,7 @@ downloads the default speech model. What each OS needs:
 |---|---|---|
 | macOS | **Microphone** and **Accessibility** (System Settings → Privacy & Security) | Accessibility is what lets Voice see the talk key in other apps and type for you. Rebuilding with an ad-hoc signature drops the grant — toggle Voice off/on in the list. |
 | Windows | **Microphone** (Settings → Privacy & security → Microphone, "Let desktop apps access your microphone") | The keyboard hook needs no permission. If the installer is flagged by SmartScreen, choose "Run anyway". |
-| Linux | An **X11** session | The global talk key is read through XRecord. Wayland sessions are not supported yet — the Settings tab says so, and the app otherwise runs but never hears the key. Microphone access has no per-app gate. |
+| Linux | An **X11** session | The global talk key is read through XRecord. Wayland sessions are not supported yet — the Settings dialog says so, and the app otherwise runs but never hears the key. Microphone access has no per-app gate. |
 
 Then click into any text field, **hold the talk key, speak, release**. The
 transcript appears at your cursor.
@@ -211,8 +211,9 @@ transcript appears at your cursor.
 | Windows | <kbd>Right Alt</kbd> | <kbd>Right Ctrl</kbd>, <kbd>Right Win</kbd>, or any other key except Esc and Caps Lock |
 | Linux | <kbd>Right Alt</kbd> | <kbd>Right Ctrl</kbd>, <kbd>Right Super</kbd>, the other modifiers, or an F-key |
 
-Change it in the Settings tab, or in onboarding, by clicking a key on the
-drawn keyboard (a modifier or F-key can also be picked by pressing it). A letter, digit, Space or Enter as the talk
+Open **Settings** from the sidebar or the tray menu. Pick a talk key on the
+drawn keyboard in Settings or onboarding. You can also press a modifier or
+F-key to select it. A letter, digit, Space or Enter as the talk
 key is swallowed while you hold it, so it will not type; on Linux only
 modifiers and F-keys are offered because the X11 hook cannot swallow keys.
 On a Mac, F-keys reach voice only when they act as standard function keys
@@ -258,10 +259,17 @@ The tray (menu-bar) icon offers **Open Voice**, **Copy Last Dictation**
 Updates…** (the downloaded Mac app only, see [Updates](#updates)) and **Quit
 Voice**, with the engine status as the second line.
 
-The main window has three tabs:
+The main window offers these views and controls:
 
 - **Dictations** — words spoken, words per minute, average latency, and a
   day-grouped ledger of everything you dictated (click a row to copy it).
+- **Insights** — Usage shows dictations, words, and recording pace for today
+  and the previous six local calendar dates. Streaks use consecutive dates
+  in saved history, and a streak stays current through the day after the
+  last dictation. Your voice shows recurring words and the local clock
+  hours with the most dictations. Voice calculates these on-device from
+  retained transcripts. Entries without recording durations still count
+  toward volume, activity, streaks, and voice patterns.
 - **Vocab** — add words and names by hand or import a CSV. Manage snippets
   below the vocabulary list to expand spoken triggers into longer text.
   Both lists are also editable from a terminal with
@@ -276,7 +284,7 @@ Appearance** can pin either one instead (Match system / Light / Dark).
 
 <div align="center">
 <img src="assets/screenshots/main-snippets.png" width="440" alt="Earlier snippets and vocabulary screen">
-<img src="assets/screenshots/main-settings.png" width="440" alt="Settings tab">
+<img src="assets/screenshots/main-settings.png" width="440" alt="Settings">
 </div>
 
 ## 🎯 Accuracy and cleanup

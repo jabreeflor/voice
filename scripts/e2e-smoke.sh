@@ -140,7 +140,7 @@ done
 
 if [ "$ENGINE_UP" -eq 0 ]; then
     fail "Engine never came up on port $PORT after 90s."
-    info "Check the Voice tray menu (or the Settings tab) for its status text."
+    info "Check the Voice tray menu (or the Settings dialog) for its status text."
     exit 1
 fi
 

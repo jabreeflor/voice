@@ -8,6 +8,7 @@
 //! - `vocabulary-changed` (no payload)       vocabulary.json changed from the app
 //! - `dictation-landed` (no payload)         a dictation was pasted (onboarding step 4)
 //! - `window-visible`   (bool, per window)    main/onboarding shown or hidden: start/stop UI timers
+//! - `open-settings`    (no payload, main)    tray requested the Settings dialog
 //! - `appearance-changed` ("system" | "light" | "dark")  Settings changed the colour scheme
 //! - `app-update`       (`updates::UpdateStatus`) self-update state changed (updates.rs)
 //! - `overlay`, `level`, `sound`             see overlay.rs
@@ -221,6 +222,17 @@ pub fn get_dictations(app: State<'_, Arc<App>>) -> DictationsDto {
 }
 
 #[tauri::command]
+pub fn get_insights(app: State<'_, Arc<App>>) -> voice_core::insights::Insights {
+    let entries = app
+        .history
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entries()
+        .to_vec();
+    voice_core::insights::summarize(&entries, Local::now())
+}
+
+#[tauri::command]
 pub fn get_snippets(app: State<'_, Arc<App>>) -> SnippetsDto {
     // voicectl (or a text editor) may have rewritten snippets.json since the
     // last read; the file is the source of truth.
@@ -348,6 +360,11 @@ pub fn set_llm_polish_url(app: State<'_, Arc<App>>, url: String) -> bool {
 #[tauri::command]
 pub fn set_llm_polish_model(app: State<'_, Arc<App>>, model: String) {
     Config::set_llm_polish_model(&app.settings, &model);
+}
+
+#[tauri::command]
+pub fn take_settings_request(app: State<'_, Arc<App>>) -> bool {
+    app.take_settings_request()
 }
 
 #[tauri::command]
@@ -538,6 +555,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
     tauri::generate_handler![
         get_status,
         get_dictations,
+        get_insights,
         get_snippets,
         add_snippet,
         remove_snippet,
@@ -546,6 +564,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static 
         import_vocabulary_csv,
         remove_vocabulary,
         get_settings,
+        take_settings_request,
         set_hotkey,
         set_sounds,
         set_context_prompt,

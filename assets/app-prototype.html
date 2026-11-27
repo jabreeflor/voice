@@ -156,6 +156,29 @@
   .view { display: none; } .view.visible { display: block; }
   .main h1 { font-size: var(--type-title); font-weight: 700; letter-spacing: -.02em; line-height: var(--leading-tight); margin-bottom: 18px; }
 
+  /* insights */
+  .insights-switch { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 20px;
+    border-radius: 999px; background: var(--panel); }
+  .insights-switch button { border: 0; border-radius: 999px; padding: 7px 14px;
+    background: transparent; font-size: var(--type-label); font-weight: 600; }
+  .insights-switch button[aria-pressed="true"] { background: var(--pillk); color: var(--pill-ink); }
+  .insights-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .insights-card { padding: 18px 20px; margin-bottom: 12px; }
+  .insights-card h2 { font-size: var(--type-body); margin-bottom: 8px; }
+  .insights-note { font-size: var(--type-label); color: var(--soft); margin-bottom: 8px; }
+  .insights-activity { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px; list-style: none; font-size: var(--type-caption); text-align: center;
+    font-variant-numeric: tabular-nums; }
+  .insights-activity li { display: grid; gap: 5px; justify-items: center; }
+  .insights-activity time { color: var(--soft); }
+  .insights-track { display: flex; align-items: end; height: 70px; width: min(65%, 34px);
+    background: var(--panel-deep); border-radius: 5px; overflow: hidden; }
+  .insights-track span { width: 100%; background: var(--accent); border-radius: 5px; }
+  .insights-list > div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0;
+    font-size: var(--type-label); }
+  .insights-list dt { overflow-wrap: anywhere; }
+  .insights-list dd { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
+
   /* dictations */
   .statrip { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 26px; align-items: stretch; }
   .statchip { padding: 12px 20px 12px 18px; display: flex; flex-direction: column; gap: 2px; }
@@ -217,6 +240,21 @@
   .snew input.body { flex: 1; }
 
   /* settings */
+  .settings-dialog { position: fixed; inset: 0; margin: auto; padding: 0;
+    width: min(640px, calc(100% - 48px)); max-height: calc(100% - 48px);
+    border: none; border-radius: 22px; background: var(--bg); color: var(--ink);
+    box-shadow: 0 16px 56px rgba(0,0,0,.24); overflow: hidden; }
+  .settings-dialog[open] { display: flex; flex-direction: column; }
+  .settings-dialog::backdrop { background: rgba(0,0,0,.4); }
+  .settings-header { display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--line); }
+  .settings-header h1 { font: 700 var(--type-title)/var(--leading-ui) var(--sans); }
+  .settings-close { padding: 7px 14px; }
+  .settings-dialog :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .settings-body { padding: 18px 24px 24px; overflow-y: auto; overscroll-behavior: contain; }
+  .settings-section .section-header { font: 600 var(--type-label)/var(--leading-ui) var(--sans);
+    color: var(--soft); margin-bottom: 8px; }
+  .settings-section .set-card { max-width: none; }
   .status { display: flex; align-items: center; gap: 8px; font: 500 var(--type-label)/var(--leading-ui) var(--sans);
             margin-bottom: 18px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
@@ -331,11 +369,15 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3"/></svg>
       <span>Dictations</span>
     </button>
+    <button class="sidebar-link" type="button" data-view="insights" aria-controls="view-insights" title="Insights" onclick="nav(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 19v-5m7 5V5m7 14V9"/></svg>
+      <span>Insights</span>
+    </button>
     <button class="sidebar-link" type="button" data-view="vocab" aria-controls="view-vocab" title="Vocab" onclick="nav(this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM7 9h10m-10 4h6"/></svg>
       <span>Vocab</span>
     </button>
-    <button class="sidebar-link" type="button" data-view="settings" aria-controls="view-settings" title="Settings" onclick="nav(this)">
+    <button class="sidebar-link" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" title="Settings" onclick="openSettings()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
       <span>Settings</span>
     </button>
@@ -368,6 +410,58 @@
         <div class="lrow"><time>4:12 PM</time><p>Draft a follow-up about the launch timeline and send it before the end of day.</p><button class="copy">Click to copy</button></div>
         <div class="lrow"><time>11:40 AM</time><p>Remind me to review the design doc after standup tomorrow.</p><button class="copy">Click to copy</button></div>
       </div>
+    </div>
+
+    <div class="view" id="view-insights">
+      <h1>Insights</h1>
+      <div class="insights-switch" role="group" aria-label="Insights view">
+        <button type="button" aria-pressed="true" onclick="insightsView(this)" aria-controls="insights-usage">Usage</button>
+        <button type="button" aria-pressed="false" onclick="insightsView(this)" aria-controls="insights-voice">Your voice</button>
+      </div>
+      <p class="insights-note">Sample data</p>
+      <section id="insights-usage" aria-label="Usage">
+        <h2 class="insights-note">Last 7 days</h2>
+        <div class="statrip">
+          <div class="statchip sticker"><span class="n" id="insights-count">18</span><span class="l">dictations</span></div>
+          <div class="statchip sticker"><span class="n" id="insights-words">784</span><span class="l">words</span></div>
+          <div class="statchip sticker"><span class="n" id="insights-wpm">148</span><span class="l">words per minute</span></div>
+        </div>
+        <div class="insights-card sticker">
+          <h2>Daily activity</h2>
+          <ol class="insights-activity" id="insights-activity" aria-label="Dictations per day">
+            <li><strong>2</strong><div class="insights-track" aria-hidden="true"><span style="height:33.33%"></span></div><time>Fri</time></li>
+            <li><strong>0</strong><div class="insights-track" aria-hidden="true"><span style="height:0.00%"></span></div><time>Sat</time></li>
+            <li><strong>0</strong><div class="insights-track" aria-hidden="true"><span style="height:0.00%"></span></div><time>Sun</time></li>
+            <li><strong>3</strong><div class="insights-track" aria-hidden="true"><span style="height:50.00%"></span></div><time>Mon</time></li>
+            <li><strong>3</strong><div class="insights-track" aria-hidden="true"><span style="height:50.00%"></span></div><time>Tue</time></li>
+            <li><strong>6</strong><div class="insights-track" aria-hidden="true"><span style="height:100.00%"></span></div><time>Wed</time></li>
+            <li><strong>4</strong><div class="insights-track" aria-hidden="true"><span style="height:66.67%"></span></div><time>Thu</time></li>
+          </ol>
+        </div>
+        <div class="insights-card sticker">
+          <h2>Streaks</h2>
+          <dl class="insights-list">
+            <div><dt>Current streak</dt><dd id="insights-current">4 days</dd></div>
+            <div><dt>Longest streak in saved history</dt><dd id="insights-longest">5 days</dd></div>
+          </dl>
+        </div>
+        <p class="footnote">The last 7 days include today and the previous six local calendar dates. Pace uses total words divided by total recording time for entries with a duration. A streak counts consecutive dates with a saved dictation and stays current if you dictated yesterday.</p>
+      </section>
+      <section id="insights-voice" aria-label="Your voice" hidden>
+        <div class="insights-card sticker">
+          <h2>Recurring words</h2>
+          <p class="insights-note">Words found in at least two saved dictations, excluding short words and common English words.</p>
+          <p class="insights-note" id="insights-words-empty" hidden>Recurring words will appear here as you dictate.</p>
+          <dl class="insights-list" id="insights-recurring"><div><dt>release</dt><dd>5 dictations</dd></div></dl>
+        </div>
+        <div class="insights-card sticker">
+          <h2>Peak dictation times</h2>
+          <p class="insights-note">The busiest local clock hours in your saved history.</p>
+          <p class="insights-note" id="insights-hours-empty" hidden>Save a dictation to see your busiest hours.</p>
+          <dl class="insights-list" id="insights-hours"><div><dt>10 AM–11 AM</dt><dd>6 dictations</dd></div></dl>
+        </div>
+      </section>
+      <p class="footnote">Insights are calculated on this device from saved transcripts. Dates and hours use the device’s current time zone. Older imports without timestamps may have approximate times.</p>
     </div>
 
     <!-- vocab -->
@@ -411,24 +505,36 @@
       </div>
     </div>
 
-    <!-- settings -->
-    <div class="view" id="view-settings">
-      <h1>Settings</h1>
+  </div>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+    <header class="settings-header">
+      <h1 id="settings-title">Settings</h1>
+      <button type="button" class="cap-btn lav settings-close" aria-label="Close Settings" autofocus onclick="this.closest('dialog').close()">Close</button>
+    </header>
+    <div class="settings-body">
       <div class="status"><span class="dot"></span>Ready &mdash; hold Right &#8997; Option and speak</div>
-      <div class="set-card sticker">
-        <div class="set-row"><span>Talk key</span>
-          <select><option>Hold Right &#8997; Option</option><option>Hold Right &#8984; Command</option><option>Hold fn</option></select></div>
-        <div class="set-row"><span>Sound effects</span>
-          <button class="switch on" onclick="this.classList.toggle('on')"><i></i></button></div>
-        <div class="set-row"><span>Start at login</span>
-          <button class="switch" onclick="this.classList.toggle('on')"><i></i></button></div>
-        <div class="set-row"><span>Microphone check</span>
-          <button class="cap-btn lav" style="padding:8px 16px; font-size:var(--type-caption)" onclick="pillDemo()">Run 3-second test</button></div>
-      </div>
+      <section class="settings-section">
+        <h2 class="section-header">Dictation</h2>
+        <div class="set-card sticker">
+          <div class="set-row"><span>Talk key</span>
+            <select aria-label="Talk key"><option>Hold Right &#8997; Option</option><option>Hold Right &#8984; Command</option><option>Hold fn</option></select></div>
+          <div class="set-row"><span>Microphone check</span>
+            <button class="cap-btn lav" style="padding:8px 16px; font-size:var(--type-caption)" onclick="pillDemo()">Run 3-second test</button></div>
+        </div>
+      </section>
+      <section class="settings-section">
+        <h2 class="section-header">General</h2>
+        <div class="set-card sticker">
+          <div class="set-row"><span>Sound effects</span>
+            <button class="switch on" aria-label="Sound effects" onclick="this.classList.toggle('on')"><i></i></button></div>
+          <div class="set-row"><span>Start at login</span>
+            <button class="switch" aria-label="Start at login" onclick="this.classList.toggle('on')"><i></i></button></div>
+        </div>
+      </section>
       <p style="font-size:var(--type-caption); color:var(--faint); max-width:520px">
         Everything runs on this Mac — audio, transcription, history. Nothing leaves your computer.</p>
     </div>
-  </div>
+  </dialog>
 </div>
 
 <div id="pill"><div class="wave animated"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
@@ -487,6 +593,12 @@ Approve the flow and layout, and it gets implemented natively in Voice.app.</p>
   window.addEventListener('mouseup', endHold);
   window.addEventListener('touchend', endHold);
 
+  function openSettings() {
+    const dialog = document.getElementById('settings-dialog');
+    dialog.showModal();
+    dialog.querySelector('.settings-body').scrollTop = 0;
+  }
+
   function nav(btn) {
     document.querySelectorAll('.sidebar-link').forEach(n => {
       if (n === btn) n.setAttribute('aria-current', 'page');
@@ -519,6 +631,12 @@ Approve the flow and layout, and it gets implemented natively in Voice.app.</p>
   function pillDemo() {
     pill.classList.add('show');
     setTimeout(() => pill.classList.remove('show'), 3000);
+  }
+  function insightsView(active) {
+    document.querySelectorAll('.insights-switch button').forEach(button => {
+      button.setAttribute('aria-pressed', String(active === button));
+      document.getElementById(button.getAttribute('aria-controls')).hidden = active !== button;
+    });
   }
 </script>
 </body>
