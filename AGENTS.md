@@ -48,6 +48,8 @@ crates/voice-app/                Tauri 2 desktop app
   src/tray.rs                    tray icon + menu
   src/overlay.rs                 floating pill window driver
   src/updates.rs                 self-update from the release feed (macOS release builds)
+  src/single_instance.rs         one Voice per user: lock in Store::dir() taken before Tauri,
+                                 second launch asks the holder to show itself, relaunch waits
   src/commands.rs                #[tauri::command] handlers + DTOs used by ui/
   src/platform/{mod,macos,windows,linux}.rs  permissions, settings panes, relaunch
   src/platform/macos_pasteboard.rs  macOS only: promised pasteboard item (paste-landed check)
@@ -278,6 +280,11 @@ Rules:
   not semver-greater). `TAURI_SIGNING_PRIVATE_KEY` must stay the pair of
   `plugins.updater.pubkey`; rotating the key strands every installed copy.
 - Do not add tier-4 e2e to CI (no mic, no GUI session, no TCC grants).
+- One Voice per user: `single_instance::acquire_in` runs first in `main`,
+  before Tauri, the talk-key hook and whisper-server. Its identity is
+  `Store::dir()`, never the bundle path or version. The guard is released
+  only at the end of `RunEvent::Exit`, after `App::shutdown`, so relaunches
+  and Restart to Update hand over cleanly.
 
 ## Releases
 
