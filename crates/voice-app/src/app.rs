@@ -213,6 +213,24 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+fn cleanup_dictation(settings: &Settings, raw: &str) -> String {
+    let (strip_fillers, polish_with_model) = Config::cleanup_options(settings);
+    let mut cleaned = clean_transcript(raw);
+    if strip_fillers {
+        cleaned = remove_fillers(&cleaned);
+    }
+    if !cleaned.is_empty() && polish_with_model {
+        let url = Config::llm_polish_url(settings);
+        let model = Config::llm_polish_model(settings);
+        // Keep the pre-polish text when the local model is unavailable or rejects the request.
+        match polish::polish(&cleaned, &url, &model, polish::POLISH_TIMEOUT) {
+            Ok(polished) => cleaned = polished,
+            Err(e) => log::warn!("LLM polish skipped: {e}"),
+        }
+    }
+    cleaned
+}
+
 impl App {
     /// Builds stores, wires the downloader/engine/hotkey callbacks and kicks off
     /// model discovery (download base.en if nothing is installed).
@@ -850,16 +868,10 @@ impl App {
     /// The LLM pass runs before snippet expansion so a snippet's text is
     /// pasted exactly as the user wrote it.
     fn deliver(&self, raw: String, duration: f64, sent_at: Instant) {
-        let mut cleaned = clean_transcript(&raw);
-        if Config::remove_fillers(&self.settings) {
-            cleaned = remove_fillers(&cleaned);
-        }
+        let cleaned = cleanup_dictation(&self.settings, &raw);
         if cleaned.is_empty() {
             self.overlay.flash("No speech detected", FLASH_DEFAULT);
             return;
-        }
-        if Config::llm_polish(&self.settings) {
-            cleaned = self.polish(cleaned);
         }
         let text = lock(&self.snippets).expand(&cleaned);
         let latency = sent_at.elapsed().as_secs_f64();
@@ -885,21 +897,6 @@ impl App {
         let _ = self.handle.emit("dictation-landed", ());
         let _ = self.handle.emit("history-changed", ());
         self.refresh_ui();
-    }
-
-    /// The local-LLM pass, bounded by `polish::POLISH_TIMEOUT`. Any failure
-    /// (server not running, model missing, timeout, a non-loopback URL in
-    /// settings.json) pastes the text unpolished; only the log says why.
-    fn polish(&self, text: String) -> String {
-        let url = Config::llm_polish_url(&self.settings);
-        let model = Config::llm_polish_model(&self.settings);
-        match polish::polish(&text, &url, &model, polish::POLISH_TIMEOUT) {
-            Ok(polished) => polished,
-            Err(e) => {
-                log::warn!("LLM polish skipped: {e}");
-                text
-            }
-        }
     }
 
     pub fn cancel_recording(&self) {
@@ -948,6 +945,34 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dictation_cleanup_uses_the_saved_preset() {
+        use voice_core::config::CleanupPreset;
+
+        let dir = tempfile::tempdir().unwrap();
+        let settings = Settings::in_dir(dir.path());
+        let raw = "[BLANK_AUDIO] Um, the garden opens at nine.";
+        Config::set_cleanup_preset(&settings, CleanupPreset::AsSpoken);
+        assert_eq!(
+            cleanup_dictation(&settings, raw),
+            "Um, the garden opens at nine."
+        );
+
+        Config::set_cleanup_preset(&settings, CleanupPreset::RemoveFillers);
+        assert_eq!(
+            cleanup_dictation(&settings, raw),
+            "The garden opens at nine."
+        );
+
+        // A rejected endpoint still delivers the filler-cleaned text.
+        Config::set_llm_polish_url(&settings, "https://example.invalid/v1/chat/completions");
+        Config::set_cleanup_preset(&settings, CleanupPreset::Polish);
+        assert_eq!(
+            cleanup_dictation(&settings, raw),
+            "The garden opens at nine."
+        );
+    }
 
     #[test]
     fn typed_flash_keeps_short_text_whole() {

@@ -1,4 +1,4 @@
-// Main window: Dictations / Insights / Vocab / Settings. Talks to the Rust side only
+// Main window: Dictations / Insights / Vocab / Style / Settings. Talks to the Rust side only
 // through the commands and events documented in src/commands.rs.
 (() => {
   const { invoke } = window.__TAURI__.core;
@@ -25,7 +25,7 @@
     });
     document.querySelectorAll('.view').forEach((v) =>
       v.classList.toggle('visible', v.id === 'view-' + view));
-    refresh(true);
+    return refresh(true);
   }
   document.querySelectorAll('.sidebar-link[data-view]').forEach((b) =>
     b.addEventListener('click', () => select(b.dataset.view)));
@@ -445,6 +445,59 @@
     }
   });
 
+  // ── style ─────────────────────────────────────────────────────────────
+  const stylePresets = $('style-presets');
+  let savedPreset = null;
+  let styleBusy = false;
+
+  function showPreset(preset) {
+    for (const radio of stylePresets.querySelectorAll('input')) {
+      radio.checked = radio.value === preset;
+    }
+    $('style-settings').hidden = preset !== 'polish' && preset !== null;
+    $('style-message').textContent = preset === null
+      ? 'Custom cleanup is active. Choose a preset here or adjust the switches in Settings.'
+      : '';
+  }
+
+  async function renderStyle() {
+    if (styleBusy) return;
+    styleBusy = true;
+    stylePresets.disabled = true;
+    try {
+      savedPreset = await invoke('get_cleanup_preset');
+      showPreset(savedPreset);
+      stylePresets.disabled = false;
+    } catch {
+      $('style-message').textContent = 'Could not load the cleanup preset. Reopen Style to try again.';
+    } finally {
+      styleBusy = false;
+    }
+  }
+
+  stylePresets.addEventListener('change', async (e) => {
+    const preset = e.target.value;
+    styleBusy = true;
+    stylePresets.disabled = true;
+    try {
+      await invoke('set_cleanup_preset', { preset });
+      savedPreset = preset;
+      showPreset(savedPreset);
+      if (settingsDialog.open) renderSettings();
+    } catch {
+      showPreset(savedPreset);
+      $('style-message').textContent = 'Could not save the cleanup preset. Try again.';
+    } finally {
+      styleBusy = false;
+      stylePresets.disabled = false;
+      if (current === 'style' && !settingsDialog.open) e.target.focus();
+    }
+  });
+  $('style-settings').addEventListener('click', async (e) => {
+    await openSettings(e.currentTarget);
+    if (settingsDialog.open) $('polish-url').focus();
+  });
+
   // ── settings ──────────────────────────────────────────────────────────
   const settingsDialog = $('settings-dialog');
   const settingsTrigger = $('open-settings');
@@ -458,7 +511,7 @@
     settingsReturnScroll = main.scrollTop;
     settingsDialog.showModal();
     $('settings-body').scrollTop = 0;
-    renderSettings();
+    return renderSettings();
   }
 
   async function openTraySettings() {
@@ -475,6 +528,7 @@
       opener.getClientRects().length && !opener.matches(':disabled') ? opener : fallback;
     target.focus({ preventScroll: true });
     main.scrollTop = settingsReturnScroll;
+    if (current === 'style') renderStyle();
   });
 
   // Keep Tab in the dialog even when the webview would move focus to native
@@ -675,6 +729,8 @@
     } else if (current === 'vocab') {
       renderSnippets(entering);
       renderVocabulary(entering);
+    } else if (current === 'style') {
+      if (entering) renderStyle();
     }
   }
 

@@ -239,6 +239,18 @@
   .snew input.trig { width: 150px; font-weight: 500; }
   .snew input.body { flex: 1; }
 
+  /* style */
+  .style-presets { display: grid; gap: 10px; max-width: 560px; min-width: 0; padding: 0; border: 0; }
+  .style-preset { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px;
+                  align-items: baseline; padding: 14px 18px; cursor: pointer; }
+  .style-preset:has(input:checked) { background: var(--accent-tint); }
+  .style-preset input { margin: 0; accent-color: var(--accent); cursor: inherit; }
+  .style-preset input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .style-title { font-size: var(--type-body); font-weight: 600; }
+  .style-example, .style-model-note { grid-column: 2; color: var(--soft);
+                                     font-size: var(--type-label); line-height: var(--leading-reading); }
+  .style-model-note { margin-top: 4px; }
+
   /* settings */
   .settings-dialog { position: fixed; inset: 0; margin: auto; padding: 0;
     width: min(640px, calc(100% - 48px)); max-height: calc(100% - 48px);
@@ -377,6 +389,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2ZM7 9h10m-10 4h6"/></svg>
       <span>Vocab</span>
     </button>
+    <button class="sidebar-link" type="button" data-view="style" aria-controls="view-style" title="Style" onclick="nav(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 15-1 6 6-1L20 9l-5-5L4 15Zm8-8 5 5M4 15l5 5"/></svg>
+      <span>Style</span>
+    </button>
     <button class="sidebar-link" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" title="Settings" onclick="openSettings()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.2-.8.2-1.2z"/></svg>
       <span>Settings</span>
@@ -505,6 +521,27 @@
       </div>
     </div>
 
+    <div class="view" id="view-style">
+      <h1>Style</h1>
+      <fieldset class="style-presets" id="style-presets" aria-label="Dictation cleanup preset">
+        <label class="style-preset sticker">
+          <input type="radio" name="cleanup-preset" value="as_spoken" aria-labelledby="style-as-spoken" aria-describedby="style-as-spoken-example">
+          <span class="style-title" id="style-as-spoken">As spoken</span>
+          <span class="style-example" id="style-as-spoken-example">Before · Um, the garden opens at nine.<br>After · Um, the garden opens at nine.</span>
+        </label>
+        <label class="style-preset sticker">
+          <input type="radio" name="cleanup-preset" value="remove_fillers" checked aria-labelledby="style-remove-fillers" aria-describedby="style-remove-fillers-example">
+          <span class="style-title" id="style-remove-fillers">Remove fillers</span>
+          <span class="style-example" id="style-remove-fillers-example">Before · Um, the garden opens at nine.<br>After · The garden opens at nine.</span>
+        </label>
+        <label class="style-preset sticker">
+          <input type="radio" name="cleanup-preset" value="polish" aria-labelledby="style-polish" aria-describedby="style-model-note style-polish-example">
+          <span class="style-title" id="style-polish">Polish</span>
+          <span class="style-example" id="style-polish-example">Before · Um, the garden, the garden opens at nine.<br>Possible result · The garden opens at nine.</span>
+          <span class="style-model-note" id="style-model-note">Requires a configured, running local model. If unavailable, Voice still removes fillers.</span>
+        </label>
+      </fieldset>
+    </div>
   </div>
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
     <header class="settings-header">

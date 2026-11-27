@@ -356,6 +356,25 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 
 pub struct Config;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CleanupPreset {
+    AsSpoken,
+    RemoveFillers,
+    Polish,
+}
+
+impl CleanupPreset {
+    pub fn from_options(remove_fillers: bool, llm_polish: bool) -> Option<Self> {
+        match (remove_fillers, llm_polish) {
+            (false, false) => Some(Self::AsSpoken),
+            (true, false) => Some(Self::RemoveFillers),
+            (true, true) => Some(Self::Polish),
+            (false, true) => None,
+        }
+    }
+}
+
 impl Config {
     /// Production whisper-server port. Tests use 18178 so a running app is not disturbed.
     pub const SERVER_PORT: u16 = 8178;
@@ -424,10 +443,27 @@ impl Config {
         settings.set("contextPrompt", enabled);
     }
 
+    /// Read both cleanup switches from one snapshot of the settings.
+    pub fn cleanup_options(settings: &Settings) -> (bool, bool) {
+        let [remove_fillers, llm_polish] =
+            settings.bools([("removeFillers", true), ("llmPolish", false)]);
+        (remove_fillers, llm_polish)
+    }
+
+    /// Persist a preset as one update to the switches used by dictation.
+    pub fn set_cleanup_preset(settings: &Settings, preset: CleanupPreset) {
+        let (remove_fillers, llm_polish) = match preset {
+            CleanupPreset::AsSpoken => (false, false),
+            CleanupPreset::RemoveFillers => (true, false),
+            CleanupPreset::Polish => (true, true),
+        };
+        settings.set_bools([("removeFillers", remove_fillers), ("llmPolish", llm_polish)]);
+    }
+
     /// `removeFillers` (Rust-only): drop um/uh/erm before pasting
     /// (`transcript::remove_fillers`). Default on.
     pub fn remove_fillers(settings: &Settings) -> bool {
-        settings.get_bool("removeFillers").unwrap_or(true)
+        Self::cleanup_options(settings).0
     }
 
     pub fn set_remove_fillers(settings: &Settings, enabled: bool) {
@@ -438,7 +474,7 @@ impl Config {
     /// (`polish::polish`). Default off: it needs a model server the user
     /// installs and runs themselves.
     pub fn llm_polish(settings: &Settings) -> bool {
-        settings.get_bool("llmPolish").unwrap_or(false)
+        Self::cleanup_options(settings).1
     }
 
     pub fn set_llm_polish(settings: &Settings, enabled: bool) {

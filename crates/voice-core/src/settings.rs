@@ -64,6 +64,19 @@ impl Settings {
         self.get(key)?.as_bool()
     }
 
+    pub(crate) fn bools<const N: usize>(&self, defaults: [(&str, bool); N]) -> [bool; N] {
+        let map = self.lock();
+        defaults.map(|(key, default)| map.get(key).and_then(Value::as_bool).unwrap_or(default))
+    }
+
+    pub(crate) fn set_bools<const N: usize>(&self, values: [(&str, bool); N]) {
+        let mut map = self.lock();
+        for (key, value) in values {
+            map.insert(key.to_string(), value.into());
+        }
+        self.save(&map);
+    }
+
     pub fn get_f64(&self, key: &str) -> Option<f64> {
         self.get(key)?.as_f64()
     }

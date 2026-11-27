@@ -274,6 +274,7 @@ The main window offers these views and controls:
   below the vocabulary list to expand spoken triggers into longer text.
   Both lists are also editable from a terminal with
   [`voicectl`](#️-command-line-voicectl).
+- **Style** — choose a dictation cleanup preset.
 - **Settings** — permission status, talk key, appearance, the
   [accuracy and cleanup](#-accuracy-and-cleanup) switches, sound effects,
   start at login, a 3-second microphone check, and the version (with
@@ -302,6 +303,10 @@ anywhere but the local whisper-server.
   line. A long prompt adds a little decode time, so keep the list to the
   words whisper actually gets wrong. `voicectl vocab prompt` prints the
   exact line.
+- **Style** in the sidebar offers **As spoken**, **Remove fillers** (the
+  default), and **Polish**. Polish removes fillers and then uses a local
+  model configured in Settings. The individual cleanup switches in Settings
+  also let you polish without removing fillers.
 - **Remove filler words** (Settings, on by default) — drops *um*, *uh*,
   *erm* and their stretched spellings, then repairs the commas and capital
   letters around them: "Um, so I think, uh, we ship it" pastes as "So I
