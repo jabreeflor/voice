@@ -1,0 +1,19 @@
+<!-- Voice app icon: the single source for every platform asset (scripts/icons.sh).
+     Five speech bars whose centres trace a "V". The tile fills the 824/1024 macOS
+     grid so the Dock icon lines up with system apps; Windows/Linux use it as is. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF8F3D"/>
+      <stop offset="1" stop-color="#F2650F"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+  <g fill="#FFFFFF" transform="translate(212 212) scale(6)">
+    <rect x="13" y="17" width="10" height="34" rx="5"/>
+    <rect x="29" y="29" width="10" height="42" rx="5"/>
+    <rect x="45" y="47" width="10" height="38" rx="5"/>
+    <rect x="61" y="29" width="10" height="42" rx="5"/>
+    <rect x="77" y="17" width="10" height="34" rx="5"/>
+  </g>
+</svg>

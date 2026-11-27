@@ -38,7 +38,8 @@ crates/voice-app/                Tauri 2 desktop app
                                  updater archive + feed URL/pubkey (enables self-update)
   Info.plist                     merged into the macOS bundle (LSUIElement, mic usage string)
   capabilities/default.json      what the webviews may call
-  icons/                         app + tray icons
+  icons/                         app + tray icons: edit the *.svg sources, then run
+                                 scripts/icons.sh (never edit the PNG/ICNS/ICO by hand)
   src/main.rs                    builder, plugins, tray, windows, setup
   src/app.rs                     App state machine, recording flow, status, window show/hide
   src/audio.rs                   Recorder (cpal → 16 kHz mono f32)
@@ -58,6 +59,7 @@ assets/app-prototype.html        HTML mirror of the design tokens — keep in sy
 assets/screenshots/              README images (dark-mode/, talk-key/: UI evidence)
 build.sh                         macOS wrapper: cargo tauri build → ./Voice.app (+ voicectl) + codesign
 scripts/install.sh               curl | bash installer for macOS and Linux
+scripts/icons.sh                 regenerate every icon asset from icons/*.svg (cargo tauri icon)
 scripts/e2e-smoke.sh             tier-4 GUI smoke (macOS, manual)
 scripts/release-version.mjs      next release version (floor + tags) / stamp it into a checkout
 scripts/release-feed.mjs         write + verify latest.json (minisign) before publishing

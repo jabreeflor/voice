@@ -73,6 +73,15 @@
   .cap-btn.granted { background: var(--green-tint); color: var(--green); cursor: default; }
   .cap-btn.ghost { background: none; color: var(--accent); }
 
+  /* Brand mark: the app icon's five-bar V (crates/voice-app/icons/tray.svg),
+     drawn bare in the brand orange; the onboarding hero animates it. */
+  .mark { display: block; flex: none; }
+  .mark rect { fill: currentColor; }
+  .mark.animated rect { transform-box: fill-box; transform-origin: center;
+    animation: bounce 1.1s ease-in-out infinite; }
+  .mark.animated rect:nth-child(2) { animation-delay: .12s; } .mark.animated rect:nth-child(3) { animation-delay: .24s; }
+  .mark.animated rect:nth-child(4) { animation-delay: .36s; } .mark.animated rect:nth-child(5) { animation-delay: .48s; }
+
   .wave { display: flex; align-items: center; gap: 4px; }
   .wave b { width: 4px; border-radius: 2px; background: currentColor; height: 8px; }
   .wave.animated b { animation: bounce 1.1s ease-in-out infinite; }
@@ -96,7 +105,7 @@
   .ob-cap { background: var(--orange); color: #fff; border-radius: 999px; padding: 24px 42px;
             margin-bottom: 34px; }
   .ob-cap.done { background: var(--green); }
-  .ob-cap .wave b { width: 5px; }
+  .ob-cap .mark { width: 56px; height: 56px; }
   .ob-step h1 { font-size: var(--type-display); font-weight: 700; letter-spacing: -.02em; line-height: var(--leading-tight);
                 margin-bottom: 14px; }
   .ob-step h1 em { font-style: normal; color: var(--accent); }
@@ -129,10 +138,7 @@
   .brand { display: flex; align-items: center; gap: 10px; padding: 8px 6px; margin-bottom: 12px; }
   /* Leave space above the wordmark for the native traffic lights. */
   #app .brand { padding-top: 32px; }
-  .brand .cap { background: var(--orange); color: #fff; border-radius: 50%; width: 30px; height: 30px;
-                display: flex; align-items: center; justify-content: center; }
-  .brand .cap .wave b { width: 3px; }
-  .brand .cap .wave { gap: 3px; transform: scale(.7); }
+  .brand .mark { width: 26px; height: 26px; color: var(--orange); }
   .brand span { font-weight: 700; font-size: var(--type-brand); }
   .sidebar-link { display: flex; align-items: center; gap: 10px; min-height: 40px;
     padding: 0 10px; border: none; border-radius: 10px; background: transparent;
@@ -309,7 +315,7 @@
   <div style="flex:1; display:flex; align-items:center; justify-content:center;">
 
   <div class="ob-step visible" data-step="1">
-    <div class="ob-cap"><div class="wave animated"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+    <div class="ob-cap"><svg class="mark animated" viewBox="0 0 100 100" aria-hidden="true"><rect x="7.5" y="12" width="13" height="38" rx="6.5"/><rect x="25.5" y="26" width="13" height="46" rx="6.5"/><rect x="43.5" y="46" width="13" height="42" rx="6.5"/><rect x="61.5" y="26" width="13" height="46" rx="6.5"/><rect x="79.5" y="12" width="13" height="38" rx="6.5"/></svg></div>
     <h1>Say it. <em>It's typed.</em></h1>
     <p>Voice turns speech into text in any app on your Mac. It runs entirely on this
        computer — no accounts, no subscriptions, and nothing you say ever leaves your machine.</p>
@@ -374,7 +380,7 @@
 
   <nav class="sidebar" aria-label="Voice navigation">
     <div class="brand">
-      <div class="cap"><div class="wave"><b></b><b></b><b></b><b></b></div></div>
+      <svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><rect x="7.5" y="12" width="13" height="38" rx="6.5"/><rect x="25.5" y="26" width="13" height="46" rx="6.5"/><rect x="43.5" y="46" width="13" height="42" rx="6.5"/><rect x="61.5" y="26" width="13" height="46" rx="6.5"/><rect x="79.5" y="12" width="13" height="38" rx="6.5"/></svg>
       <span>Voice</span>
     </div>
     <button class="sidebar-link" type="button" data-view="dictations" aria-controls="view-dictations" title="Dictations" aria-current="page" onclick="nav(this)">
